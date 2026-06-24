@@ -127,7 +127,17 @@ export function MessageList() {
                     const msgTime = new Date(m.createdAt).getTime()
                     const showUnreadDivider = lastReadAt > 0 && msgTime > lastReadAt && (!prev || new Date(prev.createdAt).getTime() <= lastReadAt)
                     return (
-                      <div key={m.id}>
+                      <div
+                        key={m.id}
+                        // CSS windowing: browser skips rendering/layout/paint for off-screen
+                        // messages. `contain-intrinsic-size` reserves space so the scroll
+                        // height stays stable (auto-scroll-to-bottom keeps working).
+                        // Wrapper around both the optional divider and the bubble.
+                        style={{
+                          contentVisibility: 'auto',
+                          containIntrinsicSize: 'auto 96px',
+                        }}
+                      >
                         {showUnreadDivider && (
                           <div className="flex items-center gap-2 my-3">
                             <div className="flex-1 h-px bg-primary/30" />

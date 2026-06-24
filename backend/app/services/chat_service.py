@@ -32,11 +32,9 @@ class ChatService:
 
         chat_ids = [chat.id for _, chat in valid]
 
-        last_msgs = {}
-        for cid in chat_ids:
-            msgs = await self.messages.list_for_chat(cid, limit=1)
-            if msgs:
-                last_msgs[cid] = msgs[0]
+        # ONE batch query for the latest message per chat — replaces the old
+        # N+1 loop that called list_for_chat(limit=1) per chat.
+        last_msgs = await self.messages.last_messages_for_chats(chat_ids)
 
         result = []
         for member, chat in valid:

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Search,
   Plus,
@@ -53,6 +53,20 @@ export function ChatList() {
   const updateChatListItem = useChatStore((s) => s.updateChatListItem)
   const [newChatOpen, setNewChatOpen] = useState(false)
 
+  // Debounced search input — keep a local string for instant feedback while
+  // the (potentially heavy) filter only runs ~200ms after the user stops typing.
+  // Local `searchInput` is the source of truth for the <Input> value; the
+  // store's `searchQuery` is the debounced "committed" value used by the filter.
+  // No other component writes to the store's searchQuery, so no reverse-sync is
+  // needed (avoids a setState-in-effect cascading-render warning).
+  const [searchInput, setSearchInput] = useState(searchQuery)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (searchQuery !== searchInput) setSearchQuery(searchInput)
+    }, 200)
+    return () => clearTimeout(t)
+  }, [searchInput, searchQuery, setSearchQuery])
+
   const filtered = chats.filter((c) => {
     if (!searchQuery.trim()) return true
     const q = searchQuery.toLowerCase()
@@ -102,6 +116,81 @@ export function ChatList() {
     if (lm.type === 'image') return { text: `${prefix}Photo`, icon: <ImageIcon className="h-3.5 w-3.5" /> }
     if (lm.type === 'voice') return { text: `${prefix}Voice ${lm.duration ? `${lm.duration}s` : ''}`, icon: <Mic className="h-3.5 w-3.5" /> }
     return { text: prefix + lm.content, icon: null }
+  }
+
+  // Prefetch a chat's messages when the user hovers its list item for >300ms.
+  // Skips chats that already have messages in the store. Does not switch the
+  // active chat — only warms the cache so opening feels instant.
+  // Reads `messages` lazily via getState() to avoid re-rendering ChatList on
+  // every message update.
+  const prefetchTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  function schedulePrefetch(chat: ChatListItem) {
+    if (prefetchTimers.current.has(chat.id)) return
+    // Already cached in store — nothing to do
+    const cur = useChatStore.getState().messages[chat.id]
+    if (cur && cur.length > 0) return
+    const t = setTimeout(() => {
+      prefetchTimers.current.delete(chat.id)
+      void prefetchChat(chat)
+    }, 300)
+    prefetchTimers.current.set(chat.id, t)
+  }
+  function cancelPrefetch(chatId: string) {
+    const t = prefetchTimers.current.get(chatId)
+    if (t) {
+      clearTimeout(t)
+      prefetchTimers.current.delete(chatId)
+    }
+  }
+  useEffect(() => {
+    // Cleanup any pending prefetch timers on unmount
+    const timers = prefetchTimers.current
+    return () => {
+      timers.forEach((t) => clearTimeout(t))
+      timers.clear()
+    }
+  }, [])
+  async function prefetchChat(chat: ChatListItem) {
+    // Skip if another render populated the store meanwhile
+    const cur = useChatStore.getState().messages[chat.id]
+    if (cur && cur.length > 0) return
+    try {
+      // 1. Try IndexedDB cache first (instant)
+      const { loadCachedMessages } = await import('@/lib/message-cache')
+      const cached = await loadCachedMessages(chat.id)
+      const storeNow = useChatStore.getState().messages[chat.id]
+      if (storeNow && storeNow.length > 0) return
+      if (cached.length > 0) {
+        useChatStore.getState().setMessages(chat.id, cached)
+      }
+      // 2. Background-fetch latest from server (no loading state, no toast)
+      const data = await apiGet<{ messages: any[] }>(`/api/${chat.id}/messages?limit=50`)
+      if (!data.messages) return
+      const storeAfter = useChatStore.getState().messages[chat.id]
+      if (storeAfter && storeAfter.length > 0 && cached.length > 0) return
+      try {
+        const { decryptMessageForChat } = await import('@/lib/e2ee')
+        const decrypted = await Promise.all(
+          data.messages.map(async (m) => {
+            if (m.type === 'text' && m.content) {
+              try {
+                m.content = await decryptMessageForChat(m.content, chat.id, chat.type)
+              } catch {
+                // keep ciphertext if decryption fails
+              }
+            }
+            return m
+          })
+        )
+        useChatStore.getState().setMessages(chat.id, decrypted)
+        const { cacheMessages } = await import('@/lib/message-cache')
+        cacheMessages(chat.id, decrypted)
+      } catch {
+        useChatStore.getState().setMessages(chat.id, data.messages)
+      }
+    } catch {
+      // silent — prefetch is best-effort
+    }
   }
 
   async function openChat(chat: ChatListItem) {
@@ -215,6 +304,8 @@ export function ChatList() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.25, delay: Math.min(index * 0.02, 0.15), ease: [0.16, 1, 0.3, 1] }}
             onClick={() => openChat(chat)}
+            onMouseEnter={() => schedulePrefetch(chat)}
+            onMouseLeave={() => cancelPrefetch(chat.id)}
             className={cn(
               'w-full flex items-center gap-3 p-2.5 rounded-2xl transition-all duration-200 text-left mb-0.5 zc-tap group',
               active
@@ -223,7 +314,7 @@ export function ChatList() {
             )}
           >
             <div className="relative">
-              <ChatAvatar emoji={emoji} color={color} size="md" online={isOnline(chat)} userId={chat.id} />
+              <ChatAvatar emoji={emoji} color={color} size="md" online={isOnline(chat)} userId={chat.id} eager={index < 5} />
               {chat.muted && (
                 <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-muted-foreground flex items-center justify-center border-2 border-background">
                   <BellOff className="h-2.5 w-2.5 text-background" />
@@ -298,8 +389,8 @@ export function ChatList() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search chats & messages"
             className="pl-9 h-10 bg-background rounded-full border-0 focus-visible:ring-1 focus-visible:ring-primary"
           />

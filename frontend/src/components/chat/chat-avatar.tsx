@@ -14,6 +14,9 @@ interface ChatAvatarProps {
   className?: string
   ring?: boolean
   userId?: string
+  // When true, loads the avatar image eagerly (no lazy-loading). Use for the
+  // first few visible chat-list avatars so they appear instantly on first paint.
+  eager?: boolean
 }
 
 const sizeMap = {
@@ -30,13 +33,14 @@ const dotSize = {
   xl: 'h-4 w-4',
 }
 
-function ChatAvatarImpl({ emoji, color, size = 'md', online, className, ring, userId }: ChatAvatarProps) {
+function ChatAvatarImpl({ emoji, color, size = 'md', online, className, ring, userId, eager }: ChatAvatarProps) {
   const [imgError, setImgError] = useState(false)
   const s = sizeMap[size]
   const iconKey = resolveAvatarKey(emoji)
   const legacy = isLegacyEmoji(emoji)
   const showDefault = (!emoji || legacy || !iconKey) && userId
   const defaultUrl = showDefault ? defaultAvatarForUser(userId) : null
+  const loadingAttr = eager ? 'eager' : 'lazy'
 
   return (
     <div className={cn('relative shrink-0', className)}>
@@ -54,6 +58,7 @@ function ChatAvatarImpl({ emoji, color, size = 'md', online, className, ring, us
           <img
             src={defaultUrl}
             alt="avatar"
+            loading={loadingAttr}
             className="w-full h-full object-cover"
           />
         ) : imgError ? (
@@ -66,6 +71,7 @@ function ChatAvatarImpl({ emoji, color, size = 'md', online, className, ring, us
             alt={iconKey}
             width={s.img}
             height={s.img}
+            loading={loadingAttr}
             onError={() => setImgError(true)}
             className="object-contain drop-shadow-sm"
             style={{ width: `${s.img * 0.72}px`, height: `${s.img * 0.72}px` }}

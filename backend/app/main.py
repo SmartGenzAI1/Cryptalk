@@ -7,7 +7,8 @@ import socketio
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine
+from fastapi.middleware.gzip import GZipMiddleware
+from sqlalchemy import create_engine, Index
 
 from app.api.v1 import api_router
 from app.core.config import settings
@@ -17,7 +18,7 @@ from app.core.exceptions import (
     unhandled_exception_handler,
 )
 from app.core.rate_limit import RateLimitMiddleware
-from app.models import Base
+from app.models import Base, Message, ChatMember, StarredMessage, UserBlock, ConnectionRequest, Report
 from app.realtime.connection_manager import manager
 from app.realtime.handlers import register_handlers
 
@@ -45,8 +46,34 @@ async def lifespan(app: FastAPI):
         sync_url = f"sqlite:///{settings.DB_PATH}"
     sync_engine = create_engine(sync_url, echo=False)
     Base.metadata.create_all(sync_engine)
+    # Ensure hot-path indexes exist (idempotent — CREATE INDEX IF NOT EXISTS).
+    # These cover the queries that run on every chat-open / chat-list / search.
+    with sync_engine.connect() as conn:
+        from sqlalchemy import text
+        # Message.chatId + createdAt desc — powers list_for_chat (the main
+        # message-history query) and last_messages_for_chats (chat list).
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_message_chat_created "
+            "ON \"Message\" (\"chatId\", \"createdAt\" DESC)"
+        ))
+        # Message.senderId — powers "messages from user X" lookups.
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_message_sender "
+            "ON \"Message\" (\"senderId\")"
+        ))
+        # StarredMessage.userId — powers list_starred.
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_starred_user "
+            "ON \"StarredMessage\" (\"userId\", \"createdAt\" DESC)"
+        ))
+        # ChatMember.userId — powers get_user_chats (the chat list).
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_chatmember_user "
+            "ON \"ChatMember\" (\"userId\")"
+        ))
+        conn.commit()
     sync_engine.dispose()
-    logger.info("Database tables ensured")
+    logger.info("Database tables + indexes ensured")
     yield
     logger.info("Shutting down...")
 
@@ -58,6 +85,11 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+# GZip compression — message lists with base64 content can be large; gzip
+# typically cuts response size ~70-80% which matters a lot on mobile.  Only
+# compresses responses ≥ 500 bytes (smaller ones aren't worth the CPU).
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 app.add_middleware(
     RateLimitMiddleware,
@@ -82,7 +114,10 @@ app.add_middleware(
 async def limit_request_body(request: Request, call_next):
     cl = request.headers.get("content-length")
     if cl and int(cl) > 40 * 1024 * 1024:
-        return JSONResponse(status_code=413, content={"error": "too_large", "message": "Request body exceeds 40MB limit"})
+        # Uploads enforce their own per-file cap inside the handler (25 MB),
+        # so let them through the global guard.
+        if not request.url.path.startswith("/api/uploads"):
+            return JSONResponse(status_code=413, content={"error": "too_large", "message": "Request body exceeds 40MB limit"})
     return await call_next(request)
 
 app.add_exception_handler(DomainError, domain_error_handler)
