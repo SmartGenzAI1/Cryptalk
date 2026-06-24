@@ -121,16 +121,16 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
     }
   }
 
-  async function handleDelete() {
+  async function handleDelete(forEveryone: boolean = false) {
     try {
-      await apiDelete(`/api/${message.chatId}/messages?messageId=${message.id}`)
+      await apiDelete(`/api/${message.chatId}/messages?messageId=${message.id}${forEveryone ? '&forEveryone=true' : ''}`)
       removeMessage(message.chatId, message.id)
       getSocket()?.emit('message-update', {
         chatId: message.chatId,
         message: { ...message, deletedAt: new Date().toISOString(), content: '🗑️ Message deleted' },
         action: 'delete',
       })
-      toast.success('Message deleted')
+      toast.success(forEveryone ? 'Deleted for everyone' : 'Message deleted')
     } catch (e) {
       console.error(e)
     }
@@ -437,8 +437,11 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
               <ContextMenuItem onClick={() => { setEditing(true); setEditText(message.content) }}>
                 <Pencil className="h-4 w-4 mr-2" /> Edit
               </ContextMenuItem>
-              <ContextMenuItem onClick={handleDelete} className="text-destructive focus:text-destructive">
-                <Trash2 className="h-4 w-4 mr-2" /> Delete
+              <ContextMenuItem onClick={() => handleDelete(false)} className="text-muted-foreground">
+                <Trash2 className="h-4 w-4 mr-2" /> Delete for me
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => handleDelete(true)} className="text-destructive focus:text-destructive">
+                <Trash2 className="h-4 w-4 mr-2" /> Delete for everyone
               </ContextMenuItem>
             </>
           )}

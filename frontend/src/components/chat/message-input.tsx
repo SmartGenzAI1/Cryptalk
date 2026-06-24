@@ -45,7 +45,12 @@ export function MessageInput() {
   const currentUser = useChatStore((s) => s.currentUser)
   const messages = useChatStore((s) => s.messages[activeChatId] ?? EMPTY_MESSAGES)
   const addMessage = useChatStore((s) => s.addMessage)
-  const [text, setText] = useState('')
+  const [text, setText] = useState(() => {
+    if (typeof window !== 'undefined' && activeChatId) {
+      return localStorage.getItem(`draft-${activeChatId}`) || ''
+    }
+    return ''
+  })
   const [replyTo, setReplyTo] = useState<MessageWithSender | null>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [stickerOpen, setStickerOpen] = useState(false)
@@ -83,10 +88,12 @@ export function MessageInput() {
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     setText(e.target.value)
+    if (activeChatId && typeof window !== 'undefined') {
+      localStorage.setItem(`draft-${activeChatId}`, e.target.value)
+    }
     if (typingTimer.current) clearTimeout(typingTimer.current)
     emitTyping(true)
     typingTimer.current = setTimeout(() => emitTyping(false), 2000)
-    // auto-resize
     const ta = e.target
     ta.style.height = 'auto'
     ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'
@@ -136,6 +143,9 @@ export function MessageInput() {
         getSocket()?.emit('send-message', { chatId: activeChatId, message: data.message })
       }
       setText('')
+      if (activeChatId && typeof window !== 'undefined') {
+        localStorage.removeItem(`draft-${activeChatId}`)
+      }
       setReplyTo(null)
       if (textareaRef.current) textareaRef.current.style.height = 'auto'
       emitTyping(false)

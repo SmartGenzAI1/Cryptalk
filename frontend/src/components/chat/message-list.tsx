@@ -21,6 +21,7 @@ export function MessageList() {
 
   const chatListItem = chats.find((c) => c.id === activeChatId)
   const removeMessage = useChatStore((s) => s.removeMessage)
+  const lastReadAt = chatListItem?.lastReadAt ? new Date(chatListItem.lastReadAt).getTime() : 0
 
   // Message expiration — remove expired messages from the UI every second
   useEffect(() => {
@@ -121,15 +122,25 @@ export function MessageList() {
                     const next = group.items[i + 1]
                     const isFirstInGroup = !prev || prev.senderId !== m.senderId
                     const isLastInGroup = !next || next.senderId !== m.senderId
+                    const msgTime = new Date(m.createdAt).getTime()
+                    const showUnreadDivider = lastReadAt > 0 && msgTime > lastReadAt && (!prev || new Date(prev.createdAt).getTime() <= lastReadAt)
                     return (
+                      <div key={m.id}>
+                        {showUnreadDivider && (
+                          <div className="flex items-center gap-2 my-3">
+                            <div className="flex-1 h-px bg-primary/30" />
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-primary px-2">New Messages</span>
+                            <div className="flex-1 h-px bg-primary/30" />
+                          </div>
+                        )}
                       <MessageItem
-                        key={m.id}
                         message={m}
                         isOwn={m.senderId === currentUser?.id}
                         isFirstInGroup={isFirstInGroup}
                         isLastInGroup={isLastInGroup}
                         showAvatar={activeChatId !== undefined}
                       />
+                      </div>
                     )
                   })}
                 </div>

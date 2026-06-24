@@ -8,7 +8,9 @@ import {
   Info,
   MoreVertical,
   ArrowLeft,
-
+  Link2,
+  LogOut,
+  Trash2,
   X,
 } from 'lucide-react'
 import { useChatStore, EMPTY_MESSAGES, EMPTY_TYPING } from '@/stores/chat-store'
@@ -26,7 +28,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import { formatLastSeen } from '@/lib/format'
-import { searchInChat } from '@/lib/actions'
+import { searchInChat, leaveChat, deleteChat, generateInviteLink } from '@/lib/actions'
 import { motion, AnimatePresence } from 'framer-motion'
 import Image from 'next/image'
 
@@ -66,6 +68,44 @@ export function ChatWindow() {
       : typingUsers.length === 1
       ? `${typingUsers[0].username} is typing…`
       : `${typingUsers.length} people typing…`
+
+  async function handleLeaveChat() {
+    if (!activeChatId) return
+    if (!confirm(`Leave ${activeChat.title}?`)) return
+    try {
+      await leaveChat(activeChatId)
+      toast.success('Left chat')
+      setActiveChatId(null)
+      setActiveChat(null)
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to leave')
+    }
+  }
+
+  async function handleDeleteChat() {
+    if (!activeChatId) return
+    if (!confirm(`Delete "${activeChat.title}" permanently? This cannot be undone.`)) return
+    try {
+      await deleteChat(activeChatId)
+      toast.success('Chat deleted')
+      setActiveChatId(null)
+      setActiveChat(null)
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to delete')
+    }
+  }
+
+  async function handleInviteLink() {
+    if (!activeChatId) return
+    try {
+      const data = await generateInviteLink(activeChatId)
+      const link = `${window.location.origin}/join/${data.token}`
+      navigator.clipboard.writeText(link)
+      toast.success('Invite link copied!', { description: link })
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to generate link')
+    }
+  }
 
   async function runSearch(q: string) {
     setSearchQuery(q)
@@ -201,15 +241,33 @@ export function ChatWindow() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-                            
               <DropdownMenuItem onClick={() => setSearchOpen(true)}>
                 <Search className="h-4 w-4 mr-2" />
                 Search messages
               </DropdownMenuItem>
+              {activeChat.type !== 'saved' && activeChat.type !== 'direct' && (
+                <DropdownMenuItem onClick={handleInviteLink}>
+                  <Link2 className="h-4 w-4 mr-2" />
+                  Invite link
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => setInfoPanelOpen(!infoPanelOpen)}>
                 <Info className="h-4 w-4 mr-2" />
                 View info
               </DropdownMenuItem>
+              {activeChat.type !== 'saved' && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLeaveChat} className="text-amber-500">
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Leave {activeChat.type === 'direct' ? 'chat' : activeChat.type}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleDeleteChat} className="text-destructive">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete chat
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
