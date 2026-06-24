@@ -1,12 +1,29 @@
 'use client'
 
 import { useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { useChatStore } from '@/stores/chat-store'
-import { AuthScreen } from '@/components/chat/auth-screen'
-import { ChatApp } from '@/components/chat/chat-app'
 import { Loader2 } from 'lucide-react'
 import { apiGet } from '@/lib/api'
 import Image from 'next/image'
+
+const AuthScreen = dynamic(() => import('@/components/chat/auth-screen').then(m => ({ default: m.AuthScreen })), {
+  loading: () => <LoadingScreen />,
+})
+const ChatApp = dynamic(() => import('@/components/chat/chat-app').then(m => ({ default: m.ChatApp })), {
+  loading: () => <LoadingScreen />,
+})
+
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-4">
+        <Image src="/logo.png" alt="Cryptalk" width={64} height={64} className="object-contain" priority />
+        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+      </div>
+    </div>
+  )
+}
 
 export default function Home() {
   const currentUser = useChatStore((s) => s.currentUser)
@@ -26,27 +43,10 @@ export default function Home() {
         if (!cancelled) setAuthLoading(false)
       }
     })()
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [setCurrentUser, setAuthLoading])
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <div className="relative">
-            <Image src="/logo.png" alt="Cryptalk" width={64} height={64} className="object-contain" priority />
-            <div className="absolute -bottom-1 -right-1 h-6 w-6 rounded-full bg-background flex items-center justify-center border">
-              <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            </div>
-          </div>
-          <p className="text-sm text-muted-foreground font-medium">Loading Cryptalk…</p>
-        </div>
-      </div>
-    )
-  }
-
+  if (authLoading) return <LoadingScreen />
   if (!currentUser) return <AuthScreen />
   return <ChatApp />
 }

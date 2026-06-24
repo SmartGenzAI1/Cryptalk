@@ -2,11 +2,16 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  /* config options here */
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   reactStrictMode: false,
+  poweredByHeader: false,
+  compress: true,
+  productionBrowserSourceMaps: false,
+  experimental: {
+    optimizePackageImports: ["lucide-react", "framer-motion"],
+  },
+  images: {
+    unoptimized: true,
+  },
 };
 
 export default nextConfig;

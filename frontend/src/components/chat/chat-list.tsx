@@ -27,8 +27,10 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import { NewChatDialog } from './new-chat-dialog'
+import { lazy, Suspense } from 'react'
 import { formatChatListTime } from '@/lib/format'
+
+const NewChatDialog = lazy(() => import('./new-chat-dialog').then(m => ({ default: m.NewChatDialog })))
 import { cn } from '@/lib/utils'
 import { updateChatSettings } from '@/lib/actions'
 import { toast } from 'sonner'
@@ -341,7 +343,11 @@ export function ChatList() {
         </div>
       </ScrollArea>
 
-      <NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} />
+      {newChatOpen && (
+        <Suspense fallback={null}>
+          <NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} />
+        </Suspense>
+      )}
     </div>
   )
 }

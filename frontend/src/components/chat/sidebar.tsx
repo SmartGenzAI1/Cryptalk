@@ -16,7 +16,9 @@ import { useChatStore } from '@/stores/chat-store'
 import { ChatAvatar } from './chat-avatar'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
-import { ProfileDialog } from './profile-dialog'
+import { lazy, Suspense } from 'react'
+
+const ProfileDialog = lazy(() => import('./profile-dialog').then(m => ({ default: m.ProfileDialog })))
 import { cn } from '@/lib/utils'
 import { apiPost } from '@/lib/api'
 import Image from 'next/image'
@@ -153,7 +155,11 @@ export function Sidebar() {
         </div>
       </aside>
 
-      <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
+      {profileOpen && (
+        <Suspense fallback={null}>
+          <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
+        </Suspense>
+      )}
     </TooltipProvider>
   )
 }

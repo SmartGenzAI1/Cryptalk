@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { memo, useState, useRef, useEffect } from 'react'
 import {
   Reply,
   Smile,
@@ -37,8 +37,10 @@ import { cn } from '@/lib/utils'
 import { getSocket } from '@/hooks/use-socket'
 import { toggleReaction, toggleStar, forwardMessage } from '@/lib/actions'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ForwardDialog } from './forward-dialog'
+import { lazy, Suspense } from 'react'
 import { apiGet, apiPatch, apiDelete } from '@/lib/api'
+
+const ForwardDialog = lazy(() => import('./forward-dialog').then(m => ({ default: m.ForwardDialog })))
 
 const QUICK_REACTIONS = ['👍', '❤️', '🔥', '😂', '😮', '🎉', '👏', '🙏']
 
@@ -50,7 +52,7 @@ interface MessageItemProps {
   showAvatar: boolean
 }
 
-export function MessageItem({ message, isOwn, isFirstInGroup, isLastInGroup }: MessageItemProps) {
+function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: MessageItemProps) {
   const currentUser = useChatStore((s) => s.currentUser)
   const activeChat = useChatStore((s) => s.activeChat)
   const updateMessage = useChatStore((s) => s.updateMessage)
@@ -437,14 +439,20 @@ export function MessageItem({ message, isOwn, isFirstInGroup, isLastInGroup }: M
         </ContextMenuContent>
       </ContextMenu>
 
-      <ForwardDialog
-        open={forwardOpen}
-        onOpenChange={setForwardOpen}
-        messageId={message.id}
-      />
+      {forwardOpen && (
+        <Suspense fallback={null}>
+          <ForwardDialog
+            open={forwardOpen}
+            onOpenChange={setForwardOpen}
+            messageId={message.id}
+          />
+        </Suspense>
+      )}
     </>
   )
 }
+
+export const MessageItem = memo(MessageItemImpl)
 
 // Voice message bubble with waveform + play button
 function VoiceBubble({
