@@ -95,3 +95,9 @@ flutter/android/app/release/
 flutter/.flutter-plugins
 flutter/.flutter-plugins-dependencies
 flutter/.packages
+
+# Agent scratch / local helper files
+tool-results/
+agent-ctx/
+start-backend.sh
+start-servers.sh
