@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/api_config.dart';
 import 'core/auth_service.dart';
 import 'core/socket_service.dart';
@@ -12,8 +13,14 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: '.env');
 
-  final backendUrl = dotenv.env['BACKEND_URL'] ?? 'http://10.0.2.2:8001';
-  ApiConfig.baseUrl = backendUrl;
+  ApiConfig.baseUrl = dotenv.env['BACKEND_URL'] ?? 'http://10.0.2.2:8001';
+
+  if (ApiConfig.hasSupabase) {
+    await Supabase.initialize(
+      url: ApiConfig.supabaseUrl!,
+      anonKey: ApiConfig.supabaseAnonKey!,
+    );
+  }
 
   runApp(CryptalkApp());
 }
@@ -35,7 +42,6 @@ class CryptalkApp extends StatelessWidget {
           brightness: Brightness.dark,
           colorSchemeSeed: const Color(0xFF10b981),
           useMaterial3: true,
-          fontFamily: 'Roboto',
         ),
         home: const AppRouter(),
       ),

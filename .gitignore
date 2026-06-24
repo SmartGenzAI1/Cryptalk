@@ -83,3 +83,15 @@ flutter/build/
 flutter/.dart_tool/
 flutter/ios/Pods/
 flutter/android/.gradle/
+
+# Flutter
+flutter/build/
+flutter/.dart_tool/
+flutter/ios/Pods/
+flutter/android/.gradle/
+flutter/android/app/debug/
+flutter/android/app/profile/
+flutter/android/app/release/
+flutter/.flutter-plugins
+flutter/.flutter-plugins-dependencies
+flutter/.packages
