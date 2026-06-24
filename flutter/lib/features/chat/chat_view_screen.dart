@@ -7,6 +7,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
+import 'package:flutter/services.dart';
 import '../../core/auth_service.dart';
 import '../../core/chat_service.dart';
 import '../../core/socket_service.dart';
@@ -506,13 +507,16 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   }
 
   @override
+  @override
   void dispose() {
     _inputController.dispose();
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _typingTimer?.cancel();
     _recordTimer?.cancel();
     _audioPlayer.dispose();
     _record.dispose();
+    context.read<SocketService>().clearCallbacks();
     super.dispose();
   }
 
@@ -792,14 +796,3 @@ class _MessageBubble extends StatelessWidget {
   }
 }
 
-class Clipboard {
-  static void setData(ClipboardData data) {
-    // Flutter's Clipboard.setData is in services.dart
-    // Using a simple approach for now
-  }
-}
-
-class ClipboardData {
-  final String text;
-  ClipboardData({required this.text});
-}

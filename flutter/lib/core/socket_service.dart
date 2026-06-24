@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'api_config.dart';
@@ -9,6 +10,10 @@ class SocketService {
 
   IO.Socket? _socket;
   bool _connected = false;
+  final List<void Function(Map<String, dynamic>)> _messageCallbacks = [];
+  final List<void Function(Map<String, dynamic>)> _userStatusCallbacks = [];
+  final List<void Function(Map<String, dynamic>)> _typingCallbacks = [];
+  final List<void Function(Map<String, dynamic>)> _messageUpdateCallbacks = [];
 
   bool get isConnected => _connected;
   IO.Socket? get socket => _socket;
@@ -32,6 +37,30 @@ class SocketService {
     _socket!.onDisconnect((_) {
       _connected = false;
     });
+
+    _socket!.on('message', (data) {
+      for (final cb in _messageCallbacks) {
+        cb(data as Map<String, dynamic>);
+      }
+    });
+
+    _socket!.on('user-status', (data) {
+      for (final cb in _userStatusCallbacks) {
+        cb(data as Map<String, dynamic>);
+      }
+    });
+
+    _socket!.on('typing', (data) {
+      for (final cb in _typingCallbacks) {
+        cb(data as Map<String, dynamic>);
+      }
+    });
+
+    _socket!.on('message-update', (data) {
+      for (final cb in _messageUpdateCallbacks) {
+        cb(data as Map<String, dynamic>);
+      }
+    });
   }
 
   void joinChat(String chatId) {
@@ -52,22 +81,30 @@ class SocketService {
   }
 
   void onMessage(void Function(Map<String, dynamic>) callback) {
-    _socket?.on('message', (data) => callback(data as Map<String, dynamic>));
+    _messageCallbacks.add(callback);
   }
 
   void onUserStatus(void Function(Map<String, dynamic>) callback) {
-    _socket?.on('user-status', (data) => callback(data as Map<String, dynamic>));
+    _userStatusCallbacks.add(callback);
   }
 
   void onTyping(void Function(Map<String, dynamic>) callback) {
-    _socket?.on('typing', (data) => callback(data as Map<String, dynamic>));
+    _typingCallbacks.add(callback);
   }
 
   void onMessageUpdate(void Function(Map<String, dynamic>) callback) {
-    _socket?.on('message-update', (data) => callback(data as Map<String, dynamic>));
+    _messageUpdateCallbacks.add(callback);
+  }
+
+  void clearCallbacks() {
+    _messageCallbacks.clear();
+    _userStatusCallbacks.clear();
+    _typingCallbacks.clear();
+    _messageUpdateCallbacks.clear();
   }
 
   void disconnect() {
+    clearCallbacks();
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;

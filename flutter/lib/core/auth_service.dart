@@ -11,6 +11,7 @@ class AuthService {
 
   Future<AppUser?> getMe() async {
     try {
+      await _api.init();
       final data = await _api.get('/api/auth/me');
       if (data['user'] != null) {
         _currentUser = AppUser.fromJson(data['user']);
