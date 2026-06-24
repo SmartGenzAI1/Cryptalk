@@ -69,10 +69,7 @@ export function MessageInput() {
 
   // fetch smart replies when chat changes (debounced via effect on messages length)
   useEffect(() => {
-    if (!activeChatId || messages.length === 0) {
-      setSmartReplies([])
-      return
-    }
+    if (!activeChatId || messages.length === 0) return
     let cancelled = false
     const t = setTimeout(async () => {
       setLoadingReplies(true)

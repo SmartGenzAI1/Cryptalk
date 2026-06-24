@@ -26,11 +26,22 @@ const ICON_CHOICES = AVATAR_ICONS.slice(0, 24) // first 24 for the picker
 const COLOR_CHOICES = AVATAR_COLOR_KEYS
 
 export function NewChatDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (b: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        {open && <NewChatForm onDone={() => onOpenChange(false)} />}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function NewChatForm({ onDone }: { onDone: () => void }) {
   const currentUser = useChatStore((s) => s.currentUser)
   const upsertChat = useChatStore((s) => s.upsertChat)
   const setActiveChatId = useChatStore((s) => s.setActiveChatId)
   const setActiveChat = useChatStore((s) => s.setActiveChat)
   const setMessages = useChatStore((s) => s.setMessages)
+  // State initializes fresh on each mount — no reset effect needed
   const [query, setQuery] = useState('')
   const [users, setUsers] = useState<SafeUser[]>([])
   const [selected, setSelected] = useState<string[]>([])
@@ -39,16 +50,6 @@ export function NewChatDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   const [groupEmoji, setGroupEmoji] = useState('groups')
   const [groupColor, setGroupColor] = useState('violet')
   const [isChannel, setIsChannel] = useState(false)
-
-  useEffect(() => {
-    if (!open) {
-      setQuery('')
-      setSelected([])
-      setGroupName('')
-      setGroupDesc('')
-      setIsChannel(false)
-    }
-  }, [open])
 
   useEffect(() => {
     let cancelled = false
@@ -132,17 +133,16 @@ export function NewChatDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       memberIds: chat.members.map((m: any) => m.user.id),
       chat: listItem,
     })
-    onOpenChange(false)
+    onDone()
     toast.success(isChannel ? 'Channel created!' : selected.length > 1 || groupName ? 'Group created!' : 'Chat started!')
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>New chat</DialogTitle>
-        </DialogHeader>
-        <Tabs defaultValue="direct" className="w-full">
+    <>
+      <DialogHeader>
+        <DialogTitle>New chat</DialogTitle>
+      </DialogHeader>
+      <Tabs defaultValue="direct" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="direct">
               <MessageCircle className="h-4 w-4 mr-1.5" /> Direct
@@ -283,7 +283,6 @@ export function NewChatDialog({ open, onOpenChange }: { open: boolean; onOpenCha
             </Button>
           </TabsContent>
         </Tabs>
-      </DialogContent>
-    </Dialog>
+    </>
   )
 }

@@ -13,10 +13,12 @@ Run:  uvicorn app.main:asgi_app --host 0.0.0.0 --port 8001
 """
 
 import logging
+from contextlib import asynccontextmanager
 
 import socketio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import create_engine
 
 from app.api.v1 import api_router
 from app.core.config import settings
@@ -26,6 +28,7 @@ from app.core.exceptions import (
     unhandled_exception_handler,
 )
 from app.core.rate_limit import RateLimitMiddleware
+from app.models import Base
 from app.realtime.connection_manager import manager
 from app.realtime.handlers import register_handlers
 
@@ -34,6 +37,21 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+logger = logging.getLogger("cryptalk")
+
+
+# ─── Lifespan — startup & shutdown ─────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Create database tables on startup (SQLite auto-creates the file)."""
+    sync_url = f"sqlite:///{settings.DB_PATH}"
+    sync_engine = create_engine(sync_url, echo=False)
+    Base.metadata.create_all(sync_engine)
+    sync_engine.dispose()
+    logger.info("Database tables ensured")
+    yield
+    logger.info("Shutting down...")
+
 
 # ─── FastAPI app ───────────────────────────────────────────────────────
 app = FastAPI(
@@ -41,6 +59,7 @@ app = FastAPI(
     version=settings.APP_VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # ─── Middleware (order matters: outermost first) ───────────────────────
@@ -69,19 +88,6 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 
 # Register API v1 routes
 app.include_router(api_router)
-
-
-# ─── Database auto-creation ────────────────────────────────────────────
-@app.on_event("startup")
-async def create_tables():
-    """Create all tables on startup if they don't exist (SQLite only)."""
-    from sqlalchemy import create_engine
-    from app.models import Base
-    sync_url = f"sqlite:///{settings.DB_PATH}"
-    sync_engine = create_engine(sync_url, echo=False)
-    Base.metadata.create_all(sync_engine)
-    sync_engine.dispose()
-    logging.info("Database tables ensured")
 
 
 # ─── Health checks ─────────────────────────────────────────────────────
