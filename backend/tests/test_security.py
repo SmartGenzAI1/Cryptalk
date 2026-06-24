@@ -87,3 +87,13 @@ class TestInputValidation:
     def test_sanitize_text_handles_empty(self):
         assert sanitize_text("") == ""
         assert sanitize_text(None) == ""
+
+    def test_sanitize_text_escapes_html(self):
+        result = sanitize_text("<script>alert(1)</script>")
+        assert "<script>" not in result
+        assert "&lt;script&gt;" in result
+
+    def test_sanitize_text_escapes_quotes(self):
+        result = sanitize_text('"onclick="alert(1)')
+        assert "<" not in result
+        assert ">" not in result

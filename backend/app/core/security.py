@@ -175,14 +175,11 @@ def validate_password(password: str) -> str:
 
 
 def sanitize_text(text: str, max_length: int = _MAX_CONTENT_LENGTH) -> str:
-    """Strip control chars, escape HTML entities, and enforce length limits."""
     if not text:
         return ""
-    # Remove null bytes and control chars (except newlines/tabs)
     cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
-    # Collapse excessive whitespace (but preserve newlines)
+    cleaned = _html_escape(cleaned, quote=False)
     cleaned = re.sub(r"[^\S\n]+", " ", cleaned).strip()
-    # Enforce length
     if len(cleaned) > max_length:
         cleaned = cleaned[:max_length]
     return cleaned
