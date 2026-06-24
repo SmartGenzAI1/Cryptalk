@@ -6,12 +6,22 @@ import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/services.dart';
 import '../../core/auth_service.dart';
 import '../../core/chat_service.dart';
+import '../../core/api_client.dart';
+import '../../core/crypto_service.dart';
 import '../../core/socket_service.dart';
 import '../../core/models.dart';
+
+String _basename(String path) {
+  final i = path.lastIndexOf('/');
+  final j = path.lastIndexOf('\\');
+  final idx = i > j ? i : j;
+  return idx >= 0 ? path.substring(idx + 1) : path;
+}
 
 class ChatViewScreen extends StatefulWidget {
   final Chat chat;
@@ -223,6 +233,8 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       'content': msg.content,
       'type': msg.type,
       'createdAt': msg.createdAt,
+      if (msg.duration != null) 'duration': msg.duration,
+      if (msg.attachmentPath != null) 'attachmentPath': msg.attachmentPath,
       'sender': {
         'id': msg.sender.id,
         'name': msg.sender.name,
@@ -310,20 +322,31 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     try {
       final file = File(path);
       final bytes = await file.readAsBytes();
-      final base64Str = base64Encode(bytes);
+
+      if (bytes.length > kMaxAttachmentBytes) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Voice file exceeds 25MB limit')));
+        }
+        return;
+      }
+
       final chatService = context.read<ChatService>();
       final socket = context.read<SocketService>();
-      final data = await chatService.api.post('/api/${widget.chat.id}/messages', body: {
-        'content': base64Str,
-        'type': 'voice',
-        'duration': _recordSeconds,
-      });
-      if (data['message'] != null) {
-        final msg = Message.fromJson(data['message']);
-        if (mounted)
-        setState(() => _messages.add(msg));
-        socket.sendMessage(widget.chat.id, _messageToJson(msg));
-        _scrollToBottom();
+      final msg = await chatService.sendFileMessage(
+        widget.chat.id,
+        bytes,
+        'voice.m4a',
+        type: 'voice',
+        contentType: 'audio/m4a',
+        duration: _recordSeconds,
+      );
+      if (mounted)
+      setState(() => _messages.add(msg));
+      socket.sendMessage(widget.chat.id, _messageToJson(msg));
+      _scrollToBottom();
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       }
     } catch (e) { debugPrint('Error: $e'); }
   }
@@ -370,22 +393,31 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     if (picker == null) return;
     final file = File(picker.path);
     final bytes = await file.readAsBytes();
-    final base64Str = base64Encode(bytes);
-    final dataUrl = 'data:image/jpeg;base64,$base64Str';
+
+    if (bytes.length > kMaxAttachmentBytes) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('File exceeds 25MB limit')));
+      }
+      return;
+    }
 
     try {
       final chatService = context.read<ChatService>();
       final socket = context.read<SocketService>();
-      final data = await chatService.api.post('/api/${widget.chat.id}/messages', body: {
-        'content': dataUrl,
-        'type': 'image',
-      });
-      if (data['message'] != null) {
-        final msg = Message.fromJson(data['message']);
-        if (mounted)
-        setState(() => _messages.add(msg));
-        socket.sendMessage(widget.chat.id, _messageToJson(msg));
-        _scrollToBottom();
+      final msg = await chatService.sendFileMessage(
+        widget.chat.id,
+        bytes,
+        _basename(picker.path),
+        type: 'image',
+        contentType: 'image/jpeg',
+      );
+      if (mounted)
+      setState(() => _messages.add(msg));
+      socket.sendMessage(widget.chat.id, _messageToJson(msg));
+      _scrollToBottom();
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       }
     } catch (e) { debugPrint('Error: $e'); }
   }
@@ -761,14 +793,7 @@ class _MessageBubble extends StatelessWidget {
             children: [
               if (showSender)
                 Text(message.sender.name ?? 'Unknown', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue[300])),
-              if (message.type == 'voice')
-                Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.play_arrow), Text('${message.duration ?? 0}s')])
-              else if (message.type == 'sticker')
-                Text(message.content, style: const TextStyle(fontSize: 48))
-              else if (message.type == 'image' && message.content.startsWith('data:image'))
-                ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(message.content, width: 200, fit: BoxFit.cover))
-              else
-                Text(message.content, style: TextStyle(color: isOwn ? Colors.white : null, fontSize: 15)),
+              _buildContent(),
               if (reactions.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
@@ -797,6 +822,20 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 
+  Widget _buildContent() {
+    final t = message.type;
+    // E2EE attachments (image / file / voice): content is either a decrypted
+    // URL, a decrypted data URL (dev fallback), or the "[delivered]" sentinel
+    // — handled by `_AttachmentView` with fetch+decrypt+cache.
+    if (t == 'image' || t == 'file' || t == 'voice') {
+      return _AttachmentView(message: message, isOwn: isOwn);
+    }
+    if (t == 'sticker') {
+      return Text(message.content, style: const TextStyle(fontSize: 48));
+    }
+    return Text(message.content, style: TextStyle(color: isOwn ? Colors.white : null, fontSize: 15));
+  }
+
   String _formatTime(String iso) {
     try {
       final dt = DateTime.parse(iso);
@@ -804,6 +843,252 @@ class _MessageBubble extends StatelessWidget {
     } catch (_) {
       return '';
     }
+  }
+}
+
+/// Renders an E2EE file/image/voice attachment. Resolves the message
+/// `content` (a decrypted URL, data URL, or "[delivered]" sentinel) into a
+/// renderable data URL by:
+///   1. Returning the cached value if we've already resolved this message id.
+///   2. Returning immediately if `content` is already a `data:` URL (dev
+///      fallback path — content embedded directly).
+///   3. Showing the muted "no longer available" placeholder if `content` is
+///      `"[delivered]"` (server wiped the blob after delivery).
+///   4. Otherwise fetching the URL → UTF-8 decode → `CryptoService.decrypt`
+///      → original data URL, then caching it for next time.
+class _AttachmentView extends StatefulWidget {
+  final Message message;
+  final bool isOwn;
+
+  const _AttachmentView({required this.message, required this.isOwn});
+
+  @override
+  State<_AttachmentView> createState() => _AttachmentViewState();
+}
+
+class _AttachmentViewState extends State<_AttachmentView> {
+  /// Per-message-id cache: resolved data URL string, or one of the
+  /// sentinels `"[delivered]"` / `"[error]"`. Survives widget rebuilds so
+  /// scrolling doesn't refetch.
+  static final Map<String, String> _cache = {};
+
+  static const _kDelivered = '[delivered]';
+  static const _kError = '[error]';
+
+  String? _resolved;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  Future<void> _resolve() async {
+    final msg = widget.message;
+    final content = msg.content;
+
+    if (_cache.containsKey(msg.id)) {
+      if (mounted) {
+        setState(() {
+          _resolved = _cache[msg.id];
+          _loading = false;
+        });
+      }
+      return;
+    }
+
+    // Server wipes content to "[delivered]" once everyone has received it.
+    if (content == _kDelivered || content.isEmpty) {
+      _cache[msg.id] = _kDelivered;
+      if (mounted) {
+        setState(() {
+          _resolved = _kDelivered;
+          _loading = false;
+        });
+      }
+      return;
+    }
+
+    // Dev fallback: content is already the decrypted data URL.
+    if (content.startsWith('data:')) {
+      _cache[msg.id] = content;
+      if (mounted) {
+        setState(() {
+          _resolved = content;
+          _loading = false;
+        });
+      }
+      return;
+    }
+
+    // Production: content is a (decrypted) Supabase URL → fetch the
+    // ciphertext bytes → UTF-8 decode → decrypt → original data URL.
+    if (content.startsWith('http://') || content.startsWith('https://')) {
+      try {
+        final res = await http.get(Uri.parse(content)).timeout(const Duration(seconds: 30));
+        if (res.statusCode != 200) {
+          _cache[msg.id] = _kError;
+          if (mounted) {
+            setState(() {
+              _resolved = _kError;
+              _loading = false;
+            });
+          }
+          return;
+        }
+        final cipherText = utf8.decode(res.bodyBytes);
+        final dataUrl = await CryptoService().decrypt(cipherText);
+        _cache[msg.id] = dataUrl;
+        if (mounted) {
+          setState(() {
+            _resolved = dataUrl;
+            _loading = false;
+          });
+        }
+      } catch (_) {
+        _cache[msg.id] = _kError;
+        if (mounted) {
+          setState(() {
+            _resolved = _kError;
+            _loading = false;
+          });
+        }
+      }
+      return;
+    }
+
+    // Unknown format — fall back to displaying the raw content.
+    _cache[msg.id] = content;
+    if (mounted) {
+      setState(() {
+        _resolved = content;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final msg = widget.message;
+
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
+    final data = _resolved ?? '';
+
+    if (data == _kDelivered || data == _kError) {
+      return Container(
+        padding: const EdgeInsets.all(10),
+        constraints: const BoxConstraints(maxWidth: 220),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.lock_clock, size: 16, color: Colors.grey[400]),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                data == _kError
+                    ? 'Failed to load attachment'
+                    : 'File no longer available (delivered & wiped)',
+                style: TextStyle(fontSize: 12, color: Colors.grey[400], fontStyle: FontStyle.italic),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (msg.type == 'image') {
+      // `_resolved` is either a data: URL (the common case after decryption)
+      // or a plain http(s) URL. Decode data URLs to bytes for Image.memory
+      // since Image.network doesn't speak the `data:` scheme.
+      if (data.startsWith('data:')) {
+        try {
+          final commaIdx = data.indexOf(',');
+          final b64 = commaIdx >= 0 ? data.substring(commaIdx + 1) : data;
+          final bytes = base64Decode(b64);
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.memory(
+              bytes,
+              width: 220,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                width: 220,
+                height: 120,
+                color: Colors.black12,
+                child: const Icon(Icons.broken_image, size: 32),
+              ),
+            ),
+          );
+        } catch (_) {
+          return Container(
+            width: 220,
+            height: 120,
+            color: Colors.black12,
+            child: const Icon(Icons.broken_image, size: 32),
+          );
+        }
+      }
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          data,
+          width: 220,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            width: 220,
+            height: 120,
+            color: Colors.black12,
+            child: const Icon(Icons.broken_image, size: 32),
+          ),
+        ),
+      );
+    }
+
+    if (msg.type == 'voice') {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.play_arrow, color: widget.isOwn ? Colors.white : null),
+          const SizedBox(width: 4),
+          Text('${msg.duration ?? 0}s',
+              style: TextStyle(color: widget.isOwn ? Colors.white : null)),
+        ],
+      );
+    }
+
+    // Generic file attachment.
+    final name = msg.attachmentPath?.split('/').last ?? 'file';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.insert_drive_file,
+            size: 18, color: widget.isOwn ? Colors.white70 : Colors.grey[300]),
+        const SizedBox(width: 6),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 180),
+          child: Text(
+            name,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 13, color: widget.isOwn ? Colors.white : null),
+          ),
+        ),
+      ],
+    );
   }
 }
 

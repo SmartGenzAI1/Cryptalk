@@ -90,6 +90,11 @@ class Message(Base):
     status = Column("status", String, default="sent")
     read_by = Column("readBy", Text, nullable=True)
     delivered_to = Column("deliveredTo", Text, nullable=True)
+    # Plaintext path to an encrypted blob in Supabase Storage (e.g.
+    # "files/{userId}/{randId}/{file}").  The server needs this to delete the
+    # object once the message is delivered or deleted-for-everyone.  The file
+    # itself is always E2EE ciphertext — the server cannot read it.
+    attachment_path = Column("attachmentPath", String, nullable=True, index=True)
 
     chat = relationship("Chat", back_populates="messages")
     sender = relationship("User", back_populates="messages", foreign_keys=[sender_id])

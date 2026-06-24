@@ -168,6 +168,10 @@ class Message {
   final bool starred;
   final AppUser sender;
   final List<Reaction> reactions;
+  /// Supabase Storage path returned by `POST /api/uploads` (or null when
+  /// the upload fell back to base64-content mode, or after the server has
+  /// purged the attachment on delivery).
+  final String? attachmentPath;
 
   Message({
     required this.id,
@@ -185,6 +189,7 @@ class Message {
     this.starred = false,
     required this.sender,
     this.reactions = const [],
+    this.attachmentPath,
   });
 
   factory Message.fromJson(Map<String, dynamic> json) {
@@ -204,6 +209,7 @@ class Message {
       starred: json['starred'] ?? false,
       sender: AppUser.fromJson(json['sender'] ?? {}),
       reactions: (json['reactions'] as List?)?.map((r) => Reaction.fromJson(r)).toList() ?? [],
+      attachmentPath: json['attachmentPath'] ?? json['attachment_path'],
     );
   }
 }

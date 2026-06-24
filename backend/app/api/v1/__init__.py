@@ -7,6 +7,7 @@ from app.api.v1.e2ee import router as e2ee_router
 from app.api.v1.messages import chat_router as messages_chat_router
 from app.api.v1.messages import misc_router as messages_misc_router
 from app.api.v1.social import router as social_router
+from app.api.v1.uploads import router as uploads_router
 from app.api.v1.users import router as users_router
 
 api_router = APIRouter(prefix="/api")
@@ -18,3 +19,4 @@ api_router.include_router(chat_mgmt_router)
 api_router.include_router(e2ee_router)
 api_router.include_router(messages_chat_router)
 api_router.include_router(messages_misc_router)
+api_router.include_router(uploads_router)

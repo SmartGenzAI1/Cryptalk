@@ -23,10 +23,13 @@ import {
 } from '@/components/ui/popover'
 import { toast } from 'sonner'
 import { getSocket } from '@/hooks/use-socket'
-import { apiPost } from '@/lib/api'
+import { apiPost, apiUploadFile } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { MessageWithSender } from '@/lib/types'
 import { AnimatedStickerPicker } from './animated-sticker'
+
+// 25 MB — must match backend MAX_FILE_SIZE
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 const EMOJIS = [
   '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃',
@@ -216,11 +219,20 @@ export function MessageInput() {
       toast.error('Recording too short')
       return
     }
+    if (!activeChatId) return
 
     await new Promise(resolve => setTimeout(resolve, 200))
 
+    setFileUploading(true)
     try {
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+
+      // Client-side size guard (25MB backend limit)
+      if (audioBlob.size > MAX_ATTACHMENT_BYTES) {
+        toast.error('Voice message too large (max 25MB)')
+        return
+      }
+
       const reader = new FileReader()
       const audioBase64 = await new Promise<string>((resolve, reject) => {
         reader.onloadend = () => resolve(reader.result as string)
@@ -228,27 +240,72 @@ export function MessageInput() {
         reader.readAsDataURL(audioBlob)
       })
 
-      let contentToSend = audioBase64
-      if (activeChat && activeChat.type !== 'saved') {
-        try {
-          const { encryptMessageForChat } = await import('@/lib/e2ee')
-          const recipient = activeChat.members.find((m) => m.user.id !== currentUser?.id)
-          contentToSend = await encryptMessageForChat(
-            audioBase64,
-            activeChatId,
-            activeChat.type,
-            recipient?.user.id
-          )
-        } catch {
-          // keep plaintext if encryption fails
-        }
+      // 1. Encrypt the data URL → UTF-8 ciphertext bytes
+      let encryptedBytes: Uint8Array
+      let ciphertextString: string
+      try {
+        const { encryptFileForUpload } = await import('@/lib/attachments')
+        const recipient = activeChat?.members.find((m) => m.user.id !== currentUser?.id)
+        encryptedBytes = await encryptFileForUpload(
+          audioBase64,
+          activeChatId,
+          activeChat?.type || 'direct',
+          recipient?.user.id,
+        )
+        ciphertextString = new TextDecoder().decode(encryptedBytes)
+      } catch (e) {
+        // E2EE failed — fall back to plaintext data URL (legacy behaviour)
+        console.warn('E2EE encryption failed, sending plaintext:', e)
+        encryptedBytes = new TextEncoder().encode(audioBase64)
+        ciphertextString = audioBase64
       }
 
+      // 2. Upload ciphertext bytes to /api/uploads
+      let attachmentPath: string | null = null
+      let encryptedUrl: string | null = null
+      let useFallback = false
+      try {
+        const upload = await apiUploadFile(
+          '/api/uploads',
+          new Blob([encryptedBytes as BlobPart], { type: 'application/octet-stream' }),
+          { contentType: 'application/octet-stream', fileName: `voice-${Date.now()}.webm` },
+        )
+        if (upload.fallback) {
+          // Dev mode — no Supabase. Embed ciphertext string in content (legacy).
+          useFallback = true
+        } else if (upload.url && upload.path) {
+          try {
+            const { encryptMessageForChat } = await import('@/lib/e2ee')
+            const recipient = activeChat?.members.find((m) => m.user.id !== currentUser?.id)
+            encryptedUrl = await encryptMessageForChat(
+              upload.url,
+              activeChatId,
+              activeChat?.type || 'direct',
+              recipient?.user.id,
+            )
+            attachmentPath = upload.path
+          } catch {
+            // URL encryption failed — fall back to embedding ciphertext (no attachmentPath)
+            useFallback = true
+          }
+        } else {
+          throw new Error('Upload succeeded but no URL or fallback flag returned')
+        }
+      } catch (e: any) {
+        // 413 / 507 / network — show server message and abort
+        toast.error(e.message || 'Failed to upload voice message')
+        return
+      }
+
+      const contentToSend = useFallback ? ciphertextString : (encryptedUrl ?? ciphertextString)
+
+      // 3. Send the message
       const data = await apiPost<{ message: any }>(`/api/${activeChatId}/messages`, {
         content: contentToSend,
         type: 'voice',
         duration: seconds,
         replyToId: replyTo?.id || null,
+        attachmentPath: useFallback ? null : attachmentPath,
       })
       if (data.message) {
         if (activeChat && data.message.type === 'voice') {
@@ -262,9 +319,11 @@ export function MessageInput() {
       }
       setReplyTo(null)
       toast.success('Voice message sent 🎙️')
-    } catch (e) {
+    } catch (e: any) {
       console.error(e)
-      toast.error('Failed to send voice message')
+      toast.error(e.message || 'Failed to send voice message')
+    } finally {
+      setFileUploading(false)
     }
   }
 
@@ -273,13 +332,16 @@ export function MessageInput() {
     if (!file) return
     e.target.value = ''
 
-    if (file.size > 40 * 1024 * 1024) {
-      toast.error('File too large (max 40MB)')
+    // Client-side size guard (25MB backend limit)
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      toast.error('File too large (max 25MB)')
       return
     }
+    if (!activeChatId) return
 
     setFileUploading(true)
     try {
+      // 1. Read as base64 data URL
       const reader = new FileReader()
       const fileData = await new Promise<string>((resolve, reject) => {
         reader.onloadend = () => resolve(reader.result as string)
@@ -287,21 +349,73 @@ export function MessageInput() {
         reader.readAsDataURL(file)
       })
 
-      let contentToSend = fileData
-      if (activeChat && activeChat.type !== 'saved') {
-        try {
-          const { encryptMessageForChat } = await import('@/lib/e2ee')
-          const recipient = activeChat.members.find((m) => m.user.id !== currentUser?.id)
-          contentToSend = await encryptMessageForChat(fileData, activeChatId, activeChat.type, recipient?.user.id)
-        } catch {}
-      }
-
       const msgType = file.type.startsWith('image/') ? 'image' : 'file'
 
+      // 2. Encrypt the data URL → UTF-8 ciphertext bytes
+      let encryptedBytes: Uint8Array
+      let ciphertextString: string
+      try {
+        const { encryptFileForUpload } = await import('@/lib/attachments')
+        const recipient = activeChat?.members.find((m) => m.user.id !== currentUser?.id)
+        encryptedBytes = await encryptFileForUpload(
+          fileData,
+          activeChatId,
+          activeChat?.type || 'direct',
+          recipient?.user.id,
+        )
+        ciphertextString = new TextDecoder().decode(encryptedBytes)
+      } catch (err) {
+        // E2EE failed — fall back to plaintext data URL (legacy behaviour)
+        console.warn('E2EE encryption failed, sending plaintext:', err)
+        encryptedBytes = new TextEncoder().encode(fileData)
+        ciphertextString = fileData
+      }
+
+      // 3. Upload ciphertext bytes to /api/uploads
+      let attachmentPath: string | null = null
+      let encryptedUrl: string | null = null
+      let useFallback = false
+      try {
+        const upload = await apiUploadFile(
+          '/api/uploads',
+          new Blob([encryptedBytes as BlobPart], { type: 'application/octet-stream' }),
+          { contentType: 'application/octet-stream', fileName: file.name },
+        )
+        if (upload.fallback) {
+          // Dev mode — no Supabase. Embed ciphertext string in content (legacy).
+          useFallback = true
+        } else if (upload.url && upload.path) {
+          try {
+            const { encryptMessageForChat } = await import('@/lib/e2ee')
+            const recipient = activeChat?.members.find((m) => m.user.id !== currentUser?.id)
+            encryptedUrl = await encryptMessageForChat(
+              upload.url,
+              activeChatId,
+              activeChat?.type || 'direct',
+              recipient?.user.id,
+            )
+            attachmentPath = upload.path
+          } catch {
+            // URL encryption failed — fall back to embedding ciphertext (no attachmentPath)
+            useFallback = true
+          }
+        } else {
+          throw new Error('Upload succeeded but no URL or fallback flag returned')
+        }
+      } catch (err: any) {
+        // 413 / 507 / network — show server message and abort
+        toast.error(err.message || 'Failed to upload file')
+        return
+      }
+
+      const contentToSend = useFallback ? ciphertextString : (encryptedUrl ?? ciphertextString)
+
+      // 4. Send the message
       const data = await apiPost<{ message: any }>(`/api/${activeChatId}/messages`, {
         content: contentToSend,
         type: msgType,
         replyToId: replyTo?.id || null,
+        attachmentPath: useFallback ? null : attachmentPath,
       })
 
       if (data.message) {
@@ -316,8 +430,8 @@ export function MessageInput() {
       }
       setReplyTo(null)
       toast.success(`File sent (${(file.size / 1024 / 1024).toFixed(1)}MB)`)
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to send file')
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to send file')
     } finally {
       setFileUploading(false)
     }

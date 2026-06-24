@@ -137,6 +137,17 @@ class ChatRepository:
         )
         await self.db.flush()
 
+    async def count_members(self, chat_id: str) -> int:
+        """Lightweight ``COUNT(*)`` — avoids loading all member+user rows.
+
+        Used by ``MessageService.mark_delivered`` / ``mark_read`` which only
+        need the member count to decide if a message has been seen by all.
+        """
+        result = await self.db.execute(
+            select(func.count(ChatMember.id)).where(ChatMember.chat_id == chat_id)
+        )
+        return result.scalar() or 0
+
 
 # ─── Message repository ────────────────────────────────────────────────
 
@@ -148,8 +159,16 @@ class MessageRepository:
     async def get_by_id(self, message_id: str) -> Optional[Message]:
         result = await self.db.execute(
             select(Message)
-            .options(selectinload(Message.sender), selectinload(Message.reactions).selectinload(Reaction.user))
+            .options(
+                selectinload(Message.sender),
+                selectinload(Message.reactions).selectinload(Reaction.user),
+                # reply_to + reply_to.sender must be eager-loaded because the
+                # serializer touches them and async SQLAlchemy cannot lazy-load
+                # (would raise MissingGreenlet). Matches list_for_chat's options.
+                selectinload(Message.reply_to).selectinload(Message.sender),
+            )
             .where(Message.id == message_id)
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 
@@ -209,6 +228,111 @@ class MessageRepository:
             )
         )
         return result.scalar() or 0
+
+    # ─── Performance-optimized methods ──────────────────────────────────
+    # These fetch only the columns needed for delivery/read-status updates,
+    # skipping the eager-loaded sender/reactions/reply_to relationships that
+    # the full ``get_by_id`` / ``list_for_chat`` pull in.  A single chat-open
+    # used to issue ~400 queries (200 messages × update+refetch); these bring
+    # it down to ~3 + one final batch fetch.
+
+    async def list_delivery_state(self, chat_id: str, limit: int = 200) -> List[Message]:
+        """Fetch only the columns needed to compute delivery status.
+
+        No eager loading — callers (``mark_delivered``) only read scalar
+        fields: ``id``, ``sender_id``, ``delivered_to``, ``type``,
+        ``content``, ``attachment_path``.
+        """
+        stmt = (
+            select(Message)
+            .where(Message.chat_id == chat_id, Message.deleted_at.is_(None))
+            .order_by(Message.created_at.desc())
+            .limit(limit)
+            .execution_options(populate_existing=True)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def update_fields(self, message_id: str, **kwargs) -> None:
+        """``UPDATE`` without re-fetching — use when you don't need the row back.
+
+        The regular ``update`` does UPDATE + flush + ``get_by_id`` (which
+        eager-loads 4 relationships).  For batch operations where you'll
+        re-fetch changed rows in one final query, this avoids N redundant
+        eager loads.
+        """
+        await self.db.execute(
+            update(Message).where(Message.id == message_id).values(**kwargs)
+        )
+        await self.db.flush()
+
+    async def get_many(self, message_ids: List[str]) -> List[Message]:
+        """Fetch multiple messages by ID in ONE query with full eager loading.
+
+        Used to serialize the final result of a batch update without
+        re-running per-row ``get_by_id``.
+        """
+        if not message_ids:
+            return []
+        stmt = (
+            select(Message)
+            .options(
+                selectinload(Message.sender),
+                selectinload(Message.reactions).selectinload(Reaction.user),
+                selectinload(Message.reply_to).selectinload(Message.sender),
+            )
+            .where(Message.id.in_(message_ids))
+            .execution_options(populate_existing=True)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_many_by_ids(self, message_ids: List[str]) -> List[Message]:
+        """Fetch messages by ID for the starred-list path (excludes deleted)."""
+        if not message_ids:
+            return []
+        stmt = (
+            select(Message)
+            .options(
+                selectinload(Message.sender),
+                selectinload(Message.reactions).selectinload(Reaction.user),
+                selectinload(Message.reply_to).selectinload(Message.sender),
+            )
+            .where(Message.id.in_(message_ids), Message.deleted_at.is_(None))
+            .execution_options(populate_existing=True)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def last_messages_for_chats(self, chat_ids: List[str]) -> dict:
+        """Batch-fetch the latest non-deleted message per chat in ONE query.
+
+        Replaces the old N+1 loop in ``ChatService.list_for_user`` that ran
+        ``list_for_chat(limit=1)`` per chat.  Returns ``{chat_id: Message}``.
+        """
+        if not chat_ids:
+            return {}
+        # Subquery: max createdAt per chat (among non-deleted messages).
+        latest_subq = (
+            select(
+                Message.chat_id.label("cid"),
+                func.max(Message.created_at).label("max_created"),
+            )
+            .where(Message.chat_id.in_(chat_ids), Message.deleted_at.is_(None))
+            .group_by(Message.chat_id)
+            .subquery()
+        )
+        stmt = (
+            select(Message)
+            .join(
+                latest_subq,
+                (Message.chat_id == latest_subq.c.cid)
+                & (Message.created_at == latest_subq.c.max_created),
+            )
+            .options(selectinload(Message.sender))
+        )
+        result = await self.db.execute(stmt)
+        return {m.chat_id: m for m in result.scalars().all()}
 
 
 # ─── Reaction repository ───────────────────────────────────────────────

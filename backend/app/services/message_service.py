@@ -1,10 +1,10 @@
 import json
-
-import json
+import logging
 from typing import List, Optional
 
 from app.core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from app.core.security import iso_to_ms, now_ms, sanitize_text, sanitize_title
+from app.core.storage import StorageService
 from app.models import Message
 from app.repositories import (
     ChatRepository,
@@ -13,6 +13,11 @@ from app.repositories import (
     StarredMessageRepository,
 )
 from app.services.serializers import serialize_message
+
+logger = logging.getLogger("cryptalk.messages")
+
+# Message types that carry a file attachment stored in Supabase Storage.
+ATTACHMENT_TYPES = {"image", "file", "voice"}
 
 class MessageService:
 
@@ -58,14 +63,22 @@ class MessageService:
         reply_to_id: Optional[str] = None,
         duration: Optional[int] = None,
         expires_in: Optional[int] = None,
+        attachment_path: Optional[str] = None,
     ) -> dict:
-        """Create and persist a new message."""
+        """Create and persist a new message.
+
+        ``attachment_path`` is the Supabase Storage path for file/voice/image
+        messages — the server uses it later to delete the ciphertext blob
+        once the message is delivered or deleted-for-everyone.
+        """
         member = await self.chats.get_member(chat_id, user_id)
         if not member:
             raise ForbiddenError("Not a member of this chat")
 
         max_len = 10000
         if msg_type in ("image", "file", "voice"):
+            # Content is now a (short, encrypted) URL rather than a giant
+            # base64 blob — but we still allow base64 for the dev fallback.
             max_len = 40 * 1024 * 1024
 
         if len(content) > max_len:
@@ -84,36 +97,86 @@ class MessageService:
             reply_to_id=reply_to_id or None,
             duration=duration if isinstance(duration, int) else None,
             expires_in=expires_in if isinstance(expires_in, int) and expires_in > 0 else None,
+            attachment_path=attachment_path,
             status="sent",
         )
         await self.chats.touch(chat_id)
         return serialize_message(msg, starred=False)
 
     async def mark_delivered(self, chat_id: str, user_id: str) -> dict:
+        """Mark all undelivered messages in a chat as delivered.
+
+        Called every time a chat is opened, so this is on the hot path.
+        Optimized to avoid the old ~400-query pattern (list 200 with full
+        eager load, then update+refetch per message):
+          1. one lightweight member check
+          2. one lightweight ``COUNT(*)`` for the member total
+          3. one lightweight fetch of just the delivery-relevant columns
+          4. ``update_fields`` (UPDATE only, no refetch) per changed row
+          5. ONE final batch fetch with eager loading for the response
+        """
         member = await self.chats.get_member(chat_id, user_id)
         if not member:
             raise ForbiddenError("Not a member of this chat")
-        chat = await self.chats.get_by_id(chat_id)
-        total_members = len(chat.members) if chat else 1
-        messages = await self.messages.list_for_chat(chat_id, limit=200)
-        updated = []
-        for m in messages:
-            if m.sender_id != user_id:
-                delivered_to = json.loads(m.delivered_to) if m.delivered_to else []
-                if user_id not in delivered_to:
-                    delivered_to.append(user_id)
-                    if len(delivered_to) >= total_members - 1:
-                        m = await self.messages.update(
-                            m.id, status="delivered", delivered_to=json.dumps(delivered_to),
-                            content="[delivered]"
-                        )
-                    else:
-                        m = await self.messages.update(m.id, delivered_to=json.dumps(delivered_to))
-                    updated.append(serialize_message(m))
-        return {"updated": updated}
+        total_members = await self.chats.count_members(chat_id)
+        rows = await self.messages.list_delivery_state(chat_id, limit=200)
+
+        changed_ids: List[str] = []
+        for m in rows:
+            if m.sender_id == user_id:
+                continue
+            delivered_to = json.loads(m.delivered_to) if m.delivered_to else []
+            if user_id in delivered_to:
+                continue
+            delivered_to.append(user_id)
+            all_confirmed = len(delivered_to) >= total_members - 1
+            if all_confirmed:
+                # Ephemeral storage: wipe content AND delete the Supabase
+                # object so the ciphertext is gone too.
+                await self._purge_attachment(m)
+                await self.messages.update_fields(
+                    m.id,
+                    status="delivered",
+                    delivered_to=json.dumps(delivered_to),
+                    content="[delivered]",
+                    attachment_path=None,
+                )
+            else:
+                await self.messages.update_fields(
+                    m.id, delivered_to=json.dumps(delivered_to)
+                )
+            changed_ids.append(m.id)
+
+        if not changed_ids:
+            return {"updated": []}
+        # One final batch fetch with full eager loading for serialization.
+        updated = await self.messages.get_many(changed_ids)
+        return {"updated": [serialize_message(m) for m in updated]}
+
+    async def _purge_attachment(self, message: Message) -> None:
+        """Delete the file blob for a message from Supabase Storage.
+
+        Safe to call when there's no attachment (no-op) or when Supabase
+        isn't configured (also a no-op).  We try the explicit path first,
+        then fall back to extracting a path from a URL in ``content``.
+        """
+        if message.type not in ATTACHMENT_TYPES:
+            return
+        path = message.attachment_path
+        if path:
+            await StorageService.delete_file(path)
+            return
+        # Legacy/base64 path: content may be a Supabase public URL.
+        if message.content and message.content.startswith("http"):
+            await StorageService.delete_file_by_url(message.content)
 
     async def mark_read(self, chat_id: str, message_id: str, user_id: str) -> dict:
-        """Mark a message as read by the current user."""
+        """Mark a message as read by the current user.
+
+        Optimized: uses ``count_members`` (COUNT(*)) instead of loading the
+        whole chat with members+users, and ``update_fields`` (no refetch) so
+        we only run one heavy eager-loaded query at the very end.
+        """
         msg = await self.messages.get_by_id(message_id)
         if not msg or msg.chat_id != chat_id:
             raise NotFoundError("Message not found")
@@ -121,13 +184,17 @@ class MessageService:
         read_by = json.loads(msg.read_by) if msg.read_by else []
         if user_id not in read_by:
             read_by.append(user_id)
-            # If all members have read it, update status to 'read'
-            members = await self.chats.get_by_id(chat_id)
-            total_members = len(members.members) if members else 1
+            total_members = await self.chats.count_members(chat_id)
             if len(read_by) >= total_members - 1:  # -1 for sender
-                await self.messages.update(message_id, status="read", read_by=json.dumps(read_by))
+                await self.messages.update_fields(
+                    message_id, status="read", read_by=json.dumps(read_by)
+                )
             else:
-                await self.messages.update(message_id, read_by=json.dumps(read_by))
+                await self.messages.update_fields(
+                    message_id, read_by=json.dumps(read_by)
+                )
+            # Re-fetch once for the serialized response (the previous code
+            # called get_by_id twice — once before update, once after).
             msg = await self.messages.get_by_id(message_id)
         return serialize_message(msg)
 
@@ -156,10 +223,14 @@ class MessageService:
         if msg.sender_id != user_id:
             raise ForbiddenError("You can only delete your own messages")
         if for_everyone:
+            # Purge the attachment before wiping the row content so the
+            # ciphertext is gone immediately for everyone in the chat.
+            await self._purge_attachment(msg)
             await self.messages.update(
                 message_id,
                 deleted_at=now_ms(),
                 content="🗑️ Message deleted",
+                attachment_path=None,
             )
         else:
             await self.messages.soft_delete(message_id)
@@ -202,14 +273,22 @@ class MessageService:
         return forwarded
 
     async def list_starred(self, user_id: str) -> List[dict]:
-        """Return all messages the user has starred."""
+        """Return all messages the user has starred.
+
+        Batch-fetched in TWO queries (stars + messages) instead of the old
+        N+1 pattern that ran ``get_by_id`` per star.
+        """
         stars = await self.stars.list_for_user(user_id)
-        result = []
-        for s in stars:
-            msg = await self.messages.get_by_id(s.message_id)
-            if msg and not msg.deleted_at:
-                result.append(serialize_message(msg, starred=True))
-        return result
+        if not stars:
+            return []
+        # Preserve original (created_at desc) order from the star records.
+        ordered_ids = [s.message_id for s in stars]
+        msgs_by_id = {m.id: m for m in await self.messages.get_many_by_ids(ordered_ids)}
+        return [
+            serialize_message(msgs_by_id[mid], starred=True)
+            for mid in ordered_ids
+            if mid in msgs_by_id
+        ]
 
     async def _toggle_star(self, message_id: str, user_id: str, chat_id: str) -> dict:
         existing = await self.stars.find(message_id, user_id)

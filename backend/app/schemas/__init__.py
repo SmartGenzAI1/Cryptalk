@@ -1,19 +1,37 @@
-"""Pydantic schemas — request/response DTOs for the API layer."""
+"""Pydantic schemas — request/response DTOs for the API layer.
+
+All schemas accept BOTH camelCase (what the JS/Flutter clients send) and
+snake_case (Python convention) JSON keys via ``populate_by_name=True`` and a
+``to_camel`` alias generator.  Without this, camelCase fields like
+``replyToId`` / ``expiresIn`` / ``attachmentPath`` would be silently dropped
+by Pydantic v2's strict name matching.
+"""
 
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
+
+
+class CamelModel(BaseModel):
+    """Base model that accepts camelCase JSON keys for snake_case fields."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="ignore",
+    )
 
 
 # ─── Auth ──────────────────────────────────────────────────────────────
 
 
-class LoginRequest(BaseModel):
+class LoginRequest(CamelModel):
     username: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)
 
 
-class RegisterRequest(BaseModel):
+class RegisterRequest(CamelModel):
     username: str = Field(..., min_length=3)
     name: str = Field(..., min_length=1)
     password: str = Field(..., min_length=4)
@@ -22,7 +40,7 @@ class RegisterRequest(BaseModel):
 # ─── User ──────────────────────────────────────────────────────────────
 
 
-class UserUpdate(BaseModel):
+class UserUpdate(CamelModel):
     name: Optional[str] = None
     bio: Optional[str] = None
     avatar_emoji: Optional[str] = None
@@ -34,7 +52,7 @@ class UserUpdate(BaseModel):
 # ─── Chat ──────────────────────────────────────────────────────────────
 
 
-class ChatCreate(BaseModel):
+class ChatCreate(CamelModel):
     type: str = "direct"
     title: Optional[str] = None
     description: Optional[str] = None
@@ -44,7 +62,7 @@ class ChatCreate(BaseModel):
     expires_in_days: Optional[int] = None  # 1-7 days for temp groups
 
 
-class ChatSettingsUpdate(BaseModel):
+class ChatSettingsUpdate(CamelModel):
     action: str  # pin | mute | pinMessage
     value: Optional[Any] = None
     message_id: Optional[str] = None
@@ -53,23 +71,26 @@ class ChatSettingsUpdate(BaseModel):
 # ─── Message ───────────────────────────────────────────────────────────
 
 
-class MessageCreate(BaseModel):
+class MessageCreate(CamelModel):
     content: str = Field(..., min_length=1)
     type: str = "text"
     reply_to_id: Optional[str] = None
     duration: Optional[int] = None
     expires_in: Optional[int] = None  # seconds until self-destruct (null = no expiration)
+    # Supabase Storage path returned by POST /api/uploads.  Lets the server
+    # delete the ciphertext blob when the message is delivered/deleted.
+    attachment_path: Optional[str] = None
 
 
-class MessageEdit(BaseModel):
+class MessageEdit(CamelModel):
     content: Optional[str] = None
     action: Optional[str] = None  # "star" for star toggle
 
 
-class ReactionToggle(BaseModel):
+class ReactionToggle(CamelModel):
     emoji: str = Field(..., min_length=1, max_length=10)
 
 
-class ForwardRequest(BaseModel):
+class ForwardRequest(CamelModel):
     message_id: str
     target_chat_ids: List[str] = Field(..., min_length=1)

@@ -40,6 +40,7 @@ async def send_message(
 ):
     msg = await service.send(
         chat_id, user_id, req.content, req.type, req.reply_to_id, req.duration, req.expires_in,
+        req.attachment_path,
     )
     return {"message": msg}
 

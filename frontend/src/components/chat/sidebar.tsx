@@ -31,6 +31,11 @@ export function Sidebar() {
   const setCurrentUser = useChatStore((s) => s.setCurrentUser)
   const [profileOpen, setProfileOpen] = useState(false)
 
+  const isConnected = useChatStore((s) => s.isConnected)
+  const e2eeEnabled = useChatStore((s) => s.e2eeEnabled)
+  const setConnectionsPanelOpen = useChatStore((s) => s.setConnectionsPanelOpen)
+  const connectionsPanelOpen = useChatStore((s) => s.connectionsPanelOpen)
+
   async function handleLogout() {
     await apiPost('/api/auth/logout')
     setCurrentUser(null)
@@ -43,11 +48,6 @@ export function Sidebar() {
     { icon: Megaphone, label: 'Channels', active: false },
     { icon: Bookmark, label: 'Saved', active: false },
   ]
-
-  const isConnected = useChatStore((s) => s.isConnected)
-  const e2eeEnabled = useChatStore((s) => s.e2eeEnabled)
-  const setConnectionsPanelOpen = useChatStore((s) => s.setConnectionsPanelOpen)
-  const connectionsPanelOpen = useChatStore((s) => s.connectionsPanelOpen)
 
   return (
     <TooltipProvider delayDuration={200}>

@@ -16,7 +16,10 @@ import {
   Pause,
   Pin,
   FileIcon,
+  Loader2,
+  FileWarning,
 } from 'lucide-react'
+import { fetchAndDecryptAttachment } from '@/lib/attachments'
 import { useChatStore } from '@/stores/chat-store'
 import { MessageWithSender, stickerIconUrl, isLegacyEmoji } from '@/lib/icons'
 import { ChatAvatar } from './chat-avatar'
@@ -70,12 +73,81 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
   const [progress, setProgress] = useState(0)
   const playTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Attachment resolution state — for image / file / voice messages the
+  // `content` field may be an encrypted URL (Supabase path), an encrypted
+  // data URL (dev fallback), or the literal "[delivered]" placeholder after
+  // the server wipes content post-delivery. We resolve it asynchronously.
+  const [attachment, setAttachment] = useState<{
+    status: 'loading' | 'ready' | 'delivered' | 'error'
+    dataUrl: string | null
+  }>({ status: 'loading', dataUrl: null })
+
   const isDeleted = !!message.deletedAt
   const isSystem = message.type === 'system'
   const isVoice = message.type === 'voice'
   const isSticker = message.type === 'sticker'
   const isImage = message.type === 'image'
   const isFile = message.type === 'file'
+
+  // Resolve attachment content for image / file / voice messages.
+  // Deps are intentionally limited to message.id + message.content (stable
+  // across re-renders of the memoized component) plus the chat type which
+  // is needed for E2EE decryption.
+  const chatType = activeChat?.type || 'direct'
+  useEffect(() => {
+    if (!isImage && !isFile && !isVoice) return
+    let cancelled = false
+
+    async function resolve() {
+      const raw = message.content
+      if (!raw) {
+        if (!cancelled) setAttachment({ status: 'error', dataUrl: null })
+        return
+      }
+      // Fast-path: server wiped content after delivery confirmation
+      if (raw === '[delivered]') {
+        if (!cancelled) setAttachment({ status: 'delivered', dataUrl: null })
+        return
+      }
+      try {
+        let resolved = raw
+        // If content isn't already a URL or data URL, it's an encrypted
+        // ciphertext JSON string — decrypt it first.
+        if (
+          !resolved.startsWith('http://') &&
+          !resolved.startsWith('https://') &&
+          !resolved.startsWith('data:')
+        ) {
+          const { decryptMessageForChat } = await import('@/lib/e2ee')
+          resolved = await decryptMessageForChat(resolved, message.chatId, chatType)
+        }
+
+        if (cancelled) return
+
+        if (resolved === '[delivered]') {
+          setAttachment({ status: 'delivered', dataUrl: null })
+          return
+        }
+        if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
+          // Supabase-stored attachment — fetch ciphertext bytes & decrypt
+          const dataUrl = await fetchAndDecryptAttachment(resolved, message.chatId, chatType)
+          if (!cancelled) setAttachment({ status: 'ready', dataUrl })
+        } else if (resolved.startsWith('data:')) {
+          // Dev fallback — content is already the decrypted data URL
+          if (!cancelled) setAttachment({ status: 'ready', dataUrl: resolved })
+        } else {
+          // Legacy plaintext (no E2EE) — treat as data URL if it looks like one,
+          // otherwise mark as error.
+          if (!cancelled) setAttachment({ status: 'ready', dataUrl: resolved })
+        }
+      } catch {
+        if (!cancelled) setAttachment({ status: 'error', dataUrl: null })
+      }
+    }
+
+    resolve()
+    return () => { cancelled = true }
+  }, [message.id, message.content, message.chatId, chatType, isImage, isFile, isVoice])
 
   // reaction grouped by emoji
   const reactionGroups = message.reactions.reduce<Record<string, { count: number; mine: boolean }>>((acc, r) => {
@@ -166,10 +238,21 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
       return
     }
 
-    const audioContent = message.content
+    const audioContent = attachment.status === 'ready' ? attachment.dataUrl : null
+
+    if (!audioContent) {
+      if (attachment.status === 'delivered') {
+        toast.error('Voice message no longer available')
+      } else if (attachment.status === 'error') {
+        toast.error('Could not load voice message')
+      } else {
+        toast.error('Voice message is still loading…')
+      }
+      return
+    }
 
     if (!audioContent.startsWith('data:audio')) {
-      // legacy voice message (no actual audio)
+      // legacy voice message (no actual audio) — simulate playback
       setPlaying(true)
       const duration = message.duration || 5
       const step = 100 / (duration * 10)
@@ -367,40 +450,63 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                       alt={message.content}
                       width={128}
                       height={128}
+                      loading="lazy"
                       className="object-contain"
                     />
                   )
                 ) : isImage ? (
-                  message.content.startsWith('data:image') ? (
+                  attachment.status === 'delivered' ? (
+                    <AttachmentPlaceholder text="Image no longer available (delivered & wiped)" />
+                  ) : attachment.status === 'loading' ? (
+                    <AttachmentLoading label="Loading image…" />
+                  ) : attachment.status === 'error' ? (
+                    <AttachmentPlaceholder text="Failed to load image" isError />
+                  ) : attachment.dataUrl && attachment.dataUrl.startsWith('data:image') ? (
                     <img
-                      src={message.content}
+                      src={attachment.dataUrl}
                       alt="shared"
+                      loading="lazy"
                       className="rounded-lg max-w-[280px] max-h-[280px] object-contain cursor-pointer"
-                      onClick={() => window.open(message.content, '_blank')}
+                      onClick={() => attachment.dataUrl && window.open(attachment.dataUrl, '_blank')}
                     />
                   ) : (
-                    <span className="text-sm">{message.content}</span>
+                    <AttachmentPlaceholder text="Unsupported image format" isError />
                   )
                 ) : isFile ? (
-                  <div className="flex items-center gap-2 min-w-[200px]">
-                    <a
-                      href={message.content.startsWith('data:') ? message.content : '#'}
-                      download={message.content.startsWith('data:') ? 'file' : undefined}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/10 hover:bg-black/20 transition-colors"
-                    >
-                      <FileIcon className="h-5 w-5" />
-                      <span className="text-sm">Download file</span>
-                    </a>
-                  </div>
+                  attachment.status === 'delivered' ? (
+                    <AttachmentPlaceholder text="File no longer available (delivered & wiped)" />
+                  ) : attachment.status === 'loading' ? (
+                    <AttachmentLoading label="Loading file…" />
+                  ) : attachment.status === 'error' ? (
+                    <AttachmentPlaceholder text="Failed to load file" isError />
+                  ) : (
+                    <div className="flex items-center gap-2 min-w-[200px]">
+                      <a
+                        href={attachment.dataUrl || '#'}
+                        download={attachment.dataUrl ? 'file' : undefined}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/10 hover:bg-black/20 transition-colors"
+                      >
+                        <FileIcon className="h-5 w-5" />
+                        <span className="text-sm">Download file</span>
+                      </a>
+                    </div>
+                  )
                 ) : isVoice ? (
-                  <VoiceBubble
-                    duration={message.duration || 5}
-                    playing={playing}
-                    progress={progress}
-                    onToggle={togglePlay}
-                    isOwn={isOwn}
-                    time={formatTime(message.createdAt)}
-                  />
+                  attachment.status === 'delivered' ? (
+                    <AttachmentPlaceholder text="Voice message no longer available (delivered & wiped)" />
+                  ) : attachment.status === 'error' ? (
+                    <AttachmentPlaceholder text="Failed to load voice message" isError />
+                  ) : (
+                    <VoiceBubble
+                      duration={message.duration || 5}
+                      playing={playing}
+                      progress={progress}
+                      onToggle={togglePlay}
+                      isOwn={isOwn}
+                      time={formatTime(message.createdAt)}
+                      loading={attachment.status === 'loading'}
+                    />
+                  )
                 ) : (
                   <div className="text-sm whitespace-pre-wrap break-words">
                     {message.content}
@@ -508,7 +614,39 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
   )
 }
 
-export const MessageItem = memo(MessageItemImpl)
+export const MessageItem = memo(MessageItemImpl, (prev, next) => {
+  // Custom comparator: skip re-render when nothing visual changed.
+  // Compares message identity + the small set of fields that affect the
+  // rendered output. Avoids re-rendering the whole list when an unrelated
+  // store slice (e.g. typing indicators, online users) changes.
+  //
+  // Reactions and sender are compared by reference — the Zustand store always
+  // allocates new arrays/objects on updates (see updateMessage /
+  // updateReactionInStore), so a reference change reliably signals a real
+  // content change. This avoids the length-only pitfall (e.g. swap 👍 for ❤️
+  // keeps length identical but visually differs).
+  const pm = prev.message
+  const nm = next.message
+  return (
+    pm === nm ||
+    (pm.id === nm.id &&
+      pm.content === nm.content &&
+      pm.status === nm.status &&
+      pm.type === nm.type &&
+      pm.deletedAt === nm.deletedAt &&
+      pm.editedAt === nm.editedAt &&
+      pm.duration === nm.duration &&
+      pm.expiresIn === nm.expiresIn &&
+      pm.senderId === nm.senderId &&
+      pm.sender === nm.sender &&
+      pm.reactions === nm.reactions &&
+      pm.replyTo === nm.replyTo &&
+      prev.isOwn === next.isOwn &&
+      prev.isFirstInGroup === next.isFirstInGroup &&
+      prev.isLastInGroup === next.isLastInGroup &&
+      prev.showAvatar === next.showAvatar)
+  )
+})
 
 // Voice message bubble with waveform + play button
 function VoiceBubble({
@@ -518,6 +656,7 @@ function VoiceBubble({
   onToggle,
   isOwn,
   time,
+  loading = false,
 }: {
   duration: number
   playing: boolean
@@ -525,18 +664,27 @@ function VoiceBubble({
   onToggle: () => void
   isOwn: boolean
   time: string
+  loading?: boolean
 }) {
   const bars = Math.min(Math.max(Math.floor(duration * 2), 12), 40)
   return (
     <div className="flex items-center gap-2.5 min-w-[180px] py-0.5">
       <button
         onClick={onToggle}
+        disabled={loading}
         className={cn(
           'h-9 w-9 rounded-full flex items-center justify-center shrink-0 zc-tap',
-          isOwn ? 'bg-white/20' : 'bg-primary'
+          isOwn ? 'bg-white/20' : 'bg-primary',
+          loading && 'opacity-60'
         )}
       >
-        {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
+        {loading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : playing ? (
+          <Pause className="h-4 w-4" />
+        ) : (
+          <Play className="h-4 w-4 ml-0.5" />
+        )}
       </button>
       <div className="flex-1">
         <div className="flex items-center gap-[2px] h-6">
@@ -557,7 +705,7 @@ function VoiceBubble({
           })}
         </div>
         <div className={cn('flex items-center justify-between text-[10px] mt-1', isOwn ? 'text-white/75' : 'text-muted-foreground')}>
-          <span>{playing ? `${Math.ceil(duration * (1 - progress / 100))}s` : `${duration}s`}</span>
+          <span>{loading ? '…' : playing ? `${Math.ceil(duration * (1 - progress / 100))}s` : `${duration}s`}</span>
           <span>{time}</span>
         </div>
       </div>
@@ -575,4 +723,28 @@ function DeliveryTicks({ status }: { status: string }) {
   }
   // sent (single check)
   return <Check className="h-3 w-3" />
+}
+
+// Attachment loading spinner (shown while fetching + decrypting from Supabase)
+function AttachmentLoading({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 py-3 px-4 min-w-[180px]">
+      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      <span className="text-xs text-muted-foreground">{label}</span>
+    </div>
+  )
+}
+
+// Placeholder for attachments that have been wiped (post-delivery) or failed to load
+function AttachmentPlaceholder({ text, isError = false }: { text: string; isError?: boolean }) {
+  return (
+    <div className="flex items-center gap-2 py-2.5 px-3 min-w-[200px] max-w-[280px]">
+      {isError ? (
+        <FileWarning className="h-4 w-4 shrink-0 text-muted-foreground" />
+      ) : (
+        <FileIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+      )}
+      <span className="text-xs text-muted-foreground italic truncate">{text}</span>
+    </div>
+  )
 }
