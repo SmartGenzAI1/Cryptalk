@@ -24,20 +24,27 @@ class ChatService:
         self.messages = message_repo
 
     async def list_for_user(self, user_id: str) -> List[dict]:
-        """Return all chats for a user, sorted pinned-first then by recency."""
         memberships = await self.chats.get_user_chats(user_id)
-        result: List[dict] = []
+        valid = [
+            (member, chat) for member, chat in memberships
+            if not (hasattr(chat, 'expires_at') and chat.expires_at and chat.expires_at < now_ms())
+        ]
+        if not valid:
+            return []
 
-        for member, chat in memberships:
-            if hasattr(chat, 'expires_at') and chat.expires_at and chat.expires_at < now_ms():
-                continue
-            last_msg = await self._last_message(chat.id)
-            unread = await self.messages.count_unread(
-                chat.id, user_id, member.last_read_at or 0
-            )
-            result.append((chat, member, last_msg, unread))
+        chat_ids = [chat.id for _, chat in valid]
 
-        # Sort: pinned first, then by updatedAt (int ms) descending
+        last_msgs = {}
+        for cid in chat_ids:
+            msg = await self._last_message(cid)
+            if msg:
+                last_msgs[cid] = msg
+
+        result = []
+        for member, chat in valid:
+            unread = await self.messages.count_unread(chat.id, user_id, member.last_read_at or 0)
+            result.append((chat, member, last_msgs.get(chat.id), unread))
+
         result.sort(key=lambda item: (
             item[1].pinned_at is None,
             -(item[0].updated_at or 0),

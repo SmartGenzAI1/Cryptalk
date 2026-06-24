@@ -10,13 +10,21 @@ from sqlalchemy.orm import declarative_base
 from app.core.config import settings
 
 _connect_args = {}
+_engine_kwargs = {
+    "echo": settings.DEBUG,
+}
 if not settings.is_postgres:
     _connect_args = {"check_same_thread": False}
+else:
+    _engine_kwargs["pool_size"] = 10
+    _engine_kwargs["max_overflow"] = 20
+    _engine_kwargs["pool_timeout"] = 30
+    _engine_kwargs["pool_recycle"] = 3600
 
 engine = create_async_engine(
     settings.database_url,
-    echo=settings.DEBUG,
     connect_args=_connect_args,
+    **_engine_kwargs,
 )
 
 async_session_factory = async_sessionmaker(

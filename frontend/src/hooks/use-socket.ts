@@ -134,12 +134,15 @@ export function useSocket() {
     })
 
     socket.on('disconnect', () => {
-      // keep store; will reconnect
+      setConnected(false)
     })
 
     return () => {
-      socket?.disconnect()
-      socket = null
+      if (socket) {
+        socket.removeAllListeners()
+        socket.disconnect()
+        socket = null
+      }
       initialised.current = false
     }
   }, [currentUser])

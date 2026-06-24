@@ -46,15 +46,17 @@ class MessageService:
         before_ms = iso_to_ms(before) if before else None
         msgs = await self.messages.list_for_chat(chat_id, before_ms, query, limit)
 
-        # Mark read only during normal browsing (not search)
         if not query:
             await self.chats.update_member(member.id, last_read_at=now_ms())
 
-        result = []
-        for m in msgs:
-            star = await self.stars.find(m.id, user_id)
-            result.append(serialize_message(m, starred=star is not None))
-        return result
+        msg_ids = [m.id for m in msgs]
+        starred_ids = set()
+        for mid in msg_ids:
+            star = await self.stars.find(mid, user_id)
+            if star:
+                starred_ids.add(mid)
+
+        return [serialize_message(m, starred=m.id in starred_ids) for m in msgs]
 
     async def send(
         self,
