@@ -1,5 +1,3 @@
-// Telegram clone schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,54 +8,61 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  username     String   @unique
-  name         String
-  passwordHash String
-  bio          String   @default("")
-  avatarColor  String   @default("emerald")
-  avatarEmoji  String   @default("🙂")
-  isOnline     Boolean  @default(false)
-  lastSeen     DateTime @default(now())
-  accentColor  String   @default("emerald")
-  wallpaper    String   @default("dots")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(cuid())
+  email           String?  @unique
+  username        String?  @unique
+  name            String?
+  passwordHash    String
+  bio             String   @default("")
+  avatarColor     String   @default("emerald")
+  avatarEmoji     String   @default("fox")
+  isOnline        Boolean  @default(false)
+  isOnboarded     Boolean  @default(false)
+  lastSeen        DateTime @default(now())
+  accentColor     String   @default("emerald")
+  wallpaper       String   @default("dots")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  memberships  ChatMember[]
-  messages     Message[]
-  reactions    Reaction[]
-  stars        StarredMessage[]
-  createdChats Chat[]     @relation("ChatCreator")
-  aiConversations AiConversation[]
+  identityPublicKey     String?
+  signingPublicKey      String?
+  signedPreKeyPublic    String?
+  signedPreKeySignature String?
+
+  memberships    ChatMember[]
+  messages       Message[]
+  reactions      Reaction[]
+  stars          StarredMessage[]
+  createdChats   Chat[]     @relation("ChatCreator")
 }
 
 model Chat {
-  id          String   @id @default(cuid())
-  type        String   @default("direct") // direct | group | channel | saved
+  id          String    @id @default(cuid())
+  type        String    @default("direct")
   title       String
-  description String   @default("")
-  avatarColor String   @default("emerald")
-  avatarEmoji String   @default("💬")
+  description String    @default("")
+  avatarColor String    @default("emerald")
+  avatarEmoji String    @default("chat")
   createdBy   String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  expiresAt   DateTime?
 
   members     ChatMember[]
   messages    Message[]
-  creator     User     @relation("ChatCreator", fields: [createdBy], references: [id])
+  creator     User      @relation("ChatCreator", fields: [createdBy], references: [id])
 }
 
 model ChatMember {
-  id         String   @id @default(cuid())
-  chatId     String
-  userId     String
-  role       String   @default("member") // owner | admin | member
-  joinedAt   DateTime @default(now())
-  lastReadAt DateTime @default(now())
-  pinnedAt   DateTime? // when set, the chat is pinned by this user
-  muted      Boolean  @default(false)
-  pinnedMessageId String? // chat-level pinned message per user
+  id               String   @id @default(cuid())
+  chatId           String
+  userId           String
+  role             String   @default("member")
+  joinedAt         DateTime @default(now())
+  lastReadAt       DateTime @default(now())
+  pinnedAt         DateTime?
+  muted            Boolean  @default(false)
+  pinnedMessageId  String?
 
   chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -67,17 +72,20 @@ model ChatMember {
 }
 
 model Message {
-  id         String    @id @default(cuid())
-  chatId     String
-  senderId   String
-  content    String
-  type       String    @default("text") // text | system | sticker | image | voice | file
-  replyToId  String?
-  editedAt   DateTime?
-  createdAt  DateTime  @default(now())
-  deletedAt  DateTime?
-  // voice message metadata (duration in seconds, stored as data url content for demo)
-  duration   Int?
+  id           String    @id @default(cuid())
+  chatId       String
+  senderId     String
+  content      String
+  type         String    @default("text")
+  replyToId    String?
+  editedAt     DateTime?
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+  duration     Int?
+  expiresIn    Int?
+  status       String    @default("sent")
+  readBy       String?
+  deliveredTo  String?
 
   chat       Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
   sender     User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
@@ -115,13 +123,35 @@ model StarredMessage {
   @@unique([messageId, userId])
 }
 
-model AiConversation {
+model UserBlock {
   id         String   @id @default(cuid())
-  userId     String
-  title      String   @default("AI Assistant")
-  messages   String   @default("[]") // JSON array of {role, content}
+  blockerId  String
+  blockedId  String
   createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
 
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+}
+
+model UserNickname {
+  id            String   @id @default(cuid())
+  ownerId       String
+  targetUserId  String
+  nickname      String
+  createdAt     DateTime @default(now())
+
+  @@unique([ownerId, targetUserId])
+  @@index([ownerId])
+}
+
+model ConnectionRequest {
+  id         String   @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  status     String   @default("pending")
+  createdAt  DateTime @default(now())
+
+  @@index([fromUserId])
+  @@index([toUserId])
 }

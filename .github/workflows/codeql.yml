@@ -1,5 +1,3 @@
-# Cryptalk CI — CodeQL security analysis
-
 name: CodeQL
 
 on:
@@ -8,7 +6,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '0 0 * * 0'  # weekly
+    - cron: '0 0 * * 0'
 
 jobs:
   analyze:

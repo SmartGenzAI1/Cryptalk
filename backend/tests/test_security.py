@@ -1,9 +1,8 @@
 import pytest
 import os
-import tempfile
 
-os.environ["DB_PATH"] = tempfile.mktemp(suffix=".db")
-os.environ["SESSION_SECRET"] = "test-secret"
+os.environ.setdefault("DB_PATH", "/tmp/cryptalk-test.db")
+os.environ.setdefault("SESSION_SECRET", "test-secret-do-not-use-in-production")
 
 from app.core.security import hash_password, verify_password, create_session_token, verify_session_token
 from app.core.security import validate_username, validate_password, sanitize_text
