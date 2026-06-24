@@ -82,8 +82,9 @@ async def delete_message(
     message_id: str = Query(..., alias="messageId"),
     user_id: str = Depends(get_current_user_id),
     service: MessageService = Depends(get_message_service),
+    for_everyone: bool = Query(False, alias="forEveryone"),
 ):
-    return await service.delete(chat_id, message_id, user_id)
+    return await service.delete(chat_id, message_id, user_id, for_everyone)
 
 
 @chat_router.put("/{chat_id}/messages")

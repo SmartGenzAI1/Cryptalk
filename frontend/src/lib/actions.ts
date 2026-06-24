@@ -79,3 +79,47 @@ export async function removeNickname(targetUserId: string): Promise<any> {
 export async function listNicknames(): Promise<any> {
   return apiGet('/api/social/nicknames')
 }
+
+export async function leaveChat(chatId: string): Promise<any> {
+  return apiPost(`/api/chats/${chatId}/leave`)
+}
+
+export async function deleteChat(chatId: string): Promise<any> {
+  return apiDelete(`/api/chats/${chatId}`)
+}
+
+export async function kickMember(chatId: string, userId: string): Promise<any> {
+  return apiPost(`/api/chats/${chatId}/kick`, { user_id: userId })
+}
+
+export async function promoteMember(chatId: string, userId: string, role: string): Promise<any> {
+  return apiPost(`/api/chats/${chatId}/promote`, { user_id: userId, role })
+}
+
+export async function transferOwnership(chatId: string, newOwnerId: string): Promise<any> {
+  return apiPost(`/api/chats/${chatId}/transfer`, { new_owner_id: newOwnerId })
+}
+
+export async function generateInviteLink(chatId: string): Promise<any> {
+  return apiPost(`/api/chats/${chatId}/invite`)
+}
+
+export async function joinChatByToken(token: string): Promise<any> {
+  return apiPost(`/api/chats/join/${token}`)
+}
+
+export async function crossChatSearch(query: string): Promise<any> {
+  return apiGet(`/api/search?q=${encodeURIComponent(query)}`)
+}
+
+export async function reportUser(reportedId: string, reason: string): Promise<any> {
+  return apiPost('/api/reports', { reported_id: reportedId, reason })
+}
+
+export async function deleteMessageForEveryone(chatId: string, messageId: string): Promise<any> {
+  return apiDelete(`/api/${chatId}/messages?messageId=${messageId}&forEveryone=true`)
+}
+
+export async function deleteAccount(): Promise<any> {
+  return apiDelete('/api/account')
+}

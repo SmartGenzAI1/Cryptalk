@@ -151,12 +151,18 @@ class MessageService:
         star = await self.stars.find(message_id, user_id)
         return serialize_message(msg, starred=star is not None)
 
-    async def delete(self, chat_id: str, message_id: str, user_id: str) -> dict:
-        """Soft-delete a message (sender only)."""
+    async def delete(self, chat_id: str, message_id: str, user_id: str, for_everyone: bool = False) -> dict:
         msg = await self._get_owned_message(chat_id, message_id)
         if msg.sender_id != user_id:
             raise ForbiddenError("You can only delete your own messages")
-        await self.messages.soft_delete(message_id)
+        if for_everyone:
+            await self.messages.update(
+                message_id,
+                deleted_at=now_ms(),
+                content="🗑️ Message deleted",
+            )
+        else:
+            await self.messages.soft_delete(message_id)
         return {"ok": True}
 
     async def toggle_reaction(

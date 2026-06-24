@@ -53,6 +53,7 @@ class Chat(Base):
     created_at = Column("createdAt", Integer)
     updated_at = Column("updatedAt", Integer)
     expires_at = Column("expiresAt", Integer, nullable=True)
+    invite_token = Column("inviteToken", String, nullable=True, index=True)
 
     members = relationship("ChatMember", back_populates="chat", cascade="all, delete-orphan")
     messages = relationship("Message", back_populates="chat", cascade="all, delete-orphan")
@@ -155,5 +156,18 @@ class ConnectionRequest(Base):
     id = Column(String, primary_key=True)
     from_user_id = Column("fromUserId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
     to_user_id = Column("toUserId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
-    status = Column(String, default="pending")  # pending | accepted | declined
+    status = Column(String, default="pending")
+    created_at = Column("createdAt", Integer)
+
+
+class Report(Base):
+    __tablename__ = "Report"
+
+    id = Column(String, primary_key=True)
+    reporter_id = Column("reporterId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
+    reported_id = Column("reportedId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=True)
+    chat_id = Column("chatId", String, nullable=True)
+    message_id = Column("messageId", String, nullable=True)
+    reason = Column(String, nullable=False)
+    status = Column(String, default="pending")
     created_at = Column("createdAt", Integer)
