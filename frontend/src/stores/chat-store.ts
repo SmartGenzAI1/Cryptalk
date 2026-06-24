@@ -69,8 +69,6 @@ interface ChatState {
   removeTyping: (chatId: string, userId: string) => void
 
   // ui
-  aiPanelOpen: boolean
-  setAiPanelOpen: (b: boolean) => void
   infoPanelOpen: boolean
   setInfoPanelOpen: (b: boolean) => void
   settingsOpen: boolean
@@ -182,8 +180,6 @@ export const useChatStore = create<ChatState>((set, _get) => ({
       return { typingUsers: { ...s.typingUsers, [chatId]: cur } }
     }),
 
-  aiPanelOpen: false,
-  setAiPanelOpen: (b) => set({ aiPanelOpen: b }),
   infoPanelOpen: false,
   setInfoPanelOpen: (b) => set({ infoPanelOpen: b }),
   settingsOpen: false,

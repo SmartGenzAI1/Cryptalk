@@ -30,7 +30,7 @@ import {
 import { NewChatDialog } from './new-chat-dialog'
 import { formatChatListTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { updateChatSettings } from '@/lib/ai-actions'
+import { updateChatSettings } from '@/lib/actions'
 import { toast } from 'sonner'
 import { motion } from 'framer-motion'
 import { apiGet, apiPost } from '@/lib/api'

@@ -35,8 +35,8 @@ export default function Home() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
-          <div className="relative h-16 w-16">
-            <Image src="/logo-small.png" alt="Cryptalk" fill className="object-contain rounded-2xl" priority />
+          <div className="relative">
+            <Image src="/logo.png" alt="Cryptalk" width={64} height={64} className="object-contain" priority />
             <div className="absolute -bottom-1 -right-1 h-6 w-6 rounded-full bg-background flex items-center justify-center border">
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
             </div>

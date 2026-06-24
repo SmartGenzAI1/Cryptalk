@@ -7,7 +7,7 @@ import {
   Pencil,
   Trash2,
   Copy,
-  Languages,
+
   Check,
   CheckCheck,
   Clock,
@@ -35,7 +35,7 @@ import { toast } from 'sonner'
 import { formatTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { getSocket } from '@/hooks/use-socket'
-import { translateMessage, toggleReaction, toggleStar, forwardMessage } from '@/lib/ai-actions'
+import { toggleReaction, toggleStar, forwardMessage } from '@/lib/actions'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ForwardDialog } from './forward-dialog'
 import { apiGet, apiPatch, apiDelete } from '@/lib/api'
@@ -57,8 +57,6 @@ export function MessageItem({ message, isOwn, isFirstInGroup, isLastInGroup }: M
   const removeMessage = useChatStore((s) => s.removeMessage)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(message.content)
-  const [translation, setTranslation] = useState<string | null>(null)
-  const [translating, setTranslating] = useState(false)
   const [starred, setStarred] = useState(false)
   const [showHoverBar, setShowHoverBar] = useState(false)
   const [showQuickReact, setShowQuickReact] = useState(false)
@@ -147,16 +145,6 @@ export function MessageItem({ message, isOwn, isFirstInGroup, isLastInGroup }: M
   function handleCopy() {
     navigator.clipboard.writeText(message.content)
     toast.success('Copied to clipboard')
-  }
-
-  async function handleTranslate(lang: string) {
-    setTranslating(true)
-    try {
-      const t = await translateMessage(message.content, lang)
-      setTranslation(t)
-    } finally {
-      setTranslating(false)
-    }
   }
 
   function startReply() {
@@ -361,14 +349,8 @@ export function MessageItem({ message, isOwn, isFirstInGroup, isLastInGroup }: M
                 ) : (
                   <div className="text-sm whitespace-pre-wrap break-words">
                     {message.content}
-                    {translation && (
-                      <div className={cn('mt-1.5 pt-1.5 border-t text-xs', isOwn ? 'border-white/30 text-white/90' : 'border-border text-muted-foreground')}>
-                        <span className="font-semibold">🌐 Translation: </span>{translation}
                       </div>
                     )}
-                    {translating && <div className="text-xs opacity-70 mt-1">Translating…</div>}
-                  </div>
-                )}
 
                 {/* Meta */}
                 {!editing && !isVoice && !isSticker && (
@@ -439,16 +421,6 @@ export function MessageItem({ message, isOwn, isFirstInGroup, isLastInGroup }: M
                   </button>
                 ))}
               </div>
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-          <ContextMenuSub>
-            <ContextMenuSubTrigger>
-              <Languages className="h-4 w-4 mr-2" /> Translate
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent>
-              {['English', 'Spanish', 'French', 'German', 'Hindi', 'Chinese', 'Japanese', 'Arabic'].map((lang) => (
-                <ContextMenuItem key={lang} onClick={() => handleTranslate(lang)}>{lang}</ContextMenuItem>
-              ))}
             </ContextMenuSubContent>
           </ContextMenuSub>
           {isOwn && !isDeleted && (

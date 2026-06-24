@@ -7,7 +7,6 @@ import {
   Paperclip,
   Mic,
   X,
-  Sparkles,
   Sticker,
   Trash2,
   Check,
@@ -23,7 +22,6 @@ import {
 } from '@/components/ui/popover'
 import { toast } from 'sonner'
 import { getSocket } from '@/hooks/use-socket'
-import { getSmartReplies } from '@/lib/ai-actions'
 import { apiPost } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { MessageWithSender } from '@/lib/types'
@@ -48,8 +46,6 @@ export function MessageInput() {
   const addMessage = useChatStore((s) => s.addMessage)
   const [text, setText] = useState('')
   const [replyTo, setReplyTo] = useState<MessageWithSender | null>(null)
-  const [smartReplies, setSmartReplies] = useState<string[]>([])
-  const [loadingReplies, setLoadingReplies] = useState(false)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [stickerOpen, setStickerOpen] = useState(false)
   const [recording, setRecording] = useState(false)
@@ -70,29 +66,6 @@ export function MessageInput() {
     window.addEventListener('zc-reply', onReply)
     return () => window.removeEventListener('zc-reply', onReply)
   }, [])
-
-  // fetch smart replies when chat changes (debounced via effect on messages length)
-  useEffect(() => {
-    if (!activeChatId || messages.length === 0) return
-    let cancelled = false
-    const t = setTimeout(async () => {
-      setLoadingReplies(true)
-      try {
-        const recent = messages.slice(-6).map((m) => ({
-          senderName: m.sender.name,
-          content: m.content,
-        }))
-        const replies = await getSmartReplies(recent)
-        if (!cancelled) setSmartReplies(replies)
-      } finally {
-        if (!cancelled) setLoadingReplies(false)
-      }
-    }, 600)
-    return () => {
-      cancelled = true
-      clearTimeout(t)
-    }
-  }, [activeChatId, messages.length])
 
   function emitTyping(isTyping: boolean) {
     if (!activeChatId || !currentUser) return
@@ -224,28 +197,6 @@ export function MessageInput() {
 
   return (
     <div className="border-t bg-background/80 backdrop-blur shrink-0">
-      {/* Smart replies */}
-      {(smartReplies.length > 0 || loadingReplies) && (
-        <div className="px-3 pt-2 flex items-center gap-2 flex-wrap">
-          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Sparkles className="h-3 w-3" /> Smart replies
-          </span>
-          {loadingReplies ? (
-            <span className="text-xs text-muted-foreground animate-pulse">Thinking…</span>
-          ) : (
-            smartReplies.map((r, i) => (
-              <button
-                key={i}
-                onClick={() => send(r)}
-                className="px-3 py-1 rounded-full text-sm bg-accent hover:bg-primary/15 hover:text-primary transition-colors border"
-              >
-                {r}
-              </button>
-            ))
-          )}
-        </div>
-      )}
-
       {/* Reply preview */}
       {replyTo && (
         <div className="px-3 pt-2 flex items-center gap-2">

@@ -17,7 +17,7 @@ import {
   listPendingRequests,
   blockUser,
   setNickname,
-} from '@/lib/ai-actions'
+} from '@/lib/actions'
 import { apiGet } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { SafeUser } from '@/lib/types'

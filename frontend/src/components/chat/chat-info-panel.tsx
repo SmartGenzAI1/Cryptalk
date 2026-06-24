@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Bell, Users, Image as ImageIcon, Link2, Sparkles, Shield } from 'lucide-react'
+import { X, Bell, Users, Image as ImageIcon, Link2, Shield } from 'lucide-react'
 import { useChatStore, EMPTY_MESSAGES } from '@/stores/chat-store'
 import { ChatAvatar } from './chat-avatar'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { formatLastSeen } from '@/lib/format'
 import { toast } from 'sonner'
-import { summarizeMessages } from '@/lib/ai-actions'
 import { stickerIconUrl, isLegacyEmoji } from '@/lib/icons'
 
 export function ChatInfoPanel() {
@@ -20,7 +19,6 @@ export function ChatInfoPanel() {
   const currentUser = useChatStore((s) => s.currentUser)
   const e2eeEnabled = useChatStore((s) => s.e2eeEnabled)
   const setInfoPanelOpen = useChatStore((s) => s.setInfoPanelOpen)
-  const [summarizing, setSummarizing] = useState(false)
   const [safetyNumber, setSafetyNumber] = useState('')
 
   const isDirect = activeChat?.type === 'direct'
@@ -48,22 +46,6 @@ export function ChatInfoPanel() {
   }, [e2eeEnabled, isDirect, other, activeChat])
 
   if (!activeChat) return null
-
-  async function handleSummarize() {
-    if (messages.length === 0) {
-      toast.info('No messages to summarize yet.')
-      return
-    }
-    setSummarizing(true)
-    try {
-      const summary = await summarizeMessages(
-        messages.map((m) => ({ senderName: m.sender.name, content: m.content }))
-      )
-      toast.success('AI Summary ready', { description: summary, duration: 15000 })
-    } finally {
-      setSummarizing(false)
-    }
-  }
 
   // media: stickers & images from messages
   const media = messages.filter((m) => m.type === 'sticker' || m.type === 'image')
@@ -105,16 +87,6 @@ export function ChatInfoPanel() {
             </p>
           </div>
 
-          {/* AI Summarize */}
-          <Button
-            onClick={handleSummarize}
-            disabled={summarizing}
-            variant="outline"
-            className="w-full border-violet-500/40 text-violet-600 dark:text-violet-300 hover:bg-violet-500/10"
-          >
-            <Sparkles className="h-4 w-4 mr-2" />
-            {summarizing ? 'Summarizing…' : 'Summarize chat with AI'}
-          </Button>
 
           {/* E2EE Verification — Safety Number */}
           {e2eeEnabled && isDirect && other && (

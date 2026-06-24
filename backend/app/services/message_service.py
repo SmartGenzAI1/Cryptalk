@@ -1,3 +1,4 @@
+import json
 """Message service — send, edit, delete, react, star, forward, search."""
 
 from typing import List, Optional
@@ -87,21 +88,30 @@ class MessageService:
         return serialize_message(msg, starred=False)
 
     async def mark_delivered(self, chat_id: str, user_id: str) -> dict:
-        """Mark all messages in a chat as delivered (recipient opened the chat)."""
         member = await self.chats.get_member(chat_id, user_id)
         if not member:
             raise ForbiddenError("Not a member of this chat")
+        chat = await self.chats.get_by_id(chat_id)
+        total_members = len(chat.members) if chat else 1
         messages = await self.messages.list_for_chat(chat_id, limit=200)
         updated = []
         for m in messages:
-            if m.sender_id != user_id and m.status == "sent":
-                m = await self.messages.update(m.id, status="delivered")
-                updated.append(serialize_message(m))
+            if m.sender_id != user_id:
+                delivered_to = json.loads(m.delivered_to) if m.delivered_to else []
+                if user_id not in delivered_to:
+                    delivered_to.append(user_id)
+                    if len(delivered_to) >= total_members - 1:
+                        m = await self.messages.update(
+                            m.id, status="delivered", delivered_to=json.dumps(delivered_to),
+                            content="[delivered]"
+                        )
+                    else:
+                        m = await self.messages.update(m.id, delivered_to=json.dumps(delivered_to))
+                    updated.append(serialize_message(m))
         return {"updated": updated}
 
     async def mark_read(self, chat_id: str, message_id: str, user_id: str) -> dict:
         """Mark a message as read by the current user."""
-        import json
         msg = await self.messages.get_by_id(message_id)
         if not msg or msg.chat_id != chat_id:
             raise NotFoundError("Message not found")

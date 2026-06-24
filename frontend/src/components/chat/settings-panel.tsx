@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import { ACCENT_HEX, AVATAR_COLORS, AVATAR_COLOR_KEYS, WALLPAPERS } from '@/lib/types'
-import { updateUserSettings } from '@/lib/ai-actions'
+import { updateUserSettings } from '@/lib/actions'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
@@ -30,7 +30,6 @@ export function SettingsPanel() {
   const currentUser = useChatStore((s) => s.currentUser)
   const setCurrentUser = useChatStore((s) => s.setCurrentUser)
   const setSettingsOpen = useChatStore((s) => s.setSettingsOpen)
-  const setAiPanelOpen = useChatStore((s) => s.setAiPanelOpen)
   const { theme, setTheme } = useTheme()
   const [accent, setAccent] = useState(currentUser?.accentColor || 'emerald')
   const [wallpaper, setWallpaper] = useState(currentUser?.wallpaper || 'dots')
@@ -161,9 +160,6 @@ export function SettingsPanel() {
               <Row label="Notifications" desc="Get notified of new messages">
                 <Switch defaultChecked />
               </Row>
-              <Row label="Smart replies" desc="AI-powered reply suggestions">
-                <Switch defaultChecked />
-              </Row>
               <Row label="Read receipts" desc="Show others you read their messages">
                 <Switch defaultChecked />
               </Row>
@@ -172,18 +168,6 @@ export function SettingsPanel() {
 
           {/* Quick links */}
           <Section icon={<Star className="h-4 w-4" />} title="More">
-            <button
-              onClick={() => { setSettingsOpen(false); setAiPanelOpen(true) }}
-              className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-accent transition-colors text-left zc-tap"
-            >
-              <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-white">
-                ✨
-              </div>
-              <div className="flex-1">
-                <div className="text-sm font-medium">AI Assistant</div>
-                <div className="text-xs text-muted-foreground">Draft, summarize & translate</div>
-              </div>
-            </button>
             <button className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-accent transition-colors text-left zc-tap mt-1">
               <div className="h-9 w-9 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-500">
                 <Star className="h-4 w-4" />

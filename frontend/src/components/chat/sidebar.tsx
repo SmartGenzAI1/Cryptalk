@@ -4,14 +4,12 @@ import { useState } from 'react'
 import {
   MessageCircle,
   Settings,
-  Sparkles,
   LogOut,
   Moon,
   Sun,
   Bookmark,
   Users,
   Megaphone,
-  Star,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useChatStore } from '@/stores/chat-store'
@@ -26,8 +24,6 @@ import Image from 'next/image'
 export function Sidebar() {
   const { theme, setTheme } = useTheme()
   const currentUser = useChatStore((s) => s.currentUser)
-  const setAiPanelOpen = useChatStore((s) => s.setAiPanelOpen)
-  const aiPanelOpen = useChatStore((s) => s.aiPanelOpen)
   const setSettingsOpen = useChatStore((s) => s.setSettingsOpen)
   const settingsOpen = useChatStore((s) => s.settingsOpen)
   const setCurrentUser = useChatStore((s) => s.setCurrentUser)
@@ -41,7 +37,7 @@ export function Sidebar() {
 
   const navItems = [
     { icon: MessageCircle, label: 'Chats', active: true },
-    { icon: Users, label: 'Connections', active: connectionsPanelOpen, onClick: () => { setConnectionsPanelOpen(!connectionsPanelOpen); if (!connectionsPanelOpen) { setSettingsOpen(false); setAiPanelOpen(false) } } },
+    { icon: Users, label: 'Connections', active: connectionsPanelOpen, onClick: () => { setConnectionsPanelOpen(!connectionsPanelOpen); if (!connectionsPanelOpen) { setSettingsOpen(false) } } },
     { icon: Megaphone, label: 'Channels', active: false },
     { icon: Bookmark, label: 'Saved', active: false },
   ]
@@ -55,8 +51,8 @@ export function Sidebar() {
     <TooltipProvider delayDuration={200}>
       <aside className="hidden md:flex w-[68px] shrink-0 flex-col items-center justify-between border-r bg-sidebar/80 zc-glass-sidebar py-4">
         <div className="flex flex-col items-center gap-2">
-          <div className="mb-3 relative h-11 w-11 rounded-2xl overflow-hidden shadow-md ring-1 ring-border">
-            <Image src="/logo-small.png" alt="Cryptalk" width={44} height={44} className="object-contain" />
+          <div className="mb-3 relative h-12 w-12">
+            <Image src="/logo.png" alt="Cryptalk" width={48} height={48} className="object-contain" priority />
             <span
               className={cn(
                 'absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-sidebar',
@@ -100,24 +96,7 @@ export function Sidebar() {
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                onClick={() => { setAiPanelOpen(!aiPanelOpen); if (!aiPanelOpen) setSettingsOpen(false) }}
-                className={cn(
-                  'h-11 w-11 rounded-xl flex items-center justify-center transition-all zc-tap',
-                  aiPanelOpen
-                    ? 'bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-md'
-                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                )}
-              >
-                <Sparkles className="h-5 w-5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">AI Assistant</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => { setSettingsOpen(!settingsOpen); if (!settingsOpen) setAiPanelOpen(false) }}
+                onClick={() => { setSettingsOpen(!settingsOpen); if (!settingsOpen) setConnectionsPanelOpen(false) }}
                 className={cn(
                   'h-11 w-11 rounded-xl flex items-center justify-center transition-all zc-tap',
                   settingsOpen

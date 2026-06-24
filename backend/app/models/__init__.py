@@ -95,10 +95,9 @@ class Message(Base):
     duration = Column(Integer, nullable=True)  # voice message seconds
     # Message expiration (seconds; null = no expiration / self-destruct off)
     expires_in = Column("expiresIn", Integer, nullable=True)
-    # Delivery status: sent | delivered | read
     status = Column("status", String, default="sent")
-    # JSON array of user IDs who read the message
     read_by = Column("readBy", Text, nullable=True)
+    delivered_to = Column("deliveredTo", Text, nullable=True)
 
     chat = relationship("Chat", back_populates="messages")
     sender = relationship("User", back_populates="messages", foreign_keys=[sender_id])

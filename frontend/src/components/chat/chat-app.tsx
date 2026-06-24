@@ -6,7 +6,6 @@ import { useSocket } from '@/hooks/use-socket'
 import { Sidebar } from './sidebar'
 import { ChatList } from './chat-list'
 import { ChatWindow } from './chat-window'
-import { AiAssistantPanel } from './ai-assistant-panel'
 import { ChatInfoPanel } from './chat-info-panel'
 import { SettingsPanel } from './settings-panel'
 import { ConnectionsPanel } from './connections-panel'
@@ -18,7 +17,6 @@ import { initE2EE } from '@/lib/e2ee'
 
 export function ChatApp() {
   useSocket()
-  const aiPanelOpen = useChatStore((s) => s.aiPanelOpen)
   const infoPanelOpen = useChatStore((s) => s.infoPanelOpen)
   const settingsOpen = useChatStore((s) => s.settingsOpen)
   const connectionsPanelOpen = useChatStore((s) => s.connectionsPanelOpen)
@@ -71,14 +69,14 @@ export function ChatApp() {
         <div className={`${activeChatId ? 'flex' : 'hidden'} md:flex flex-1 min-w-0`}>
           <ChatWindow />
           {infoPanelOpen && activeChatId && <ChatInfoPanel />}
-          {aiPanelOpen && <AiAssistantPanel />}
+          
           {settingsOpen && <SettingsPanel />}
           {connectionsPanelOpen && <ConnectionsPanel />}
         </div>
         {/* On mobile: show AI/Settings panel full-screen when no chat selected */}
-        {!activeChatId && (aiPanelOpen || settingsOpen) && (
+        {!activeChatId && settingsOpen && (
           <div className="flex md:hidden w-full absolute inset-0 z-50 top-0 bottom-14">
-            {aiPanelOpen && <AiAssistantPanel />}
+            
             {settingsOpen && <SettingsPanel />}
           </div>
         )}

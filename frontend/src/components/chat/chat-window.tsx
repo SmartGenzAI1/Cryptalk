@@ -8,7 +8,7 @@ import {
   Info,
   MoreVertical,
   ArrowLeft,
-  Sparkles,
+
   X,
 } from 'lucide-react'
 import { useChatStore, EMPTY_MESSAGES, EMPTY_TYPING } from '@/stores/chat-store'
@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import { formatLastSeen } from '@/lib/format'
-import { summarizeMessages, searchInChat } from '@/lib/ai-actions'
+import { searchInChat } from '@/lib/actions'
 import { motion, AnimatePresence } from 'framer-motion'
 import Image from 'next/image'
 
@@ -41,9 +41,7 @@ export function ChatWindow() {
   const setActiveChat = useChatStore((s) => s.setActiveChat)
   const setInfoPanelOpen = useChatStore((s) => s.setInfoPanelOpen)
   const infoPanelOpen = useChatStore((s) => s.infoPanelOpen)
-  const setAiPanelOpen = useChatStore((s) => s.setAiPanelOpen)
   const e2eeEnabled = useChatStore((s) => s.e2eeEnabled)
-  const [summarizing, setSummarizing] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
@@ -68,22 +66,6 @@ export function ChatWindow() {
       : typingUsers.length === 1
       ? `${typingUsers[0].username} is typing…`
       : `${typingUsers.length} people typing…`
-
-  async function handleSummarize() {
-    if (!messages || messages.length === 0) {
-      toast.info('No messages to summarize yet.')
-      return
-    }
-    setSummarizing(true)
-    try {
-      const summary = await summarizeMessages(
-        messages.map((m) => ({ senderName: m.sender.name, content: m.content }))
-      )
-      toast.success('AI Summary', { description: summary, duration: 15000 })
-    } finally {
-      setSummarizing(false)
-    }
-  }
 
   async function runSearch(q: string) {
     setSearchQuery(q)
@@ -137,7 +119,7 @@ export function ChatWindow() {
             <span className="px-3 py-1.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium">✨ AI Assistant</span>
             <span className="px-3 py-1.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 font-medium">😊 Reactions</span>
             <span className="px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">🎙️ Voice</span>
-            <span className="px-3 py-1.5 rounded-full bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-medium">📝 Summaries</span>
+
           </div>
         </motion.div>
       </div>
@@ -219,15 +201,7 @@ export function ChatWindow() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleSummarize} disabled={summarizing}>
-                <Sparkles className="h-4 w-4 mr-2" />
-                {summarizing ? 'Summarizing…' : 'Summarize with AI'}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setAiPanelOpen(true)}>
-                <Sparkles className="h-4 w-4 mr-2" />
-                Open AI Assistant
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
+                            
               <DropdownMenuItem onClick={() => setSearchOpen(true)}>
                 <Search className="h-4 w-4 mr-2" />
                 Search messages

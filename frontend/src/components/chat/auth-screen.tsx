@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Shield, Zap, Sparkles, Users, Loader2, Lock, Mail, Check, User } from 'lucide-react'
+import { Shield, Zap, Users, Loader2, Lock, Mail, Check, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -68,9 +68,7 @@ export function AuthScreen() {
 
         <div className="relative z-10 flex flex-col justify-between p-12 text-white">
           <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center overflow-hidden ring-1 ring-white/20">
-              <Image src="/logo-small.png" alt="Cryptalk" width={48} height={48} className="object-contain" />
-            </div>
+            <Image src="/logo.png" alt="Cryptalk" width={56} height={56} className="object-contain drop-shadow-lg" priority />
             <span className="text-2xl font-bold tracking-tight">Cryptalk</span>
           </div>
 
@@ -85,7 +83,6 @@ export function AuthScreen() {
               {[
                 { icon: Shield, title: 'Zero-knowledge server', desc: 'We can\'t read your messages' },
                 { icon: Zap, title: 'Instant delivery', desc: 'Real-time WebSocket sync' },
-                { icon: Sparkles, title: 'AI built in', desc: 'Smart replies & summaries' },
                 { icon: Users, title: 'Expiring groups', desc: 'Perfect for events & temp chats' },
               ].map((f, i) => (
                 <motion.div key={f.title} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4, delay: 0.2 + i * 0.1 }} className="flex items-start gap-3 rounded-2xl bg-white/10 backdrop-blur p-4 border border-white/10">
@@ -109,9 +106,7 @@ export function AuthScreen() {
       <div className="flex-1 flex items-center justify-center p-6">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
           <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
-            <div className="h-12 w-12 rounded-2xl overflow-hidden ring-1 ring-border shadow-md">
-              <Image src="/logo-small.png" alt="Cryptalk" width={48} height={48} className="object-contain" />
-            </div>
+            <Image src="/logo.png" alt="Cryptalk" width={56} height={56} className="object-contain drop-shadow-lg" priority />
             <span className="text-2xl font-bold">Cryptalk</span>
           </div>
 
