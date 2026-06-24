@@ -7,7 +7,6 @@ import {
   Pencil,
   Trash2,
   Copy,
-
   Check,
   CheckCheck,
   Clock,
@@ -16,6 +15,7 @@ import {
   Play,
   Pause,
   Pin,
+  FileIcon,
 } from 'lucide-react'
 import { useChatStore } from '@/stores/chat-store'
 import { MessageWithSender, stickerIconUrl, isLegacyEmoji } from '@/lib/icons'
@@ -74,6 +74,8 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
   const isSystem = message.type === 'system'
   const isVoice = message.type === 'voice'
   const isSticker = message.type === 'sticker'
+  const isImage = message.type === 'image'
+  const isFile = message.type === 'file'
 
   // reaction grouped by emoji
   const reactionGroups = message.reactions.reduce<Record<string, { count: number; mine: boolean }>>((acc, r) => {
@@ -368,6 +370,28 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                       className="object-contain"
                     />
                   )
+                ) : isImage ? (
+                  message.content.startsWith('data:image') ? (
+                    <img
+                      src={message.content}
+                      alt="shared"
+                      className="rounded-lg max-w-[280px] max-h-[280px] object-contain cursor-pointer"
+                      onClick={() => window.open(message.content, '_blank')}
+                    />
+                  ) : (
+                    <span className="text-sm">{message.content}</span>
+                  )
+                ) : isFile ? (
+                  <div className="flex items-center gap-2 min-w-[200px]">
+                    <a
+                      href={message.content.startsWith('data:') ? message.content : '#'}
+                      download={message.content.startsWith('data:') ? 'file' : undefined}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/10 hover:bg-black/20 transition-colors"
+                    >
+                      <FileIcon className="h-5 w-5" />
+                      <span className="text-sm">Download file</span>
+                    </a>
+                  </div>
                 ) : isVoice ? (
                   <VoiceBubble
                     duration={message.duration || 5}
@@ -384,7 +408,7 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                     )}
 
                 {/* Meta */}
-                {!editing && !isVoice && !isSticker && (
+                {!editing && !isVoice && !isSticker && !isImage && !isFile && (
                   <div className={cn('flex items-center gap-1 justify-end mt-0.5 -mb-0.5 text-[10px]', isOwn ? 'text-white/75' : 'text-muted-foreground')}>
                     {starred && <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400" />}
                     {message.editedAt && <span>edited</span>}

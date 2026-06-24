@@ -11,6 +11,7 @@ import {
   Trash2,
   Check,
   Clock,
+  Loader2,
 } from 'lucide-react'
 import { useChatStore, EMPTY_MESSAGES } from '@/stores/chat-store'
 import { Button } from '@/components/ui/button'
@@ -59,6 +60,8 @@ export function MessageInput() {
   const [ expiresIn, setExpiresIn] = useState<number | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [fileUploading, setFileUploading] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastTypingEmit = useRef(0)
@@ -265,6 +268,61 @@ export function MessageInput() {
     }
   }
 
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+
+    if (file.size > 40 * 1024 * 1024) {
+      toast.error('File too large (max 40MB)')
+      return
+    }
+
+    setFileUploading(true)
+    try {
+      const reader = new FileReader()
+      const fileData = await new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+
+      let contentToSend = fileData
+      if (activeChat && activeChat.type !== 'saved') {
+        try {
+          const { encryptMessageForChat } = await import('@/lib/e2ee')
+          const recipient = activeChat.members.find((m) => m.user.id !== currentUser?.id)
+          contentToSend = await encryptMessageForChat(fileData, activeChatId, activeChat.type, recipient?.user.id)
+        } catch {}
+      }
+
+      const msgType = file.type.startsWith('image/') ? 'image' : 'file'
+
+      const data = await apiPost<{ message: any }>(`/api/${activeChatId}/messages`, {
+        content: contentToSend,
+        type: msgType,
+        replyToId: replyTo?.id || null,
+      })
+
+      if (data.message) {
+        if (activeChat && (data.message.type === 'image' || data.message.type === 'file')) {
+          try {
+            const { decryptMessageForChat } = await import('@/lib/e2ee')
+            data.message.content = await decryptMessageForChat(data.message.content, activeChatId, activeChat.type)
+          } catch {}
+        }
+        addMessage(activeChatId, data.message)
+        getSocket()?.emit('send-message', { chatId: activeChatId, message: data.message })
+      }
+      setReplyTo(null)
+      toast.success(`File sent (${(file.size / 1024 / 1024).toFixed(1)}MB)`)
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to send file')
+    } finally {
+      setFileUploading(false)
+    }
+  }
+
   if (!activeChatId) return null
 
   return (
@@ -399,8 +457,15 @@ export function MessageInput() {
               </PopoverContent>
             </Popover>
 
-            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground hidden sm:flex zc-tap" onClick={() => toast.info('File sharing coming soon')}>
-              <Paperclip className="h-5 w-5" />
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
+              onChange={handleFileSelect}
+              accept="image/*,video/*,application/pdf,audio/*,.zip,.doc,.docx,.txt"
+            />
+            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground zc-tap" onClick={() => !fileUploading && fileInputRef.current?.click()} title="Attach file" disabled={fileUploading}>
+              {fileUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Paperclip className="h-5 w-5" />}
             </Button>
           </div>
 

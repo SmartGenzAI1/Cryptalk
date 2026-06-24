@@ -70,11 +70,18 @@ class MessageService:
         member = await self.chats.get_member(chat_id, user_id)
         if not member:
             raise ForbiddenError("Not a member of this chat")
-        if len(content) > 10000:
-            raise ValidationError("Message too long (max 10000 characters)")
-        content = sanitize_text(content)
-        if not content:
-            raise ValidationError("Content is required")
+
+        max_len = 10000
+        if msg_type in ("image", "file", "voice"):
+            max_len = 40 * 1024 * 1024
+
+        if len(content) > max_len:
+            raise ValidationError(f"Content too large (max {max_len // 1024 // 1024}MB for {msg_type})")
+
+        if msg_type == "text":
+            content = sanitize_text(content)
+            if not content:
+                raise ValidationError("Content is required")
 
         msg = await self.messages.create(
             chat_id=chat_id,
