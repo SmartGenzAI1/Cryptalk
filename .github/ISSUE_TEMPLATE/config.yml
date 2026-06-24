@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/SmartGenzAI1/Cryptalk/discussions
+    about: Ask questions and discuss ideas in GitHub Discussions
+  - name: 📖 Documentation
+    url: https://github.com/SmartGenzAI1/Cryptalk#readme
+    about: Read the README and architecture docs
+  - name: 🔒 Security Report
+    url: https://github.com/SmartGenzAI1/Cryptalk/security/advisories/new
+    about: Report a security vulnerability privately
