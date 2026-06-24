@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/chat_service.dart';
@@ -23,6 +24,7 @@ class _NewChatScreenState extends State<NewChatScreen> {
 
   Future<void> _search(String query) async {
     if (query.trim().isEmpty) {
+      if (mounted)
       setState(() => _results = []);
       return;
     }

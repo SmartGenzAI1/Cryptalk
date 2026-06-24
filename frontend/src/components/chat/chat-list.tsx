@@ -27,7 +27,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useCallback } from 'react'
 import { formatChatListTime } from '@/lib/format'
 
 const NewChatDialog = lazy(() => import('./new-chat-dialog').then(m => ({ default: m.NewChatDialog })))

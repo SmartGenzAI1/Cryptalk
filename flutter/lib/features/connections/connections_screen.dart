@@ -29,15 +29,17 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
       final chatService = context.read<ChatService>();
       final connData = await chatService._api.get('/api/social/connections');
       final reqData = await chatService._api.get('/api/social/requests');
+      if (mounted)
       setState(() {
         _connections = (connData['connections'] as List).map((u) => AppUser.fromJson(u)).toList();
         _requests = reqData['requests'] as List;
       });
-    } catch (_) {}
+    } catch (e) { debugPrint('Error: $e'); }
   }
 
   Future<void> _search(String q) async {
     if (q.trim().isEmpty) {
+      if (mounted)
       setState(() => _results = []);
       return;
     }
@@ -67,14 +69,14 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
     try {
       await context.read<ChatService>()._api.post('/api/social/accept/$requestId');
       _loadData();
-    } catch (_) {}
+    } catch (e) { debugPrint('Error: $e'); }
   }
 
   Future<void> _decline(String requestId) async {
     try {
       await context.read<ChatService>()._api.post('/api/social/decline/$requestId');
       _loadData();
-    } catch (_) {}
+    } catch (e) { debugPrint('Error: $e'); }
   }
 
   @override

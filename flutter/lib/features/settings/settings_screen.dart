@@ -69,7 +69,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
                   ),
                 );
-              } catch (_) {}
+              } catch (e) { debugPrint('Error: $e'); }
             },
           ),
           ListTile(
@@ -110,7 +110,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
                           ),
                         );
-                      } catch (_) {}
+                      } catch (e) { debugPrint('Error: $e'); }
                     },
                   ),
                   actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))],
@@ -141,7 +141,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           if (!context.mounted) return;
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report submitted')));
-                        } catch (_) {}
+                        } catch (e) { debugPrint('Error: $e'); }
                       },
                       child: const Text('Submit'),
                     ),
@@ -177,7 +177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 try {
                   await context.read<ChatService>()._api.delete('/api/account');
                   await auth.logout();
-                } catch (_) {}
+                } catch (e) { debugPrint('Error: $e'); }
               }
             },
           ),
@@ -217,6 +217,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   }
 
   Future<void> _save() async {
+    if (mounted)
     setState(() => _saving = true);
     try {
       await context.read<ChatService>()._api.patch('/api/users/me', {
@@ -224,7 +225,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         'bio': _bioController.text,
       });
       if (mounted) Navigator.pop(context);
-    } catch (_) {}
+    } catch (e) { debugPrint('Error: $e'); }
+    if (mounted)
     if (mounted) setState(() => _saving = false);
   }
 

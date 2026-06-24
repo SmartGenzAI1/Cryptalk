@@ -4,7 +4,8 @@ import logging
 from contextlib import asynccontextmanager
 
 import socketio
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine
 
@@ -72,6 +73,14 @@ app.add_middleware(
 )
 
 # Register exception handlers
+# Reject oversized request bodies (40MB limit)
+@app.middleware("http")
+async def limit_request_body(request: Request, call_next):
+    cl = request.headers.get("content-length")
+    if cl and int(cl) > 40 * 1024 * 1024:
+        return JSONResponse(status_code=413, content={"error": "too_large", "message": "Request body exceeds 40MB limit"})
+    return await call_next(request)
+
 app.add_exception_handler(DomainError, domain_error_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 

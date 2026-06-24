@@ -26,6 +26,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final name = _nameController.text.trim();
     if (username.length < 3 || name.isEmpty) return;
 
+    if (mounted)
     setState(() => _loading = true);
     try {
       await context.read<AuthService>().onboard(username, name);

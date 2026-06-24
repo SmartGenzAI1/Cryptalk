@@ -24,7 +24,9 @@ export function MessageList() {
   const lastReadAt = chatListItem?.lastReadAt ? new Date(chatListItem.lastReadAt).getTime() : 0
 
   // Message expiration — remove expired messages from the UI every second
+  const hasExpiring = messages.some(m => m.expiresIn)
   useEffect(() => {
+    if (!hasExpiring) return
     const interval = setInterval(() => {
       const now = Date.now()
       for (const msg of messages) {
@@ -37,7 +39,7 @@ export function MessageList() {
       }
     }, 1000)
     return () => clearInterval(interval)
-  }, [messages, activeChatId, removeMessage])
+  }, [messages, activeChatId, removeMessage, hasExpiring])
 
   // auto-scroll on new message (only if near bottom)
   useEffect(() => {

@@ -49,14 +49,7 @@ class MessageService:
         if not query:
             await self.chats.update_member(member.id, last_read_at=now_ms())
 
-        msg_ids = [m.id for m in msgs]
-        starred_ids = set()
-        for mid in msg_ids:
-            star = await self.stars.find(mid, user_id)
-            if star:
-                starred_ids.add(mid)
-
-        return [serialize_message(m, starred=m.id in starred_ids) for m in msgs]
+        return [serialize_message(m, starred=False) for m in msgs]
 
     async def send(
         self,

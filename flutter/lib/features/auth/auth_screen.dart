@@ -27,6 +27,7 @@ class _AuthScreenState extends State<AuthScreen> {
     final password = _passwordController.text;
     if (email.isEmpty || password.length < 6) return;
 
+    if (mounted)
     setState(() => _loading = true);
     try {
       final auth = context.read<AuthService>();

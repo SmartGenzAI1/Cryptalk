@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/auth_service.dart';
@@ -32,6 +33,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       final chatService = context.read<ChatService>();
       final auth = context.read<AuthService>();
       final chats = await chatService.getChats();
+      if (mounted)
       setState(() {
         _chats = chats;
         _loading = false;
@@ -45,6 +47,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           _loadChats();
         });
         socket.onUserStatus((_) {
+          if (mounted)
           setState(() {});
         });
       }

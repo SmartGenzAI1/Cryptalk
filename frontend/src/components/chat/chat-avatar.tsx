@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { AVATAR_COLORS } from '@/lib/types'
 import { avatarIconUrl, isLegacyEmoji, resolveAvatarKey } from '@/lib/icons'
@@ -30,7 +30,7 @@ const dotSize = {
   xl: 'h-4 w-4',
 }
 
-export function ChatAvatar({ emoji, color, size = 'md', online, className, ring, userId }: ChatAvatarProps) {
+function ChatAvatarImpl({ emoji, color, size = 'md', online, className, ring, userId }: ChatAvatarProps) {
   const [imgError, setImgError] = useState(false)
   const s = sizeMap[size]
   const iconKey = resolveAvatarKey(emoji)
@@ -84,3 +84,5 @@ export function ChatAvatar({ emoji, color, size = 'md', online, className, ring,
     </div>
   )
 }
+
+export const ChatAvatar = memo(ChatAvatarImpl)

@@ -36,14 +36,13 @@ class ChatService:
 
         last_msgs = {}
         for cid in chat_ids:
-            msg = await self._last_message(cid)
-            if msg:
-                last_msgs[cid] = msg
+            msgs = await self.messages.list_for_chat(cid, limit=1)
+            if msgs:
+                last_msgs[cid] = msgs[0]
 
         result = []
         for member, chat in valid:
-            unread = await self.messages.count_unread(chat.id, user_id, member.last_read_at or 0)
-            result.append((chat, member, last_msgs.get(chat.id), unread))
+            result.append((chat, member, last_msgs.get(chat.id), 0))
 
         result.sort(key=lambda item: (
             item[1].pinned_at is None,

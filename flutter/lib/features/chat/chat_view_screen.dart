@@ -87,6 +87,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     try {
       final chatService = context.read<ChatService>();
       final messages = await chatService.getMessages(widget.chat.id);
+      if (mounted)
       setState(() {
         _messages = messages;
         _loading = false;
@@ -94,23 +95,26 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       _scrollToBottom();
       await chatService.markDelivered(widget.chat.id);
     } catch (_) {
+      if (mounted)
       setState(() => _loading = false);
     }
   }
 
   Future<void> _loadMore() async {
     if (_loadingMore || _messages.isEmpty) return;
+    if (mounted)
     setState(() => _loadingMore = true);
     try {
       final chatService = context.read<ChatService>();
       final firstMsg = _messages.first;
       final older = await chatService.getMessages(widget.chat.id, before: firstMsg.createdAt);
       if (older.isNotEmpty) {
+        if (mounted)
         setState(() {
           _messages.insertAll(0, older.reversed);
         });
       }
-    } catch (_) {} finally {
+    } catch (e) { debugPrint('Error: $e'); } finally {
       setState(() => _loadingMore = false);
     }
   }
@@ -236,13 +240,14 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     try {
       final chatService = context.read<ChatService>();
       final edited = await chatService.editMessage(widget.chat.id, msg.id, text);
+      if (mounted)
       setState(() {
         _messages[_editingMessageIndex!] = edited;
         _editingMessageIndex = null;
       });
       _inputController.clear();
       _clearDraft();
-    } catch (_) {}
+    } catch (e) { debugPrint('Error: $e'); }
   }
 
   void _startEditing(int index) {
@@ -298,6 +303,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     if (!_isRecording) return;
     final path = await _record.stop();
     _recordTimer?.cancel();
+    if (mounted)
     setState(() => _isRecording = false);
     if (path == null || _recordSeconds < 1) return;
 
@@ -314,16 +320,18 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       });
       if (data['message'] != null) {
         final msg = Message.fromJson(data['message']);
+        if (mounted)
         setState(() => _messages.add(msg));
         socket.sendMessage(widget.chat.id, _messageToJson(msg));
         _scrollToBottom();
       }
-    } catch (_) {}
+    } catch (e) { debugPrint('Error: $e'); }
   }
 
   void _cancelRecording() async {
     if (_isRecording) await _record.stop();
     _recordTimer?.cancel();
+    if (mounted)
     setState(() {
       _isRecording = false;
       _recordSeconds = 0;
@@ -335,24 +343,26 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       final chatService = context.read<ChatService>();
       final socket = context.read<SocketService>();
       final msg = await chatService.sendMessage(widget.chat.id, emoji, type: 'sticker');
+      if (mounted)
       setState(() => _messages.add(msg));
       socket.sendMessage(widget.chat.id, _messageToJson(msg));
       _scrollToBottom();
-    } catch (_) {}
+    } catch (e) { debugPrint('Error: $e'); }
   }
 
   Future<void> _sendReaction(String messageId, String emoji) async {
     try {
       await context.read<ChatService>().toggleReaction(widget.chat.id, messageId, emoji);
-    } catch (_) {}
+    } catch (e) { debugPrint('Error: $e'); }
   }
 
   Future<void> _deleteMessage(int index, {bool forEveryone = false}) async {
     final msg = _messages[index];
     try {
       await context.read<ChatService>().deleteMessage(msg.chatId, msg.id, forEveryone: forEveryone);
+      if (mounted)
       setState(() => _messages.removeAt(index));
-    } catch (_) {}
+    } catch (e) { debugPrint('Error: $e'); }
   }
 
   Future<void> _pickImage() async {
@@ -372,11 +382,12 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       });
       if (data['message'] != null) {
         final msg = Message.fromJson(data['message']);
+        if (mounted)
         setState(() => _messages.add(msg));
         socket.sendMessage(widget.chat.id, _messageToJson(msg));
         _scrollToBottom();
       }
-    } catch (_) {}
+    } catch (e) { debugPrint('Error: $e'); }
   }
 
   void _showMessageOptions(int index) {
