@@ -105,9 +105,9 @@ export function AuthScreen() {
 
       <div className="flex-1 flex items-center justify-center p-6">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
-          <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
-            <Image src="/logo.png" alt="Cryptalk" width={56} height={56} className="object-contain drop-shadow-lg" priority />
-            <span className="text-2xl font-bold">Cryptalk</span>
+          <div className="flex flex-col items-center mb-8">
+            <Image src="/logo.png" alt="Cryptalk" width={96} height={96} className="object-contain drop-shadow-2xl mb-2" priority />
+            <span className="text-3xl font-bold tracking-tight">Cryptalk</span>
           </div>
 
           <div className="mb-8">

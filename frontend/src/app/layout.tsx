@@ -16,9 +16,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cryptalk — Encrypted Messenger",
-  description: "A secure, real-time messenger with AI superpowers. Chat, channels, groups, and a built-in AI assistant.",
-  keywords: ["Cryptalk", "messenger", "chat", "real-time", "AI", "secure", "encrypted"],
+  title: "Cryptalk — Secure Messenger",
+  description: "Private by default. Fast by design. End-to-end encrypted messaging with no phone number required.",
+  keywords: ["Cryptalk", "messenger", "chat", "secure", "encrypted", "private", "E2EE"],
   authors: [{ name: "Cryptalk" }],
   icons: {
     icon: [
@@ -30,13 +30,13 @@ export const metadata: Metadata = {
   manifest: undefined,
   openGraph: {
     title: "Cryptalk",
-    description: "Secure real-time messaging with AI",
+    description: "Secure real-time messaging",
     type: "website",
   },
   twitter: {
     card: "summary",
     title: "Cryptalk",
-    description: "Secure real-time messaging with AI",
+    description: "Secure real-time messaging",
   },
 };
 

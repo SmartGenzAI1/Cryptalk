@@ -56,8 +56,8 @@ class _AuthScreenState extends State<AuthScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Icon(Icons.lock_outline, size: 64, color: Color(0xFF10b981)),
-              const SizedBox(height: 16),
+              Image.asset('assets/logo.png', width: 96, height: 96),
+              const SizedBox(height: 8),
               Text(
                 'Cryptalk',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
