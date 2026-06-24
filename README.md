@@ -1,230 +1,208 @@
 <div align="center">
 
-<img src="frontend/public/logo-small.png" width="80" height="80" alt="Cryptalk Logo" />
+<img src="frontend/public/logo.png" width="80" height="80" alt="Cryptalk Logo" />
 
 # Cryptalk
 
-### Secure real-time messaging, supercharged with AI
+### Private by default. Fast by design.
 
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.138+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white)](https://nextjs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://typescriptlang.org)
+[![Flutter](https://img.shields.io/badge/Flutter-3.44+-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
 
 ---
 
-## ✨ Features
+## Features
 
+- **End-to-end encryption** — X25519 + ChaCha20-Poly1305. Server is zero-knowledge.
 - **Real-time messaging** — instant delivery via WebSockets (Socket.IO)
-- **AI assistant** — built-in copilot that drafts, summarizes & translates messages
-- **Smart replies** — AI-powered contextual reply suggestions
-- **Voice messages** — record, waveform preview, and playback
-- **Message reactions** — emoji reactions on any message
-- **Message starring & forwarding** — bookmark and share messages across chats
-- **Chat pinning & muting** — organize your conversations
-- **Groups & channels** — broadcast to thousands or chat 1-on-1
-- **Presence & typing indicators** — see who's online and typing in real-time
-- **Premium UI/UX** — glassmorphism, spring animations, iOS-style design
-- **Fully responsive** — mobile bottom-nav, desktop three-column layout
-- **Premium icons** — 66 curated icons8 icons served locally
-- **Secure** — scrypt password hashing, rate limiting, input sanitization
+- **Email authentication** — no phone number required
+- **Voice messages** — real recording with Web Audio API, encrypted before send
+- **File sharing** — images, documents up to 40MB, encrypted, ephemeral storage
+- **Message reactions, replies, edit, delete for everyone**
+- **Self-destructing messages** — set expiration timer (10s to 1 week)
+- **Delivery states** — ✓ sent, ✓✓ delivered, ✓✓ read (blue)
+- **Groups & channels** — with admin controls, kick, promote, transfer ownership
+- **Expiring groups** — auto-delete after 1-7 days (perfect for events)
+- **Invite links** — shareable token URLs for group joins
+- **Connections** — find users by username, send/accept requests
+- **Blocking & nicknames** — block users, set custom display names
+- **Cross-chat search** — search across all conversations
+- **Report system** — report users or content for abuse
+- **Account deletion** — permanently wipe all user data
+- **Draft messages** — saved per chat, restored on switch
+- **Unread divider** — "New Messages" separator line
+- **Animated stickers** — Lottie-based animated emoji
+- **Custom SVG avatars** — 8 unique geometric patterns
+- **Dark/light theme** — 8 accent colors, 5 chat wallpapers
+- **Fully responsive** — mobile bottom-nav, desktop three-column
+- **Flutter app** — iOS, Android, macOS, Windows, Linux from one codebase
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│                    Browser (Client)                    │
-│         Next.js SPA · WebSocket · Responsive           │
+│                    Client (Browser / App)              │
+│  Next.js Web · Flutter Mobile · WebSocket · E2EE      │
 └────────────────────────┬─────────────────────────────┘
-                         │ HTTP / WS
+                         │ HTTPS / WSS
                          ▼
 ┌──────────────────────────────────────────────────────┐
-│                 Caddy Gateway (:81)                    │
-│      XTransformPort routing · TLS · CORS               │
-└──────────┬──────────────────────────┬────────────────┘
-           │ :3000                    │ :8001
-           ▼                          ▼
-┌─────────────────────┐    ┌──────────────────────────┐
-│  Frontend (Next.js)  │    │  Backend (FastAPI+SIO)    │
-│  ──────────────────  │    │  ──────────────────────  │
-│  • UI components     │    │  • Clean architecture     │
-│  • Zustand store     │    │  • API → Service → Repo   │
-│  • /api/ai/* (BFF)   │    │  • Socket.IO realtime     │
-│  • z-ai-web-dev-sdk  │    │  • Rate limiting          │
-└─────────────────────┘    └───────────┬──────────────┘
-                                       │
-                                       ▼
-                              ┌────────────────┐
-                              │   SQLite (DB)   │
-                              └────────────────┘
+│                     Caddy / Render                      │
+│              TLS termination · CORS                    │
+└─────────┬─────────────────────────────┬───────────────┘
+          │                             │
+          ▼ :3000 (Vercel)              ▼ :8001 (Render)
+┌──────────────────────┐     ┌──────────────────────────┐
+│  Frontend (Next.js)   │     │  Backend (FastAPI+SIO)    │
+│  ──────────────────  │     │  ──────────────────────  │
+│  • UI components      │     │  • Clean architecture     │
+│  • Zustand store      │     │  • API → Service → Repo   │
+│  • E2EE client-side   │     │  • Socket.IO realtime     │
+│  • Lottie stickers    │     │  • Rate limiting          │
+└──────────────────────┘     └───────────┬──────────────┘
+                                         │
+                              ┌──────────┴──────────┐
+                              ▼                     ▼
+                     ┌──────────────┐    ┌──────────────┐
+                     │  SQLite (dev) │    │ Supabase PG  │
+                     │  / PostgreSQL │    │  (prod)      │
+                     └──────────────┘    └──────────────┘
 ```
 
-### Backend — Clean / Layered Architecture (Python)
+### Backend — Clean Architecture (Python)
 
 ```
 backend/app/
-├── main.py              # ASGI entry (FastAPI + Socket.IO)
-├── core/                # Config, database, security, exceptions, rate limiting
+├── main.py              # ASGI app
+├── core/                # config, database, security, exceptions, rate limiting
 ├── models/              # SQLAlchemy ORM entities
 ├── schemas/             # Pydantic request/response DTOs
-├── repositories/        # Data access layer (one repo per entity)
-├── services/            # Business logic + serializers + DI factory
-├── api/v1/              # Thin HTTP controllers (versioned)
-└── realtime/            # Socket.IO connection manager + handlers
+├── repositories/        # Data access layer
+├── services/            # Business logic + DI
+├── api/v1/              # HTTP controllers
+│   ├── auth.py          #   email auth + onboarding
+│   ├── chats.py         #   chat CRUD + settings
+│   ├── chat_management.py # leave, delete, kick, invite, search, reports
+│   ├── messages.py      #   messages + reactions + delivery
+│   ├── social.py        #   connections, blocks, nicknames
+│   ├── e2ee.py          #   public key distribution
+│   └── users.py         #   profile + search
+└── realtime/            # Socket.IO connection manager
 ```
 
-| Layer | Responsibility | Knows about |
-|---|---|---|
-| **API** | HTTP parsing, request validation | Services, Schemas |
-| **Service** | Business rules, orchestration | Repositories |
-| **Repository** | Database queries | Models, SQLAlchemy |
-| **Models** | Table definitions | SQLAlchemy only |
-| **Core** | Config, security, DB, exceptions | Nothing domain-specific |
-
-### Frontend — Feature-Modular (Next.js + TypeScript)
+### Frontend — Feature-Modular (Next.js)
 
 ```
 frontend/src/
 ├── app/                 # Next.js App Router
-│   ├── page.tsx         # Auth gate + main entry
-│   └── api/ai/          # AI BFF routes (z-ai-web-dev-sdk)
 ├── components/chat/     # All chat UI components
 ├── hooks/               # use-socket, use-mobile
 ├── stores/              # Zustand global state
-└── lib/                 # API client, icons, types, utils
+└── lib/                 # api client, E2EE, icons, cache, types
 ```
 
-## 🚀 Quick Start
+### Flutter — Cross-Platform
 
-### Prerequisites
-
-- **Python 3.12+**
-- **Node.js 20+** (or [Bun](https://bun.sh))
-- **Git**
-
-### 1. Clone
-
-```bash
-git clone https://github.com/SmartGenzAI1/Cryptalk.git
-cd Cryptalk
+```
+flutter/lib/
+├── main.dart            # App entry + Supabase init
+├── app_router.dart      # Auth gate
+├── core/                # api, auth, chat, crypto, socket, supabase
+└── features/            # auth, chat screens
 ```
 
-### 2. Backend Setup
+## Quick Start
+
+### Backend
 
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate  # optional but recommended
 pip install -r requirements.txt
-cp .env.example .env  # configure if needed
+cp .env.example .env  # set SESSION_SECRET
 uvicorn app.main:asgi_app --host 0.0.0.0 --port 8001 --reload
 ```
 
-The backend auto-creates the SQLite database on first run. API docs available at `http://localhost:8001/docs`.
-
-### 3. Frontend Setup
+### Frontend (Web)
 
 ```bash
 cd frontend
-bun install   # or: npm install
-cp .env.example .env.local  # configure if needed
-bun run dev   # or: npm run dev
+bun install
+cp .env.example .env.local
+bun run dev
 ```
 
-Open `http://localhost:3000` in your browser.
-
-### 4. Seed Demo Data (optional)
+### Flutter (Mobile/Desktop)
 
 ```bash
-# From the project root — creates 5 demo users + welcome channel
-cd prisma && npx prisma db push   # creates tables
-cd ../scripts && npx tsx seed.ts   # seeds demo data
+cd flutter
+flutter pub get
+cp .env.example .env  # set BACKEND_URL
+flutter run
 ```
 
-**Demo accounts** (password: `password123`): `alex`, `sam`, `priya`, `marco`, `cryptalk-ai`
+### Supabase (Production Database)
 
-## 📁 Project Structure
+1. Create a project at [supabase.com](https://supabase.com)
+2. Run `supabase/schema.sql` in the SQL Editor
+3. Set `DATABASE_URL` in your backend env to the Supabase connection string
+
+See [`supabase/README.md`](supabase/README.md) for detailed setup.
+
+## Deployment
+
+| Component | Platform | Config |
+|---|---|---|
+| Backend | Render | `render.yaml` — set `DATABASE_URL`, `SESSION_SECRET`, `CORS_ORIGINS` |
+| Frontend | Vercel | `vercel.json` — set `NEXT_PUBLIC_BACKEND_URL` |
+| Flutter APK | GitHub Actions | Push a `v*` tag to trigger the build workflow |
+
+## Security
+
+| Feature | Implementation |
+|---|---|
+| Password hashing | scrypt (N=16384, r=8, p=1) |
+| Session tokens | HMAC-SHA256 signed cookies (HTTP-only) |
+| Rate limiting | 10 logins/min, 5 registrations/min, 120 API calls/min |
+| Input validation | Pydantic + regex on all inputs |
+| Content sanitization | HTML escaping, control char stripping, length limits |
+| E2EE | X25519 + ChaCha20-Poly1305 (zero-knowledge server) |
+| Ephemeral storage | Message content wiped after delivery confirmation |
+| SQL injection | SQLAlchemy parameterized queries |
+| Row Level Security | Supabase RLS policies on all tables |
+| File sharing | Encrypted before upload, 40MB limit, wiped after delivery |
+
+## Project Structure
 
 ```
 Cryptalk/
 ├── backend/              # Python FastAPI backend
-│   ├── app/              # Application source (clean architecture)
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── README.md
-├── frontend/             # Next.js frontend
-│   ├── src/              # TypeScript source
-│   ├── public/icons/     # 66 local icons (avatars, stickers, UI)
-│   ├── package.json
-│   ├── Dockerfile
-│   └── README.md
-├── prisma/               # Shared database schema (for seeding)
+├── frontend/             # Next.js web client
+├── flutter/              # Flutter mobile/desktop client
+├── supabase/             # PostgreSQL schema + setup guide
+├── prisma/               # Shared schema (for seeding)
 ├── scripts/              # Database seed script
-├── Caddyfile             # Gateway config (optional, for production)
-├── ARCHITECTURE.md       # Detailed architecture docs
+├── .github/workflows/    # CI + Flutter APK build
 ├── CONTRIBUTING.md
 └── LICENSE
 ```
 
-## 🔐 Security
+## Documentation
 
-| Feature | Implementation |
-|---|---|
-| **Password hashing** | scrypt (N=16384, r=8, p=1) |
-| **Session tokens** | HMAC-SHA256 signed cookies (HTTP-only) |
-| **Rate limiting** | 10 logins/min, 5 registrations/min, 120 API calls/min |
-| **Input validation** | Pydantic schemas + regex validation on all inputs |
-| **Content sanitization** | Control character stripping, length limits (10KB messages) |
-| **SQL injection** | SQLAlchemy parameterized queries throughout |
+- [Backend README](backend/README.md) — API reference, endpoints
+- [Frontend README](frontend/README.md) — Components, features
+- [Flutter README](flutter/README.md) — Mobile app setup
+- [Supabase Setup](supabase/README.md) — Database configuration
+- **Swagger UI** — `http://localhost:8001/docs`
 
-## 🤖 AI Features
+## Contributing
 
-The AI capabilities are powered by [z-ai-web-dev-sdk](https://www.npmjs.com/package/z-ai-web-dev-sdk) and run in the Next.js frontend as a Backend-for-Frontend (BFF) layer:
+See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome.
 
-- **Cryptalk AI Assistant** — multi-turn chat for drafting, brainstorming, translating
-- **Smart Replies** — 3 contextual reply suggestions above the message input
-- **Chat Summarization** — one-click AI summary of any conversation
-- **Message Translation** — translate any message to 8 languages
+## License
 
-## 📱 Responsive Design
-
-| Viewport | Layout |
-|---|---|
-| Mobile (<768px) | Single-pane + bottom navigation bar |
-| Tablet (768-1024px) | Icon sidebar + chat list + chat window |
-| Desktop (>1024px) | Full 3-column with optional info/AI/settings panels |
-
-## 🐳 Docker
-
-```bash
-# Backend
-cd backend && docker build -t cryptalk-backend . && docker run -p 8001:8001 cryptalk-backend
-
-# Frontend
-cd frontend && docker build -t cryptalk-frontend . && docker run -p 3000:3000 cryptalk-frontend
-```
-
-## 📖 Documentation
-
-- [Backend README](backend/README.md) — API reference, endpoints, development guide
-- [Frontend README](frontend/README.md) — Components, features, development guide
-- [Architecture](ARCHITECTURE.md) — Detailed system design document
-- **Swagger UI** — `http://localhost:8001/docs` (auto-generated)
-
-## 🤝 Contributing
-
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## 📄 License
-
-This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
-
----
-
-<div align="center">
-
-Made with ✨ by the Cryptalk team
-
-</div>
+MIT — see [LICENSE](LICENSE).

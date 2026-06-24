@@ -156,7 +156,6 @@ export function ChatWindow() {
           </p>
           <div className="flex flex-wrap gap-2 justify-center text-xs">
             <span className="px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">⚡ Real-time</span>
-            <span className="px-3 py-1.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium">✨ AI Assistant</span>
             <span className="px-3 py-1.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 font-medium">😊 Reactions</span>
             <span className="px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">🎙️ Voice</span>
 

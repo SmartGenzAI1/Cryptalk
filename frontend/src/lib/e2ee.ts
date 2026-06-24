@@ -26,7 +26,7 @@ import { apiGet, apiPost } from './api'
 export interface E2EEStatus {
   /** Does this device have identity keys? */
   hasLocalKeys: boolean
-  /** Has the server received our public keys? */
+  /* server key status */
   hasServerKeys: boolean
   /** Is E2EE fully active for this user? */
   isE2EEEnabled: boolean
