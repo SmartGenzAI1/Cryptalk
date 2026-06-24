@@ -155,31 +155,54 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
     window.dispatchEvent(new CustomEvent('zc-reply', { detail: message }))
   }
 
-  // voice playback simulation
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
   function togglePlay() {
     if (playing) {
       setPlaying(false)
-      if (playTimer.current) clearInterval(playTimer.current)
+      audioRef.current?.pause()
       return
     }
+
+    const audioContent = message.content
+
+    if (!audioContent.startsWith('data:audio')) {
+      // legacy voice message (no actual audio)
+      setPlaying(true)
+      const duration = message.duration || 5
+      const step = 100 / (duration * 10)
+      playTimer.current = setInterval(() => {
+        setProgress((p) => {
+          const next = p + step
+          if (next >= 100) {
+            setPlaying(false)
+            if (playTimer.current) clearInterval(playTimer.current)
+            return 0
+          }
+          return next
+        })
+      }, 100)
+      return
+    }
+
+    const audio = new Audio(audioContent)
+    audioRef.current = audio
+    audio.onended = () => {
+      setPlaying(false)
+      setProgress(0)
+    }
+    audio.ontimeupdate = () => {
+      if (audio.duration) {
+        setProgress((audio.currentTime / audio.duration) * 100)
+      }
+    }
+    audio.play()
     setPlaying(true)
-    const duration = message.duration || 5
-    const step = 100 / (duration * 10)
-    playTimer.current = setInterval(() => {
-      setProgress((p) => {
-        const next = p + step
-        if (next >= 100) {
-          setPlaying(false)
-          if (playTimer.current) clearInterval(playTimer.current)
-          return 0
-        }
-        return next
-      })
-    }, 100)
   }
 
   useEffect(() => {
     return () => {
+      audioRef.current?.pause()
       if (playTimer.current) clearInterval(playTimer.current)
     }
   }, [])

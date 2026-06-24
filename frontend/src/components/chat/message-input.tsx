@@ -57,6 +57,8 @@ export function MessageInput() {
   const [recording, setRecording] = useState(false)
   const [recordSeconds, setRecordSeconds] = useState(0)
   const [ expiresIn, setExpiresIn] = useState<number | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastTypingEmit = useRef(0)
@@ -162,15 +164,37 @@ export function MessageInput() {
     }
   }
 
-  function startRecording() {
-    setRecording(true)
-    setRecordSeconds(0)
-    recordTimer.current = setInterval(() => {
-      setRecordSeconds((s) => s + 1)
-    }, 1000)
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = recorder
+      audioChunksRef.current = []
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data)
+      }
+      recorder.start()
+      setRecording(true)
+      setRecordSeconds(0)
+      recordTimer.current = setInterval(() => {
+        setRecordSeconds((s) => {
+          if (s >= 60) {
+            sendVoice()
+            return 0
+          }
+          return s + 1
+        })
+      }, 1000)
+    } catch (e) {
+      toast.error('Microphone access denied')
+    }
   }
 
   function cancelRecording() {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+      mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop())
+    }
     setRecording(false)
     setRecordSeconds(0)
     if (recordTimer.current) clearInterval(recordTimer.current)
@@ -178,6 +202,10 @@ export function MessageInput() {
 
   async function sendVoice() {
     const seconds = recordSeconds
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+      mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop())
+    }
     setRecording(false)
     setRecordSeconds(0)
     if (recordTimer.current) clearInterval(recordTimer.current)
@@ -185,14 +213,47 @@ export function MessageInput() {
       toast.error('Recording too short')
       return
     }
+
+    await new Promise(resolve => setTimeout(resolve, 200))
+
     try {
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+      const reader = new FileReader()
+      const audioBase64 = await new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(audioBlob)
+      })
+
+      let contentToSend = audioBase64
+      if (activeChat && activeChat.type !== 'saved') {
+        try {
+          const { encryptMessageForChat } = await import('@/lib/e2ee')
+          const recipient = activeChat.members.find((m) => m.user.id !== currentUser?.id)
+          contentToSend = await encryptMessageForChat(
+            audioBase64,
+            activeChatId,
+            activeChat.type,
+            recipient?.user.id
+          )
+        } catch {
+          // keep plaintext if encryption fails
+        }
+      }
+
       const data = await apiPost<{ message: any }>(`/api/${activeChatId}/messages`, {
-        content: '🎙️ Voice message',
+        content: contentToSend,
         type: 'voice',
         duration: seconds,
         replyToId: replyTo?.id || null,
       })
       if (data.message) {
+        if (activeChat && data.message.type === 'voice') {
+          try {
+            const { decryptMessageForChat } = await import('@/lib/e2ee')
+            data.message.content = await decryptMessageForChat(data.message.content, activeChatId, activeChat.type)
+          } catch {}
+        }
         addMessage(activeChatId, data.message)
         getSocket()?.emit('send-message', { chatId: activeChatId, message: data.message })
       }
