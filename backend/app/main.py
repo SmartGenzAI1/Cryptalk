@@ -21,15 +21,22 @@ from app.models import Base
 from app.realtime.connection_manager import manager
 from app.realtime.handlers import register_handlers
 
-# ─── Logging ───────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("cryptalk")
 
+if settings.has_sentry:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        traces_sample_rate=0.1,
+        profiles_sample_rate=0.1,
+    )
+    logger.info("Sentry initialized")
 
-# ─── Lifespan — startup & shutdown ─────────────────────────────────────
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if settings.is_postgres:
@@ -44,7 +51,6 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down...")
 
 
-# ─── FastAPI app ───────────────────────────────────────────────────────
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
@@ -53,14 +59,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ─── Middleware (order matters: outermost first) ───────────────────────
-# Rate limiting — protects against brute force & flooding
 app.add_middleware(
     RateLimitMiddleware,
     limits={
-        "/api/auth/login": (10, 60),       # 10 login attempts / minute
-        "/api/auth/register": (5, 60),      # 5 registrations / minute
-        "/api/": (120, 60),                 # 120 general API calls / minute
+        "/api/auth/login": (10, 60),
+        "/api/auth/register": (5, 60),
+        "/api/": (120, 60),
     },
 )
 
@@ -74,8 +78,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register exception handlers
-# Reject oversized request bodies (40MB limit)
 @app.middleware("http")
 async def limit_request_body(request: Request, call_next):
     cl = request.headers.get("content-length")
@@ -86,11 +88,9 @@ async def limit_request_body(request: Request, call_next):
 app.add_exception_handler(DomainError, domain_error_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
-# Register API v1 routes
 app.include_router(api_router)
 
 
-# ─── Health checks ─────────────────────────────────────────────────────
 @app.get("/")
 async def root():
     return {"status": "ok", "service": settings.APP_NAME, "version": settings.APP_VERSION}
@@ -101,19 +101,34 @@ async def health():
     return {
         "status": "ok",
         "online_users": len(manager.all_online_user_ids()),
+        "redis": settings.has_redis,
+        "sentry": settings.has_sentry,
     }
 
 
-# ─── Socket.IO server ──────────────────────────────────────────────────
 sio = socketio.AsyncServer(
     async_mode="asgi",
     cors_allowed_origins="*",
     ping_timeout=settings.SOCKETIO_PING_TIMEOUT,
     ping_interval=settings.SOCKETIO_PING_INTERVAL,
 )
+
+if settings.has_redis:
+    try:
+        mgr = socketio.AsyncRedisManager(settings.REDIS_URL)
+        sio = socketio.AsyncServer(
+            async_mode="asgi",
+            client_manager=mgr,
+            cors_allowed_origins="*",
+            ping_timeout=settings.SOCKETIO_PING_TIMEOUT,
+            ping_interval=settings.SOCKETIO_PING_INTERVAL,
+        )
+        logger.info("Socket.IO using Redis adapter for multi-process scaling")
+    except Exception as e:
+        logger.warning(f"Redis connection failed, falling back to in-memory: {e}")
+
 register_handlers(sio)
 
-# Combine FastAPI + Socket.IO into a single ASGI app
 asgi_app = socketio.ASGIApp(sio, app)
 
 

@@ -18,9 +18,6 @@ class Settings(BaseSettings):
     PORT: int = int(os.environ.get("PORT", "8001"))
     DEBUG: bool = False
 
-    # SQLite for local dev, PostgreSQL URL for Supabase production
-    # Local: DB_PATH=./db/cryptalk.db
-    # Supabase: DATABASE_URL=postgresql+asyncpg://user:pass@db.xxx.supabase.co:5432/postgres
     DB_PATH: str = os.environ.get("DB_PATH", "./db/cryptalk.db")
 
     SESSION_SECRET: str = os.environ.get("SESSION_SECRET", "")
@@ -31,6 +28,17 @@ class Settings(BaseSettings):
 
     SOCKETIO_PING_TIMEOUT: int = 60
     SOCKETIO_PING_INTERVAL: int = 25
+
+    # Redis (Upstash) — for Socket.IO scaling + rate limiting
+    # Format: redis://default:password@host:port
+    REDIS_URL: str = os.environ.get("REDIS_URL", "")
+
+    # Sentry
+    SENTRY_DSN: str = os.environ.get("SENTRY_DSN", "")
+
+    # Supabase (for storage)
+    SUPABASE_URL: str = os.environ.get("SUPABASE_URL", "")
+    SUPABASE_KEY: str = os.environ.get("SUPABASE_KEY", "")
 
     AVATAR_COLORS: List[str] = [
         "emerald", "violet", "rose", "amber",
@@ -64,6 +72,18 @@ class Settings(BaseSettings):
     @property
     def is_postgres(self) -> bool:
         return self.database_url.startswith("postgresql")
+
+    @property
+    def has_redis(self) -> bool:
+        return bool(self.REDIS_URL)
+
+    @property
+    def has_sentry(self) -> bool:
+        return bool(self.SENTRY_DSN)
+
+    @property
+    def has_supabase(self) -> bool:
+        return bool(self.SUPABASE_URL and self.SUPABASE_KEY)
 
     def validate(self) -> None:
         if not self.SESSION_SECRET:
