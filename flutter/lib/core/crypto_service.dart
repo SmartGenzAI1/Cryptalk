@@ -9,97 +9,122 @@ class CryptoService {
   CryptoService._internal();
 
   final _storage = const FlutterSecureStorage();
-  KeyPair? _identityKeyPair;
-  KeyPair? _signingKeyPair;
+  SimpleKeyPair? _keyPair;
+  bool _initialized = false;
 
-  bool get isInitialized => _identityKeyPair != null;
+  bool get isInitialized => _initialized;
 
   Future<void> init() async {
-    final privKey = await _storage.read(key: 'identity_priv');
-    final pubKey = await _storage.read(key: 'identity_pub');
+    if (_initialized) return;
 
-    if (privKey != null && pubKey != null) {
-      _identityKeyPair = KeyPair(
-        privateKey: SecretKey(base64Decode(privKey)),
-        publicKey: PublicKey(base64Decode(pubKey)),
+    final privKeyB64 = await _storage.read(key: 'x25519_priv');
+    final pubKeyB64 = await _storage.read(key: 'x25519_pub');
+
+    if (privKeyB64 != null && pubKeyB64 != null) {
+      _keyPair = SimpleKeyPair(
+        SecretKey(base64Decode(privKeyB64)),
+        PublicKey(base64Decode(pubKeyB64)),
+        type: KeyPairType.x25519,
       );
     } else {
-      await generateIdentity();
+      await generate();
     }
+    _initialized = true;
   }
 
-  Future<void> generateIdentity() async {
+  Future<void> generate() async {
     final algorithm = X25519();
-    final keyPair = await algorithm.newKeyPair();
-    final privKey = await keyPair.privateKey.extractBytes();
-    final pubKey = await keyPair.publicKey.extractBytes();
+    final pair = await algorithm.newKeyPair();
+    final privBytes = await pair.extractPrivateKeyBytes();
+    final pubBytes = await pair.extractPublicKey();
 
-    await _storage.write(key: 'identity_priv', value: base64Encode(privKey));
-    await _storage.write(key: 'identity_pub', value: base64Encode(pubKey));
+    await _storage.write(key: 'x25519_priv', value: base64Encode(privBytes));
+    await _storage.write(key: 'x25519_pub', value: base64Encode(pubBytes));
 
-    _identityKeyPair = KeyPair(
-      privateKey: SecretKey(privKey),
-      publicKey: PublicKey(pubKey),
+    _keyPair = SimpleKeyPair(
+      SecretKey(privBytes),
+      PublicKey(pubBytes),
+      type: KeyPairType.x25519,
     );
+    _initialized = true;
   }
 
   String get publicKeyBase64 {
-    if (_identityKeyPair == null) return '';
-    return base64Encode(_identityKeyPair!.publicKey.bytes);
+    if (_keyPair == null) return '';
+    return base64Encode((_keyPair!.publicKey as PublicKey).bytes);
   }
 
   Future<String> encrypt(String plaintext, String recipientPublicKeyB64) async {
     final x25519 = X25519();
-    final ephemeralKeyPair = await x25519.newKeyPair();
+    final chacha = Chacha20Poly1305();
+    final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
 
+    final ephemeralPair = await x25519.newKeyPair();
     final recipientPubKey = PublicKey(base64Decode(recipientPublicKeyB64));
+
     final sharedSecret = await x25519.sharedSecret(
-      keyPair: ephemeralKeyPair,
+      keyPair: ephemeralPair,
       remotePublicKey: recipientPubKey,
     );
-
     final sharedBytes = await sharedSecret.extractBytes();
-    final encryptionKey = await _deriveKey(sharedBytes);
 
-    final nonce = algorithm.nonce;
-    final secretBox = await algorithm.seal(
+    final derivedKey = await hkdf.deriveKey(
+      SecretKey(sharedBytes),
+      nonce: [],
+      info: utf8.encode('cryptalk-message'),
+    );
+    final derivedBytes = await derivedKey.extractBytes();
+
+    final nonce = chacha.nonce;
+    final secretBox = await chacha.seal(
       utf8.encode(plaintext),
-      secretKey: SecretKey(encryptionKey),
+      secretKey: SecretKey(derivedBytes),
     );
 
-    final ephemeralPub = await ephemeralKeyPair.publicKey.extractBytes();
+    final ephemeralPub = await ephemeralPair.extractPublicKey();
 
     return jsonEncode({
       'ciphertext': base64Encode(secretBox.cipherText),
       'nonce': base64Encode(secretBox.nonce),
-      'ephemeralPublicKey': base64Encode(ephemeralPub),
+      'mac': base64Encode(secretBox.mac.bytes),
+      'ephemeralPublicKey': base64Encode(ephemeralPub.bytes),
     });
   }
 
   Future<String> decrypt(String encryptedJson) async {
     try {
       final payload = jsonDecode(encryptedJson);
-      if (payload['ciphertext'] == null) return encryptedJson;
+      if (payload['ciphertext'] == null || payload['ephemeralPublicKey'] == null) {
+        return encryptedJson;
+      }
 
       final x25519 = X25519();
+      final chacha = Chacha20Poly1305();
+      final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
+
       final ephemeralPub = PublicKey(base64Decode(payload['ephemeralPublicKey']));
       final sharedSecret = await x25519.sharedSecret(
-        keyPair: _identityKeyPair!,
+        keyPair: _keyPair!,
         remotePublicKey: ephemeralPub,
       );
-
       final sharedBytes = await sharedSecret.extractBytes();
-      final encryptionKey = await _deriveKey(sharedBytes);
+
+      final derivedKey = await hkdf.deriveKey(
+        SecretKey(sharedBytes),
+        nonce: [],
+        info: utf8.encode('cryptalk-message'),
+      );
+      final derivedBytes = await derivedKey.extractBytes();
 
       final secretBox = SecretBox(
         base64Decode(payload['ciphertext']),
         nonce: base64Decode(payload['nonce']),
-        mac: Mac.empty,
+        mac: Mac(base64Decode(payload['mac'])),
       );
 
-      final plaintext = await algorithm.open(
+      final plaintext = await chacha.open(
         secretBox,
-        secretKey: SecretKey(encryptionKey),
+        secretKey: SecretKey(derivedBytes),
       );
 
       return utf8.decode(plaintext);
@@ -107,22 +132,4 @@ class CryptoService {
       return encryptedJson;
     }
   }
-
-  Future<List<int>> _deriveKey(List<int> sharedSecret) async {
-    final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
-    final derived = await hkfx.deriveKey(
-      sharedSecret,
-      nonce: [],
-      info: utf8.encode('cryptalk-message'),
-    );
-    return await derived.extractBytes();
-  }
-
-  Chacha20Poly1305 get algorithm => Chacha20Poly1305();
-}
-
-class KeyPair {
-  final SecretKey privateKey;
-  final PublicKey publicKey;
-  KeyPair({required this.privateKey, required this.publicKey});
 }
