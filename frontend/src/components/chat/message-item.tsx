@@ -35,7 +35,7 @@ import { toast } from 'sonner'
 import { formatTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { getSocket } from '@/hooks/use-socket'
-import { toggleReaction, toggleStar, forwardMessage } from '@/lib/actions'
+import { toggleReaction, toggleStar } from '@/lib/actions'
 import { motion, AnimatePresence } from 'framer-motion'
 import { lazy, Suspense } from 'react'
 import { apiGet, apiPatch, apiDelete } from '@/lib/api'
@@ -247,7 +247,7 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
               </div>
             )}
 
-            <div className={cn('relative max-w-[75%] sm:max-w-[65%] flex flex-col', isOwn ? 'items-end' : 'items-start')}>
+            <div className={cn('relative max-w-[85%] sm:max-w-[65%] min-w-0 flex flex-col', isOwn ? 'items-end' : 'items-start')}>
               {!isOwn && isFirstInGroup && activeChat?.type !== 'direct' && activeChat?.type !== 'saved' && (
                 <span className="text-xs font-bold ml-1 mb-0.5 text-primary">
                   {message.sender.name}

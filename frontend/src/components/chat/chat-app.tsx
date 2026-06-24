@@ -1,6 +1,6 @@
 'use client'
 
-import { lazy, Suspense, useEffect, useMemo } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { useChatStore } from '@/stores/chat-store'
 import { useSocket } from '@/hooks/use-socket'
 import { Sidebar } from './sidebar'

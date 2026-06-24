@@ -67,7 +67,7 @@ export async function hasIdentityKey(): Promise<boolean> {
 
 /**
  * Store the identity keypair (generated client-side).
- * This is called ONCE during onboarding.
+ *
  */
 export async function saveIdentityKey(keyPair: IdentityKeyPair): Promise<void> {
   await put(IDENTITY_KEY, keyPair)

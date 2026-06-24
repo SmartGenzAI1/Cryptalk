@@ -3,8 +3,8 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from 'react'
 import { useChatStore, EMPTY_MESSAGES, EMPTY_TYPING } from '@/stores/chat-store'
 import { MessageItem } from './message-item'
-import { formatDateSeparator, sameDay, formatTime } from '@/lib/format'
-import { Loader2, ChevronDown, ArrowDown } from 'lucide-react'
+import { formatDateSeparator, sameDay } from '@/lib/format'
+import { ArrowDown } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 export function MessageList() {
@@ -18,7 +18,6 @@ export function MessageList() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const lastCountRef = useRef(0)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
-  const [unreadBelowCount, setUnreadBelowCount] = useState(0)
 
   const chatListItem = chats.find((c) => c.id === activeChatId)
   const removeMessage = useChatStore((s) => s.removeMessage)
@@ -170,11 +169,6 @@ export function MessageList() {
             title="Scroll to latest"
           >
             <ArrowDown className="h-5 w-5 text-foreground" />
-            {unreadBelowCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-primary text-primary-foreground text-[11px] font-bold flex items-center justify-center border-2 border-background">
-                {unreadBelowCount}
-              </span>
-            )}
           </motion.button>
         )}
       </AnimatePresence>

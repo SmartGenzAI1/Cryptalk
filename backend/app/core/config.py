@@ -1,10 +1,4 @@
-"""Application configuration — type-safe settings via pydantic-settings.
-
-All runtime configuration is read from environment variables with sensible
-defaults.  This makes the service twelve-factor compliant and trivially
-deployable to any cloud platform.
-"""
-
+import os
 from functools import lru_cache
 from typing import List
 
@@ -12,42 +6,33 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Central configuration loaded from env / .env file."""
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
-    # ── Server ──────────────────────────────────────────────────────────
     APP_NAME: str = "Cryptalk API"
     APP_VERSION: str = "3.0.0"
     HOST: str = "0.0.0.0"
     PORT: int = 8001
     DEBUG: bool = False
 
-    # ── Database ────────────────────────────────────────────────────────
-    DB_PATH: str = "/home/z/my-project/db/custom.db"
+    DB_PATH: str = os.environ.get("DB_PATH", "./db/cryptalk.db")
 
-    # ── Security ────────────────────────────────────────────────────────
-    SESSION_SECRET: str = "telegram-clone-secret-key-change-me"
+    SESSION_SECRET: str = os.environ.get("SESSION_SECRET", "")
     COOKIE_NAME: str = "tc_session"
-    COOKIE_MAX_AGE: int = 60 * 60 * 24 * 30  # 30 days
+    COOKIE_MAX_AGE: int = 2592000
 
-    # ── CORS ────────────────────────────────────────────────────────────
-    CORS_ORIGINS: List[str] = ["*"]
+    CORS_ORIGINS: str = "*"
 
-    # ── Realtime ────────────────────────────────────────────────────────
     SOCKETIO_PING_TIMEOUT: int = 60
     SOCKETIO_PING_INTERVAL: int = 25
 
-    # ── Domain defaults ─────────────────────────────────────────────────
     AVATAR_COLORS: List[str] = [
         "emerald", "violet", "rose", "amber",
         "cyan", "lime", "purple", "teal",
     ]
-    # Icons8 color-style icon names (https://icons8.com/icon-set/color)
     AVATAR_ICONS: List[str] = [
         "fox", "cat", "dog", "bird", "fish", "lion", "panda", "unicorn",
         "giraffe", "elephant", "rabbit", "owl", "bear", "frog", "turtle",
@@ -68,11 +53,18 @@ class Settings(BaseSettings):
     def database_url(self) -> str:
         return f"sqlite+aiosqlite:///{self.DB_PATH}"
 
+    def validate(self) -> None:
+        if not self.SESSION_SECRET:
+            raise RuntimeError(
+                "SESSION_SECRET must be set. Generate one with: openssl rand -hex 32"
+            )
+
 
 @lru_cache
 def get_settings() -> Settings:
-    """Cached settings singleton — created once per process."""
-    return Settings()
+    s = Settings()
+    s.validate()
+    return s
 
 
 settings = get_settings()

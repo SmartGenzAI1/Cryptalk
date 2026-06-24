@@ -24,7 +24,6 @@ import { ACCENT_HEX, AVATAR_COLORS, AVATAR_COLOR_KEYS, WALLPAPERS } from '@/lib/
 import { updateUserSettings } from '@/lib/actions'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { motion } from 'framer-motion'
 
 export function SettingsPanel() {
   const currentUser = useChatStore((s) => s.currentUser)

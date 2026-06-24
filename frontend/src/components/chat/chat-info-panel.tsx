@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { formatLastSeen } from '@/lib/format'
-import { toast } from 'sonner'
 import { stickerIconUrl, isLegacyEmoji } from '@/lib/icons'
 
 export function ChatInfoPanel() {
