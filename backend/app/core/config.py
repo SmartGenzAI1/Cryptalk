@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Cryptalk API"
     APP_VERSION: str = "3.0.0"
     HOST: str = "0.0.0.0"
-    PORT: int = 8001
+    PORT: int = int(os.environ.get("PORT", "8001"))
     DEBUG: bool = False
 
     DB_PATH: str = os.environ.get("DB_PATH", "./db/cryptalk.db")
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     COOKIE_NAME: str = "tc_session"
     COOKIE_MAX_AGE: int = 2592000
 
-    CORS_ORIGINS: str = "*"
+    CORS_ORIGINS: str = os.environ.get("CORS_ORIGINS", "*")
 
     SOCKETIO_PING_TIMEOUT: int = 60
     SOCKETIO_PING_INTERVAL: int = 25

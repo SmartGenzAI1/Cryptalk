@@ -30,7 +30,11 @@ export function useSocket() {
     if (!currentUser || initialised.current) return
     initialised.current = true
 
-    socket = io(`/?XTransformPort=${process.env.NEXT_PUBLIC_BACKEND_PORT || '8001'}`, {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+    const socketUrl = backendUrl
+      ? backendUrl
+      : `/?XTransformPort=${process.env.NEXT_PUBLIC_BACKEND_PORT || '8001'}`
+    socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
       forceNew: true,
       reconnection: true,

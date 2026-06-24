@@ -1,6 +1,11 @@
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || ''
 const BACKEND_PORT = process.env.NEXT_PUBLIC_BACKEND_PORT || process.env.BACKEND_PORT || '8001'
 
 function buildUrl(path: string): string {
+  if (BACKEND_URL) {
+    const sep = path.includes('?') ? '&' : '?'
+    return `${BACKEND_URL}${path}${sep}`
+  }
   const sep = path.includes('?') ? '&' : '?'
   return `${path}${sep}XTransformPort=${BACKEND_PORT}`
 }
@@ -65,4 +70,4 @@ export async function apiDelete<T = any>(path: string): Promise<T> {
   return res.json()
 }
 
-export { BACKEND_PORT }
+export { BACKEND_PORT, BACKEND_URL }

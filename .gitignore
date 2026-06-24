@@ -72,3 +72,14 @@ frontend/node_modules/.prisma/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+
+# Deployment artifacts
+Caddyfile
+bun.lock
+frontend/bun.lock
+
+# Flutter build
+flutter/build/
+flutter/.dart_tool/
+flutter/ios/Pods/
+flutter/android/.gradle/
