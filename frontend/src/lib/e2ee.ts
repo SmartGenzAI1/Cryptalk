@@ -1,15 +1,4 @@
-/**
- * E2EE Manager — orchestrates key lifecycle and message encryption.
- *
- * This module is the bridge between the crypto primitives (crypto.ts),
- * the key store (key-store.ts), and the backend API.
- *
- * Flow:
- *   1. On first login: check if identity keys exist locally
- *      → if not, generate + upload public keys to server
- *   2. On message send: fetch recipient's public key → encrypt → send ciphertext
- *   3. On message receive: decrypt with local private key
- */
+
 
 import {
   generateIdentityKeyPair,

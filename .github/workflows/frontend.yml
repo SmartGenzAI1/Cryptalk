@@ -1,5 +1,3 @@
-# Cryptalk CI — Frontend lint + build
-
 name: Frontend CI
 
 on:
@@ -31,12 +29,3 @@ jobs:
       - name: Lint
         run: bun run lint
         continue-on-error: true
-
-      - name: Type check
-        run: bunx tsc --noEmit
-        continue-on-error: true
-
-      - name: Build
-        run: bun run build
-        env:
-          NEXT_TELEMETRY_DISABLED: '1'

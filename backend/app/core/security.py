@@ -99,8 +99,7 @@ def verify_session_token(token: str) -> Optional[str]:
 def get_client_fingerprint(request) -> str:
     """Generate a fingerprint from the client's IP + user agent.
 
-    This is used for anti-session-hijacking: if a session token is
-    used from a different IP/user-agent, it's considered stolen.
+
     """
     forwarded = request.headers.get("x-forwarded-for", "")
     ip = forwarded.split(",")[0].strip() if forwarded else (

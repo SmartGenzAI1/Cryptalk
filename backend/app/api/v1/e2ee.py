@@ -1,15 +1,4 @@
-"""E2EE key management endpoints — public key distribution.
-
-The server acts as a key directory: it stores users' PUBLIC keys and
-serves them to other users for ECDH key agreement. The server NEVER
-sees or stores private keys.
-
-Architecture:
-    Client A generates keypair → uploads PUBLIC key → server stores it
-    Client B requests A's public key → server returns it
-    Client B encrypts message with A's public key → server routes ciphertext
-    Client A decrypts with PRIVATE key (which never left A's device)
-"""
+"""Public key distribution for E2EE."""
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -64,7 +53,7 @@ async def get_public_keys(
 ):
     """Fetch another user's public keys for E2EE key agreement.
 
-    The server returns ONLY public keys — it cannot decrypt any messages.
+
     """
     user = await user_repo.get_by_id(target_user_id)
     if not user:

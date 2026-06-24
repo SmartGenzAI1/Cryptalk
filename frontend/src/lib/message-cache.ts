@@ -1,15 +1,4 @@
-/**
- * Message Cache — smart client-side caching for instant sync.
- *
- * Caches the last 1000 messages per chat in IndexedDB so that when a
- * user reopens a chat, messages appear instantly (< 200ms) without
- * waiting for a server round-trip.
- *
- * Strategy:
- *   1. On chat open: show cached messages immediately
- *   2. Fetch latest from server in background
- *   3. Merge: prepend any new cached messages, update existing ones
- */
+
 
 const DB_NAME = 'cryptalk-cache'
 const STORE_NAME = 'messages'

@@ -1,9 +1,9 @@
-"""Auth — email + password registration, username onboarding."""
-
+""""""
 import re
 import secrets
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, EmailStr
+
+from fastapi import APIRouter, Depends, Request, Response
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,8 +25,15 @@ _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{3,30}$")
 
 
+def _validate_email(email: str) -> str:
+    email = email.lower().strip()
+    if not _EMAIL_RE.match(email):
+        raise ValidationError("Invalid email format")
+    return email
+
+
 class EmailRegisterRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 
@@ -36,7 +43,7 @@ class UsernameOnboardingRequest(BaseModel):
 
 
 class EmailLoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 
@@ -59,10 +66,7 @@ def _set_cookie(response: Response, user_id: str) -> None:
 
 @router.post("/register")
 async def register_with_email(req: EmailRegisterRequest, response: Response, db: AsyncSession = Depends(get_db)):
-    email = req.email.lower().strip()
-    if not _EMAIL_RE.match(email):
-        raise ValidationError("Invalid email format")
-
+    email = _validate_email(req.email)
     validate_password(req.password)
 
     existing = await db.execute(select(User).where(User.email == email))
@@ -140,7 +144,7 @@ async def set_username(req: UsernameOnboardingRequest, request: Request, db: Asy
 
 @router.post("/login")
 async def login_with_email(req: EmailLoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
-    email = req.email.lower().strip()
+    email = _validate_email(req.email)
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
@@ -178,7 +182,7 @@ async def logout(response: Response):
 
 @router.get("/me")
 async def me(request: Request, db: AsyncSession = Depends(get_db)):
-    from app.core.security import get_current_user_id, verify_session_token
+    from app.core.security import verify_session_token
     from app.core.config import settings
     token = request.cookies.get(settings.COOKIE_NAME)
     if not token:

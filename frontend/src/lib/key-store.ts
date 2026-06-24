@@ -1,14 +1,4 @@
-/**
- * Key Store — persists E2EE private keys in the browser.
- *
- * Keys are stored in IndexedDB (not localStorage) because:
- *   1. IndexedDB is origin-scoped and not accessible to other sites
- *   2. Larger storage capacity for key material
- *   3. Can store binary data efficiently
- *
- * The private keys NEVER leave this store — they are never sent to the
- * server, never logged, and never included in any API request.
- */
+
 
 import type { IdentityKeyPair } from './crypto'
 

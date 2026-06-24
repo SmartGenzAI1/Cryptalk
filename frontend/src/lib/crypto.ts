@@ -1,21 +1,4 @@
-/**
- * End-to-End Encryption (E2EE) — Cryptalk
- *
- * Implements the cryptographic foundation of the Signal Protocol:
- *   • X25519 ECDH for key agreement
- *   • HKDF-SHA256 for key derivation
- *   • crypto_secretbox (XSalsa20-Poly1305) for authenticated encryption
- *   • Ed25519 for identity signatures
- *
- * CRITICAL SECURITY PROPERTIES:
- *   1. Private keys are generated in the browser and NEVER leave the device.
- *   2. The server only ever sees public keys + ciphertext.
- *   3. Each message is encrypted with a unique ephemeral key + nonce.
- *   4. Forward secrecy: each session uses a fresh ECDH exchange.
- *
- * Library: libsodium-wrappers — the JavaScript bindings to libsodium,
- * the same crypto library used by Signal, Wire, and Matrix.
- */
+
 
 import sodium from 'libsodium-wrappers'
 
@@ -80,11 +63,6 @@ export function fromUTF8(bytes: Uint8Array): string {
 
 // ─── Key Generation ─────────────────────────────────────────────────────
 
-/**
- * Generate a new identity keypair for a user.
- * This is done ONCE per device. The private keys are stored locally
- * (IndexedDB) and NEVER sent to the server.
- */
 export async function generateIdentityKeyPair(): Promise<IdentityKeyPair> {
   await ensureReady()
 
@@ -126,11 +104,6 @@ export async function generateSignedPreKey(identitySigning: { publicKey: Uint8Ar
 
 // ─── Key Agreement (ECDH) ──────────────────────────────────────────────
 
-/**
- * Derive a shared secret via X25519 ECDH.
- * Both parties derive the SAME shared secret from their private key
- * and the other party's public key. The server cannot compute this.
- */
 async function deriveSharedSecret(
   myPrivateKey: Uint8Array,
   theirPublicKey: Uint8Array
@@ -156,19 +129,6 @@ async function deriveEncryptionKey(sharedSecret: Uint8Array, context: string = '
 
 // ─── Encryption / Decryption ───────────────────────────────────────────
 
-/**
- * Encrypt a message for a recipient.
- *
- * Process:
- *   1. Generate an ephemeral X25519 keypair (one-time, discarded after)
- *   2. ECDH(ephemeral_private, recipient_public) → shared secret
- *   3. HKDF(shared_secret) → 32-byte encryption key
- *   4. Encrypt plaintext with crypto_secretbox (XSalsa20-Poly1305)
- *   5. Return { ciphertext, nonce, ephemeralPublicKey }
- *
- * The recipient can derive the same shared secret using:
- *   ECDH(recipient_private, ephemeral_public)
- */
 export async function encryptMessage(
   plaintext: string,
   recipientPublicKeyBase64: string,
@@ -204,17 +164,6 @@ export async function encryptMessage(
   }
 }
 
-/**
- * Decrypt a message received from a sender.
- *
- * Process:
- *   1. ECDH(my_private, sender_ephemeral_public) → shared secret
- *   2. HKDF(shared_secret) → encryption key
- *   3. Decrypt with crypto_secretbox
- *
- * This only works if we have the correct private key — the server
- * cannot perform this operation.
- */
 export async function decryptMessage(
   payload: EncryptedPayload,
   myPrivateKey: Uint8Array
@@ -252,12 +201,6 @@ export async function decryptMessage(
 
 // ─── Group Encryption ───────────────────────────────────────────────────
 
-/**
- * For group chats, derive a per-chat shared key.
- * Each member generates the same key from the chat ID + their identity.
- * This is a simplified group encryption (ratchet-based group encryption
- * would be the production upgrade for forward secrecy).
- */
 export async function deriveGroupKey(chatId: string, privateKey: Uint8Array): Promise<Uint8Array> {
   await ensureReady()
   const salt = sodium.from_string('cryptalk-group-v1')

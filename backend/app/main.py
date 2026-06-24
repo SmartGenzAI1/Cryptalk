@@ -1,16 +1,4 @@
-"""Cryptalk Backend — FastAPI + Socket.IO ASGI application.
-
-Architecture (clean / layered):
-    app/core/         config, database, security, exceptions, rate_limit
-    app/models/       SQLAlchemy ORM entities
-    app/schemas/      Pydantic request/response DTOs
-    app/repositories/ data access layer (one repo per entity)
-    app/services/     business logic + serializers + DI factory
-    app/api/v1/       thin HTTP controllers
-    app/realtime/     Socket.IO connection manager + handlers
-
-Run:  uvicorn app.main:asgi_app --host 0.0.0.0 --port 8001
-"""
+"""Cryptalk backend."""
 
 import logging
 from contextlib import asynccontextmanager
