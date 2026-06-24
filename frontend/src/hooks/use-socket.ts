@@ -56,7 +56,23 @@ export function useSocket() {
       setUserOnline(data.userId, data.isOnline)
     })
 
-    socket.on('message', (data: { chatId: string; message: MessageWithSender }) => {
+    socket.on('message', async (data: { chatId: string; message: MessageWithSender }) => {
+      // E2EE: decrypt incoming message before adding to store
+      try {
+        const { decryptMessageForChat } = await import('@/lib/e2ee')
+        const store = useChatStore.getState()
+        const chat = store.chats.find((c) => c.id === data.chatId)
+        const chatType = chat?.type || store.activeChat?.type || 'direct'
+        if (data.message.type === 'text' && data.message.content) {
+          data.message.content = await decryptMessageForChat(
+            data.message.content,
+            data.chatId,
+            chatType
+          )
+        }
+      } catch {
+        // E2EE not ready or decryption failed — show ciphertext
+      }
       addMessage(data.chatId, data.message)
     })
 

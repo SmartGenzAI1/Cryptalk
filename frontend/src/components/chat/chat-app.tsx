@@ -13,6 +13,7 @@ import { AccentApplier } from './accent-applier'
 import { MobileNav } from './mobile-nav'
 import { Toaster } from '@/components/ui/toaster'
 import { apiGet } from '@/lib/api'
+import { initE2EE } from '@/lib/e2ee'
 
 export function ChatApp() {
   useSocket()
@@ -22,8 +23,9 @@ export function ChatApp() {
   const activeChatId = useChatStore((s) => s.activeChatId)
   const setChats = useChatStore((s) => s.setChats)
   const setCurrentUser = useChatStore((s) => s.setCurrentUser)
+  const setE2eeEnabled = useChatStore((s) => s.setE2eeEnabled)
 
-  // Load chats + refresh user presence on mount
+  // Load chats + refresh user presence + init E2EE on mount
   useEffect(() => {
     let mounted = true
     ;(async () => {
@@ -35,6 +37,16 @@ export function ChatApp() {
         if (mounted) {
           if (chatsData.chats) setChats(chatsData.chats)
           if (meData.user) setCurrentUser(meData.user)
+
+          // Initialize E2EE — generates keys if needed, uploads public keys
+          if (meData.user) {
+            try {
+              const e2eeStatus = await initE2EE(meData.user.id)
+              if (mounted) setE2eeEnabled(e2eeStatus.isE2EEEnabled)
+            } catch (e: any) {
+              console.warn('[E2EE] init failed (non-fatal):', e?.message || e)
+            }
+          }
         }
       } catch (e) {
         console.error('failed to load chats', e)
@@ -43,7 +55,7 @@ export function ChatApp() {
     return () => {
       mounted = false
     }
-  }, [setChats, setCurrentUser])
+  }, [setChats, setCurrentUser, setE2eeEnabled])
 
   return (
     <div className="h-screen w-full flex flex-col overflow-hidden bg-background">

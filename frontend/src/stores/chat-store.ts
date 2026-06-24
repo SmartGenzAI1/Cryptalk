@@ -90,6 +90,10 @@ interface ChatState {
   messagesLoading: Record<string, boolean>
   setMessagesLoading: (chatId: string, b: boolean) => void
 
+  // E2EE status
+  e2eeEnabled: boolean
+  setE2eeEnabled: (b: boolean) => void
+
   // chat settings (pin/mute) helpers
   updateChatListItem: (id: string, patch: Partial<ChatListItem>) => void
 }
@@ -193,6 +197,9 @@ export const useChatStore = create<ChatState>((set, _get) => ({
   messagesLoading: {},
   setMessagesLoading: (chatId, b) =>
     set((s) => ({ messagesLoading: { ...s.messagesLoading, [chatId]: b } })),
+
+  e2eeEnabled: false,
+  setE2eeEnabled: (b) => set({ e2eeEnabled: b }),
 
   updateChatListItem: (id, patch) =>
     set((s) => ({

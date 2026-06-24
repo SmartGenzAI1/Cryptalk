@@ -30,6 +30,13 @@ class User(Base):
     created_at = Column("createdAt", Integer)  # epoch ms
     updated_at = Column("updatedAt", Integer)  # epoch ms
 
+    # E2EE public keys — the server NEVER has access to private keys.
+    # These are uploaded by the client and used for key agreement.
+    identity_public_key = Column("identityPublicKey", String, nullable=True)  # X25519 public key (base64)
+    signing_public_key = Column("signingPublicKey", String, nullable=True)    # Ed25519 public key (base64)
+    signed_prekey_public = Column("signedPreKeyPublic", String, nullable=True)
+    signed_prekey_signature = Column("signedPreKeySignature", String, nullable=True)
+
     memberships = relationship("ChatMember", back_populates="user")
     messages = relationship("Message", back_populates="sender")
     created_chats = relationship("Chat", back_populates="creator")

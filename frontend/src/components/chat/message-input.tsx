@@ -40,6 +40,7 @@ const STICKERS = STICKER_ICONS
 
 export function MessageInput() {
   const activeChatId = useChatStore((s) => s.activeChatId)
+  const activeChat = useChatStore((s) => s.activeChat)
   const currentUser = useChatStore((s) => s.currentUser)
   const messages = useChatStore((s) => s.messages[activeChatId] ?? EMPTY_MESSAGES)
   const addMessage = useChatStore((s) => s.addMessage)
@@ -117,12 +118,42 @@ export function MessageInput() {
   async function send(content: string, type: string = 'text') {
     if (!activeChatId || !content.trim()) return
     try {
+      // E2EE: encrypt the content before sending (server only sees ciphertext)
+      let encryptedContent = content.trim()
+      if (type === 'text' && activeChat) {
+        try {
+          const { encryptMessageForChat } = await import('@/lib/e2ee')
+          const recipient = activeChat.members.find((m) => m.user.id !== currentUser?.id)
+          encryptedContent = await encryptMessageForChat(
+            content.trim(),
+            activeChatId,
+            activeChat.type,
+            recipient?.user.id
+          )
+        } catch (e) {
+          console.warn('E2EE encryption failed, sending plaintext:', e)
+        }
+      }
+
       const data = await apiPost<{ message: any }>(`/api/${activeChatId}/messages`, {
-        content: content.trim(),
+        content: encryptedContent,
         type,
         replyToId: replyTo?.id || null,
       })
       if (data.message) {
+        // Decrypt our own message for local display
+        if (type === 'text' && activeChat) {
+          try {
+            const { decryptMessageForChat } = await import('@/lib/e2ee')
+            data.message.content = await decryptMessageForChat(
+              data.message.content,
+              activeChatId,
+              activeChat.type
+            )
+          } catch {
+            // keep original if decryption fails
+          }
+        }
         addMessage(activeChatId, data.message)
         getSocket()?.emit('send-message', { chatId: activeChatId, message: data.message })
       }
@@ -130,8 +161,8 @@ export function MessageInput() {
       setReplyTo(null)
       if (textareaRef.current) textareaRef.current.style.height = 'auto'
       emitTyping(false)
-    } catch (e) {
-      console.error(e)
+    } catch (e: any) {
+      console.error('Send failed:', e)
       toast.error('Failed to send message')
     }
   }

@@ -24,6 +24,8 @@ def serialize_user(u: Optional[User]) -> Optional[Dict[str, Any]]:
         "lastSeen": ms_to_iso(u.last_seen),
         "accentColor": u.accent_color or "emerald",
         "wallpaper": u.wallpaper or "dots",
+        # E2EE: include public key presence (NOT the keys themselves in user list)
+        "hasE2EEKeys": bool(u.identity_public_key),
     }
 
 

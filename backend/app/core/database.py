@@ -37,12 +37,13 @@ Base = declarative_base()
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency that yields an async DB session.
 
-    The session is automatically closed when the request completes,
-    even if an exception is raised.
+    The session is automatically committed on success and rolled back
+    on error. It is always closed when the request completes.
     """
     async with async_session_factory() as session:
         try:
             yield session
+            await session.commit()
         except Exception:
             await session.rollback()
             raise
@@ -55,6 +56,7 @@ async def get_db() -> AsyncSession:
     async with async_session_factory() as session:
         try:
             yield session
+            await session.commit()
         except Exception:
             await session.rollback()
             raise

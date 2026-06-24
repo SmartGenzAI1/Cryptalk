@@ -47,6 +47,7 @@ export function Sidebar() {
   ]
 
   const isConnected = useChatStore((s) => s.isConnected)
+  const e2eeEnabled = useChatStore((s) => s.e2eeEnabled)
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -61,6 +62,17 @@ export function Sidebar() {
               )}
               title={isConnected ? 'Connected' : 'Reconnecting…'}
             />
+            {e2eeEnabled && (
+              <span
+                className="absolute -top-0.5 -left-0.5 h-3.5 w-3.5 rounded-full bg-emerald-500 border-2 border-sidebar flex items-center justify-center"
+                title="End-to-end encrypted"
+              >
+                <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+                  <rect x="3" y="11" width="18" height="11" rx="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              </span>
+            )}
           </div>
           {navItems.map((item) => (
             <Tooltip key={item.label}>

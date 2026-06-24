@@ -107,7 +107,28 @@ export function ChatList() {
     setMessagesLoading(chat.id, true)
     try {
       const data = await apiGet<{ messages: any[] }>(`/api/${chat.id}/messages?limit=50`)
-      if (data.messages) setMessages(chat.id, data.messages)
+      if (data.messages) {
+        // E2EE: decrypt all text messages before storing in state
+        try {
+          const { decryptMessageForChat } = await import('@/lib/e2ee')
+          const decrypted = await Promise.all(
+            data.messages.map(async (m) => {
+              if (m.type === 'text' && m.content) {
+                try {
+                  m.content = await decryptMessageForChat(m.content, chat.id, chat.type)
+                } catch {
+                  // keep ciphertext if decryption fails (e.g., no key yet)
+                }
+              }
+              return m
+            })
+          )
+          setMessages(chat.id, decrypted)
+        } catch {
+          // E2EE not ready — store as-is
+          setMessages(chat.id, data.messages)
+        }
+      }
       // clear unread
       updateChatListItem(chat.id, { unreadCount: 0 })
       setActiveChat({

@@ -42,6 +42,7 @@ export function ChatWindow() {
   const setInfoPanelOpen = useChatStore((s) => s.setInfoPanelOpen)
   const infoPanelOpen = useChatStore((s) => s.infoPanelOpen)
   const setAiPanelOpen = useChatStore((s) => s.setAiPanelOpen)
+  const e2eeEnabled = useChatStore((s) => s.e2eeEnabled)
   const [summarizing, setSummarizing] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -169,7 +170,15 @@ export function ChatWindow() {
             online={activeChat.type === 'direct' ? otherOnline : undefined}
           />
           <div className="min-w-0">
-            <div className="font-semibold truncate">{activeChat.title}</div>
+            <div className="font-semibold truncate flex items-center gap-1.5">
+              {activeChat.title}
+              {e2eeEnabled && activeChat.type !== 'saved' && (
+                <svg className="h-3 w-3 text-emerald-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" title="End-to-end encrypted">
+                  <rect x="3" y="11" width="18" height="11" rx="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              )}
+            </div>
             <div className="text-xs text-muted-foreground truncate">
               {typingText ? (
                 <span className="text-primary font-medium">{typingText}</span>
