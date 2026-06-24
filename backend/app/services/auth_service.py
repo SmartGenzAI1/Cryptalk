@@ -1,0 +1,98 @@
+"""Service layer — business logic that orchestrates repositories.
+
+Services are the only place that enforces business rules (e.g. "a user
+cannot mute a chat they don't belong to").  Each service receives its
+repositories via constructor injection, making them trivially testable
+with mocked data access.
+"""
+
+import secrets
+
+from fastapi import Response
+
+from app.core.config import settings
+from app.core.exceptions import AuthError, ConflictError
+from app.core.security import (
+    create_session_token,
+    hash_password,
+    now_ms,
+    sanitize_text,
+    validate_password,
+    validate_username,
+    verify_password,
+    verify_session_token,
+)
+from app.models import Chat, ChatMember
+from app.repositories import ChatRepository, UserRepository
+from app.services.serializers import serialize_user
+
+
+class AuthService:
+    """Handles authentication, session management, and account creation."""
+
+    def __init__(self, user_repo: UserRepository, chat_repo: ChatRepository):
+        self.user_repo = user_repo
+        self.chat_repo = chat_repo
+
+    async def register(self, username: str, name: str, password: str, response: Response) -> dict:
+        username = validate_username(username)
+        validate_password(password)
+        name = sanitize_text(name, max_length=50) or username
+        if await self.user_repo.get_by_username(username):
+            raise ConflictError("Username already taken")
+
+        user = await self.user_repo.create(
+            username=username,
+            name=name,
+            password_hash=hash_password(password),
+            avatar_color=secrets.choice(settings.AVATAR_COLORS),
+            avatar_emoji=secrets.choice(settings.AVATAR_ICONS),
+            last_seen=now_ms(),
+            is_online=True,
+        )
+
+        # Provision a "Saved Messages" chat for the new user
+        saved = await self.chat_repo.create(
+            type="saved",
+            title="Saved Messages",
+            avatar_emoji=settings.CHAT_TYPE_ICONS["saved"],
+            avatar_color="emerald",
+            created_by=user.id,
+        )
+        await self.chat_repo.add_member(saved.id, user.id, role="owner")
+
+        # Auto-join the welcome channel if it exists
+        welcome = await self.chat_repo.get_by_id("welcome-channel")
+        if welcome:
+            existing = await self.chat_repo.get_member(welcome.id, user.id)
+            if not existing:
+                await self.chat_repo.add_member(welcome.id, user.id, role="member")
+
+        _set_cookie(response, user.id)
+        return serialize_user(user)
+
+    async def login(self, username: str, password: str, response: Response) -> dict:
+        username = validate_username(username)
+        user = await self.user_repo.get_by_username(username)
+        # Use constant-time comparison to prevent timing attacks even on invalid users
+        if not user or not verify_password(password, user.password_hash or "x" * 64):
+            raise AuthError("Invalid credentials")
+
+        await self.user_repo.update(user.id, is_online=True, last_seen=now_ms())
+        _set_cookie(response, user.id)
+        return serialize_user(user)
+
+    async def logout(self, response: Response) -> None:
+        response.delete_cookie(key=settings.COOKIE_NAME, path="/")
+
+
+def _set_cookie(response: Response, user_id: str) -> None:
+    token = create_session_token(user_id)
+    response.set_cookie(
+        key=settings.COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=settings.COOKIE_MAX_AGE,
+        path="/",
+    )

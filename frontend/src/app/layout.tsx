@@ -1,0 +1,75 @@
+import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "@/components/ui/sonner";
+import { ThemeProvider } from "@/components/theme-provider";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+export const metadata: Metadata = {
+  title: "Cryptalk — Encrypted Messenger",
+  description: "A secure, real-time messenger with AI superpowers. Chat, channels, groups, and a built-in AI assistant.",
+  keywords: ["Cryptalk", "messenger", "chat", "real-time", "AI", "secure", "encrypted"],
+  authors: [{ name: "Cryptalk" }],
+  icons: {
+    icon: [
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/logo-small.png", sizes: "64x64", type: "image/png" },
+    ],
+    apple: "/apple-icon.png",
+  },
+  manifest: undefined,
+  openGraph: {
+    title: "Cryptalk",
+    description: "Secure real-time messaging with AI",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "Cryptalk",
+    description: "Secure real-time messaging with AI",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#10b981" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f1419" },
+  ],
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="apple-touch-icon" href="/apple-icon.png" />
+      </head>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+      >
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+          {children}
+          <Toaster />
+          <SonnerToaster richColors position="top-center" />
+        </ThemeProvider>
+      </body>
+    </html>
+  );
+}

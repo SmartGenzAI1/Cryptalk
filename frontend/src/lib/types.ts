@@ -1,0 +1,127 @@
+// Shared types for Cryptalk
+
+export type ChatType = 'direct' | 'group' | 'channel' | 'saved'
+
+export interface SafeUser {
+  id: string
+  username: string
+  name: string
+  bio: string
+  avatarColor: string
+  avatarEmoji: string // stores an icon name (e.g. "fox") or legacy emoji
+  isOnline: boolean
+  lastSeen: string
+  accentColor?: string
+  wallpaper?: string
+}
+
+export interface ChatWithMembers {
+  id: string
+  type: ChatType
+  title: string
+  description: string
+  avatarColor: string
+  avatarEmoji: string
+  createdBy: string
+  createdAt: string
+  members: Array<{
+    id: string
+    role: string
+    user: SafeUser
+    lastReadAt: string
+    pinnedAt?: string | null
+    muted?: boolean
+    pinnedMessageId?: string | null
+  }>
+}
+
+export interface MessageWithSender {
+  id: string
+  chatId: string
+  senderId: string
+  content: string
+  type: string
+  replyToId: string | null
+  replyTo?: {
+    id: string
+    content: string
+    type: string
+    senderId: string
+    senderName: string
+  } | null
+  editedAt: string | null
+  createdAt: string
+  deletedAt: string | null
+  duration?: number | null
+  starred?: boolean
+  pinned?: boolean
+  sender: SafeUser
+  reactions: Array<{
+    id: string
+    emoji: string
+    user: SafeUser
+  }>
+}
+
+export function toSafeUser(u: any): SafeUser {
+  return {
+    id: u.id,
+    username: u.username,
+    name: u.name,
+    bio: u.bio ?? '',
+    avatarColor: u.avatarColor ?? 'emerald',
+    avatarEmoji: u.avatarEmoji ?? 'fox',
+    isOnline: u.isOnline ?? false,
+    lastSeen: u.lastSeen?.toISOString?.() ?? u.lastSeen ?? new Date().toISOString(),
+    accentColor: u.accentColor ?? 'emerald',
+    wallpaper: u.wallpaper ?? 'dots',
+  }
+}
+
+// Avatar color palette -> tailwind gradient classes
+export const AVATAR_COLORS: Record<string, string> = {
+  emerald: 'from-emerald-400 to-teal-500',
+  violet: 'from-violet-400 to-fuchsia-500',
+  rose: 'from-rose-400 to-pink-500',
+  amber: 'from-amber-400 to-orange-500',
+  cyan: 'from-cyan-400 to-sky-500',
+  lime: 'from-lime-400 to-green-500',
+  purple: 'from-purple-400 to-violet-500',
+  teal: 'from-teal-400 to-emerald-500',
+}
+
+export const AVATAR_COLOR_KEYS = Object.keys(AVATAR_COLORS)
+
+// Accent color -> hex (for dynamic theming)
+export const ACCENT_HEX: Record<string, string> = {
+  emerald: '#10b981',
+  violet: '#8b5cf6',
+  rose: '#f43f5e',
+  amber: '#f59e0b',
+  cyan: '#06b6d4',
+  lime: '#84cc16',
+  purple: '#a855f7',
+  teal: '#14b8a6',
+}
+
+// Wallpaper options
+export const WALLPAPERS = ['dots', 'gradient', 'plain', 'grid', 'waves'] as const
+export type Wallpaper = typeof WALLPAPERS[number]
+
+// ─── Icons (re-exported from icons module for backward compat) ─────────
+// The icons.ts module is the single source of truth for icon registries
+// and URL resolvers. Icons are served locally from /public/icons/.
+export {
+  AVATAR_ICONS,
+  STICKER_ICONS,
+  CHAT_ICONS as CHAT_TYPE_ICONS,
+  avatarIconUrl as iconUrl,
+  avatarIconUrl,
+  stickerIconUrl,
+  chatIconUrl,
+  uiIconUrl,
+  isLegacyEmoji as isEmoji,
+  isLegacyEmoji,
+  resolveAvatarKey as resolveAvatarIcon,
+  resolveAvatarKey,
+} from '@/lib/icons'
