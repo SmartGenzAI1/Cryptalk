@@ -6,10 +6,11 @@ class ChatService {
   final _api = ApiClient();
   final _crypto = CryptoService();
 
+  ApiClient get api => _api;
+
   Future<List<Chat>> getChats() async {
     final data = await _api.get('/api/chats');
-    final chats = (data['chats'] as List).map((c) => Chat.fromJson(c)).toList();
-    return chats;
+    return (data['chats'] as List).map((c) => Chat.fromJson(c)).toList();
   }
 
   Future<List<Message>> getMessages(String chatId, {int limit = 50}) async {
@@ -40,40 +41,40 @@ class ChatService {
     return msg;
   }
 
-  Future<Chat> createDirectChat(String userId) async {
-    final data = await _api.post('/api/chats', body: {
-      'type': 'direct',
-      'memberIds': [userId],
-    });
-    return Chat.fromJson(data['chat']);
-  }
-
-  Future<Chat> createGroup(String title, List<String> memberIds, {String? emoji, String? color, int? expiresInDays}) async {
-    final data = await _api.post('/api/chats', body: {
-      'type': 'group',
-      'title': title,
-      'memberIds': memberIds,
-      if (emoji != null) 'avatarEmoji': emoji,
-      if (color != null) 'avatarColor': color,
-      if (expiresInDays != null) 'expiresInDays': expiresInDays,
-    });
-    return Chat.fromJson(data['chat']);
-  }
-
-  Future<void> pinChat(String chatId, bool pin) async {
-    await _api.patch('/api/chats/$chatId/settings', body: {'action': 'pin', 'value': pin});
-  }
-
-  Future<void> muteChat(String chatId, bool mute) async {
-    await _api.patch('/api/chats/$chatId/settings', body: {'action': 'mute', 'value': mute});
-  }
-
-  Future<void> deleteMessage(String chatId, String messageId) async {
-    await _api.delete('/api/$chatId/messages?messageId=$messageId');
+  Future<void> deleteMessage(String chatId, String messageId, {bool forEveryone = false}) async {
+    await _api.delete('/api/$chatId/messages?messageId=$messageId${forEveryone ? '&forEveryone=true' : ''}');
   }
 
   Future<void> markDelivered(String chatId) async {
     await _api.post('/api/$chatId/messages/delivered');
+  }
+
+  Future<void> leaveChat(String chatId) async {
+    await _api.post('/api/chats/$chatId/leave');
+  }
+
+  Future<void> deleteChat(String chatId) async {
+    await _api.delete('/api/chats/$chatId');
+  }
+
+  Future<String> generateInviteLink(String chatId) async {
+    final data = await _api.post('/api/chats/$chatId/invite');
+    return data['token'] ?? '';
+  }
+
+  Future<Chat> createDirectChat(String userId) async {
+    final data = await _api.post('/api/chats', body: {'type': 'direct', 'memberIds': [userId]});
+    return Chat.fromJson(data['chat']);
+  }
+
+  Future<Chat> createGroup(String title, List<String> memberIds, {int? expiresInDays}) async {
+    final data = await _api.post('/api/chats', body: {
+      'type': 'group',
+      'title': title,
+      'memberIds': memberIds,
+      if (expiresInDays != null) 'expiresInDays': expiresInDays,
+    });
+    return Chat.fromJson(data['chat']);
   }
 
   Future<List<AppUser>> searchUsers(String query) async {

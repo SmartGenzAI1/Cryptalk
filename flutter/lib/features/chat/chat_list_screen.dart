@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/auth_service.dart';
@@ -7,6 +6,8 @@ import '../../core/socket_service.dart';
 import '../../core/models.dart';
 import 'chat_view_screen.dart';
 import 'new_chat_screen.dart';
+import '../connections/connections_screen.dart';
+import '../settings/settings_screen.dart';
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
@@ -19,13 +20,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
   List<Chat> _chats = [];
   bool _loading = true;
   final _searchController = TextEditingController();
-  List<Chat> _filtered = [];
 
   @override
   void initState() {
     super.initState();
     _loadChats();
-    _initSocket();
   }
 
   Future<void> _loadChats() async {
@@ -35,7 +34,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
       final chats = await chatService.getChats();
       setState(() {
         _chats = chats;
-        _filtered = chats;
         _loading = false;
       });
 
@@ -46,32 +44,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
         socket.onMessage((data) {
           _loadChats();
         });
-        socket.onUserStatus((data) {
+        socket.onUserStatus((_) {
           setState(() {});
         });
       }
 
       await auth.initE2EE();
-    } catch (e) {
+    } catch (_) {
       setState(() => _loading = false);
     }
-  }
-
-  void _initSocket() {
-    final socket = context.read<SocketService>();
-    socket.onMessage((data) {
-      _loadChats();
-    });
-  }
-
-  void _filter(String query) {
-    setState(() {
-      _filtered = _chats.where((c) {
-        final q = query.toLowerCase();
-        return c.title.toLowerCase().contains(q) ||
-            (c.lastMessage?.content.toLowerCase().contains(q) ?? false);
-      }).toList();
-    });
   }
 
   String _getDisplayTitle(Chat chat, AppUser? currentUser) {
@@ -86,25 +67,28 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
+    final filtered = _searchController.text.isEmpty
+        ? _chats
+        : _chats.where((c) => c.title.toLowerCase().contains(_searchController.text.toLowerCase())).toList();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Cryptalk'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await auth.logout();
-            },
+            icon: const Icon(Icons.settings),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
           ),
+          IconButton(
+            icon: const Icon(Icons.people),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ConnectionsScreen())),
+          ),
+          IconButton(icon: const Icon(Icons.logout), onPressed: () => auth.logout()),
         ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const NewChatScreen()),
-          );
+          await Navigator.push(context, MaterialPageRoute(builder: (_) => const NewChatScreen()));
           _loadChats();
         },
         child: const Icon(Icons.edit),
@@ -115,7 +99,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             padding: const EdgeInsets.all(12),
             child: TextField(
               controller: _searchController,
-              onChanged: _filter,
+              onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 hintText: 'Search chats...',
                 prefixIcon: const Icon(Icons.search),
@@ -126,7 +110,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ),
           if (_loading)
             const Expanded(child: Center(child: CircularProgressIndicator()))
-          else if (_filtered.isEmpty)
+          else if (filtered.isEmpty)
             const Expanded(
               child: Center(
                 child: Column(
@@ -141,37 +125,38 @@ class _ChatListScreenState extends State<ChatListScreen> {
             )
           else
             Expanded(
-              child: ListView.builder(
-                itemCount: _filtered.length,
-                itemBuilder: (context, index) {
-                  final chat = _filtered[index];
-                  final title = _getDisplayTitle(chat, auth.currentUser);
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: _getColor(chat.avatarColor),
-                      child: Text(_getEmoji(chat, auth.currentUser)),
-                    ),
-                    title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text(
-                      chat.lastMessage?.content ?? 'No messages yet',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.grey[400]),
-                    ),
-                    trailing: chat.unreadCount > 0
-                        ? Badge(label: Text('${chat.unreadCount}'))
-                        : null,
-                    onTap: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChatViewScreen(chat: chat),
-                        ),
-                      );
-                      _loadChats();
-                    },
-                  );
-                },
+              child: RefreshIndicator(
+                onRefresh: _loadChats,
+                child: ListView.builder(
+                  itemCount: filtered.length,
+                  itemBuilder: (context, index) {
+                    final chat = filtered[index];
+                    final title = _getDisplayTitle(chat, auth.currentUser);
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: _getColor(chat.avatarColor),
+                        child: Text(_getEmoji(chat, auth.currentUser)),
+                      ),
+                      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                        chat.lastMessage?.content ?? 'No messages yet',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.grey[400]),
+                      ),
+                      trailing: chat.unreadCount > 0
+                          ? Badge(label: Text('${chat.unreadCount}'))
+                          : null,
+                      onTap: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => ChatViewScreen(chat: chat)),
+                        );
+                        _loadChats();
+                      },
+                    );
+                  },
+                ),
               ),
             ),
         ],
