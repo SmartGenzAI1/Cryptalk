@@ -22,12 +22,9 @@ function PanelFallback() {
 
 export function ChatApp() {
   useSocket()
-  const panels = useChatStore(s => ({
-    aiPanelOpen: s.aiPanelOpen,
-    infoPanelOpen: s.infoPanelOpen,
-    settingsOpen: s.settingsOpen,
-    connectionsPanelOpen: s.connectionsPanelOpen,
-  }))
+  const infoPanelOpen = useChatStore(s => s.infoPanelOpen)
+  const settingsOpen = useChatStore(s => s.settingsOpen)
+  const connectionsPanelOpen = useChatStore(s => s.connectionsPanelOpen)
   const activeChatId = useChatStore(s => s.activeChatId)
   const setChats = useChatStore(s => s.setChats)
   const setCurrentUser = useChatStore(s => s.setCurrentUser)
@@ -57,8 +54,6 @@ export function ChatApp() {
     })()
     return () => { mounted = false }
   }, [setChats, setCurrentUser, setE2eeEnabled])
-
-  const { infoPanelOpen, settingsOpen, connectionsPanelOpen } = panels
 
   return (
     <div className="h-screen w-full flex flex-col overflow-hidden bg-background">

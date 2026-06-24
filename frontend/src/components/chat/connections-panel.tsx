@@ -167,7 +167,7 @@ export function ConnectionsPanel() {
                     animate={{ opacity: 1, y: 0 }}
                     className="flex items-center gap-3 p-2 rounded-xl hover:bg-accent group"
                   >
-                    <ChatAvatar emoji={u.avatarEmoji} color={u.avatarColor} size="sm" online={u.isOnline} />
+                    <ChatAvatar emoji={u.avatarEmoji} color={u.avatarColor} size="sm" online={u.isOnline} userId={u.id} />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm truncate">{u.name}</div>
                       <div className="text-xs text-muted-foreground truncate">@{u.username}</div>
@@ -192,7 +192,7 @@ export function ConnectionsPanel() {
                   animate={{ opacity: 1, x: 0 }}
                   className="flex items-center gap-3 p-2 rounded-xl hover:bg-accent"
                 >
-                  <ChatAvatar emoji={r.from.avatarEmoji} color={r.from.avatarColor} size="sm" />
+                  <ChatAvatar emoji={r.from.avatarEmoji} color={r.from.avatarColor} size="sm" userId={r.from.id} />
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm truncate">{r.from.name}</div>
                     <div className="text-xs text-muted-foreground truncate">@{r.from.username}</div>
@@ -214,7 +214,7 @@ export function ConnectionsPanel() {
             ) : (
               connections.map((u) => (
                 <div key={u.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-accent group">
-                  <ChatAvatar emoji={u.avatarEmoji} color={u.avatarColor} size="sm" online={u.isOnline} />
+                  <ChatAvatar emoji={u.avatarEmoji} color={u.avatarColor} size="sm" online={u.isOnline} userId={u.id} />
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm truncate">{u.name}</div>
                     <div className="text-xs text-muted-foreground truncate">@{u.username}</div>

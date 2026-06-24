@@ -25,6 +25,7 @@ import { getSocket } from '@/hooks/use-socket'
 import { apiPost } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { MessageWithSender } from '@/lib/types'
+import { AnimatedStickerPicker } from './animated-sticker'
 
 const EMOJIS = [
   '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃',
@@ -292,6 +293,8 @@ export function MessageInput() {
                     </button>
                   ))}
                 </div>
+                <div className="text-xs font-medium text-muted-foreground mb-2 mt-3 px-1">Animated</div>
+                <AnimatedStickerPicker onSelect={(name) => { send(name, 'sticker'); setStickerOpen(false) }} />
               </PopoverContent>
             </Popover>
 

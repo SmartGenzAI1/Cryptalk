@@ -223,7 +223,7 @@ export function ChatList() {
             )}
           >
             <div className="relative">
-              <ChatAvatar emoji={emoji} color={color} size="md" online={isOnline(chat)} />
+              <ChatAvatar emoji={emoji} color={color} size="md" online={isOnline(chat)} userId={chat.id} />
               {chat.muted && (
                 <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-muted-foreground flex items-center justify-center border-2 border-background">
                   <BellOff className="h-2.5 w-2.5 text-background" />

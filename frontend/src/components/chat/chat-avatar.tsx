@@ -1,18 +1,19 @@
 'use client'
 
 import { useState } from 'react'
-import Image from 'next/image'
 import { cn } from '@/lib/utils'
-import { AVATAR_COLORS, resolveAvatarKey } from '@/lib/types'
-import { avatarIconUrl, isLegacyEmoji } from '@/lib/icons'
+import { AVATAR_COLORS } from '@/lib/types'
+import { avatarIconUrl, isLegacyEmoji, resolveAvatarKey } from '@/lib/icons'
+import { defaultAvatarForUser } from '@/lib/animated-stickers'
 
 interface ChatAvatarProps {
-  emoji: string // icon key (e.g. "fox") or legacy emoji
+  emoji: string
   color: string
   size?: 'sm' | 'md' | 'lg' | 'xl'
   online?: boolean
   className?: string
   ring?: boolean
+  userId?: string
 }
 
 const sizeMap = {
@@ -29,40 +30,45 @@ const dotSize = {
   xl: 'h-4 w-4',
 }
 
-export function ChatAvatar({ emoji, color, size = 'md', online, className, ring }: ChatAvatarProps) {
+export function ChatAvatar({ emoji, color, size = 'md', online, className, ring, userId }: ChatAvatarProps) {
   const [imgError, setImgError] = useState(false)
-  const gradient = AVATAR_COLORS[color] || AVATAR_COLORS.emerald
   const s = sizeMap[size]
   const iconKey = resolveAvatarKey(emoji)
   const legacy = isLegacyEmoji(emoji)
+  const showDefault = (!emoji || legacy || !iconKey) && userId
+  const defaultUrl = showDefault ? defaultAvatarForUser(userId) : null
 
   return (
     <div className={cn('relative shrink-0', className)}>
       <div
         className={cn(
-          'flex items-center justify-center rounded-full bg-gradient-to-br shadow-sm select-none overflow-hidden',
-          gradient,
+          'flex items-center justify-center rounded-full shadow-sm select-none overflow-hidden',
+          showDefault ? '' : cn('bg-gradient-to-br', AVATAR_COLORS[color] || AVATAR_COLORS.emerald),
           s.box,
           ring && 'ring-2 ring-background'
         )}
       >
         {legacy ? (
-          // Legacy emoji fallback
           <span className="text-lg leading-none">{emoji || '🦊'}</span>
+        ) : showDefault && defaultUrl ? (
+          <img
+            src={defaultUrl}
+            alt="avatar"
+            className="w-full h-full object-cover"
+          />
         ) : imgError ? (
-          // Image load failed — show first letter
           <span className="text-white font-bold uppercase" style={{ fontSize: s.img * 0.45 }}>
             {iconKey[0]}
           </span>
         ) : (
-          <Image
+          <img
             src={avatarIconUrl(iconKey)}
             alt={iconKey}
             width={s.img}
             height={s.img}
             onError={() => setImgError(true)}
             className="object-contain drop-shadow-sm"
-            unoptimized
+            style={{ width: `${s.img * 0.72}px`, height: `${s.img * 0.72}px` }}
           />
         )}
       </div>

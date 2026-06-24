@@ -1,6 +1,3 @@
-// Seed script: creates demo users + a welcome channel with messages
-// Run with: bun run seed
-
 import { PrismaClient } from '@prisma/client'
 import crypto from 'crypto'
 
@@ -13,32 +10,30 @@ function hashPassword(password: string): string {
 }
 
 async function main() {
-  console.log('Seeding database...')
-
   const demoUsers = [
-    { username: 'cryptalk-ai', name: 'Cryptalk AI', bio: 'Your friendly AI assistant inside Cryptalk', avatarColor: 'violet', avatarEmoji: 'unicorn' },
     { username: 'alex', name: 'Alex Rivera', bio: 'Designer & coffee enthusiast', avatarColor: 'rose', avatarEmoji: 'fox' },
     { username: 'sam', name: 'Sam Chen', bio: 'Building cool things', avatarColor: 'cyan', avatarEmoji: 'dolphin' },
     { username: 'priya', name: 'Priya Sharma', bio: 'Product manager - traveler', avatarColor: 'amber', avatarEmoji: 'butterfly' },
     { username: 'marco', name: 'Marco Rossi', bio: 'Pizza lover', avatarColor: 'purple', avatarEmoji: 'lion' },
+    { username: 'emma', name: 'Emma Wilson', bio: 'Photographer & hiker', avatarColor: 'teal', avatarEmoji: 'owl' },
   ]
 
   const users: any[] = []
   for (const u of demoUsers) {
     const user = await db.user.upsert({
       where: { username: u.username },
-      update: { avatarEmoji: u.avatarEmoji }, // update icon for existing users
+      update: { avatarEmoji: u.avatarEmoji },
       create: { ...u, passwordHash: hashPassword('password123') },
     })
     users.push(user)
     await db.chat.upsert({
       where: { id: `saved-${user.id}` },
-      update: { avatarEmoji: 'bookmark--v1' },
+      update: { avatarEmoji: 'bookmark' },
       create: {
         id: `saved-${user.id}`,
         type: 'saved',
         title: 'Saved Messages',
-        avatarEmoji: 'bookmark--v1',
+        avatarEmoji: 'bookmark',
         avatarColor: 'emerald',
         createdBy: user.id,
         members: { create: { userId: user.id, role: 'owner' } },
@@ -48,13 +43,13 @@ async function main() {
 
   const welcome = await db.chat.upsert({
     where: { id: 'welcome-channel' },
-    update: { avatarEmoji: 'megaphone--v1', title: 'Welcome to Cryptalk' },
+    update: { avatarEmoji: 'megaphone', title: 'Welcome to Cryptalk' },
     create: {
       id: 'welcome-channel',
       type: 'channel',
       title: 'Welcome to Cryptalk',
       description: 'Announcements & tips for new members',
-      avatarEmoji: 'megaphone--v1',
+      avatarEmoji: 'megaphone',
       avatarColor: 'emerald',
       createdBy: users[0].id,
       members: {
@@ -66,11 +61,11 @@ async function main() {
   const existingMsgs = await db.message.count({ where: { chatId: welcome.id } })
   if (existingMsgs === 0) {
     const seedMessages = [
-      { senderId: users[0].id, content: 'Welcome to Cryptalk! The secure messenger with AI superpowers.', offset: 0 },
-      { senderId: users[1].id, content: 'This place is fast - messages appear instantly via real-time WebSockets.', offset: 1 },
-      { senderId: users[2].id, content: 'Try right-clicking a message to react, reply, edit, or translate it!', offset: 2 },
-      { senderId: users[3].id, content: 'Tip: open the AI Assistant (sparkles icon in the sidebar) to draft messages & summarize chats.', offset: 3 },
-      { senderId: users[0].id, content: 'Create groups & channels with the + button. Enjoy chatting!', offset: 4 },
+      { senderId: users[0].id, content: 'Welcome to Cryptalk! Secure messaging, no phone required.' },
+      { senderId: users[1].id, content: 'Messages appear instantly via real-time WebSockets.' },
+      { senderId: users[2].id, content: 'Right-click a message to react, reply, edit, or forward it.' },
+      { senderId: users[3].id, content: 'Create groups with the + button. Set expiration for temp events.' },
+      { senderId: users[0].id, content: 'Your messages are end-to-end encrypted. Stay safe out there.' },
     ]
     for (const sm of seedMessages) {
       await db.message.create({
@@ -79,7 +74,7 @@ async function main() {
           senderId: sm.senderId,
           content: sm.content,
           type: 'text',
-          createdAt: new Date(Date.now() - (5 - sm.offset) * 60000),
+          createdAt: new Date(Date.now() - (5 - seedMessages.indexOf(sm)) * 60000),
         },
       })
     }
@@ -103,27 +98,16 @@ async function main() {
   })
   const groupMsgs = await db.message.count({ where: { chatId: group.id } })
   if (groupMsgs === 0) {
-    await db.message.create({
-      data: { chatId: group.id, senderId: users[1].id, content: 'Morning team! Ready to ship some beautiful UI today?', createdAt: new Date(Date.now() - 30 * 60000) },
-    })
-    await db.message.create({
-      data: { chatId: group.id, senderId: users[3].id, content: 'Always! Just finalized the new color system.', createdAt: new Date(Date.now() - 25 * 60000) },
-    })
-    await db.message.create({
-      data: { chatId: group.id, senderId: users[2].id, content: "Love it. Let's review at standup.", createdAt: new Date(Date.now() - 20 * 60000) },
-    })
+    await db.message.create({ data: { chatId: group.id, senderId: users[1].id, content: 'Morning team! Ready to ship?', createdAt: new Date(Date.now() - 30 * 60000) } })
+    await db.message.create({ data: { chatId: group.id, senderId: users[3].id, content: 'Always! Just finalized the color system.', createdAt: new Date(Date.now() - 25 * 60000) } })
+    await db.message.create({ data: { chatId: group.id, senderId: users[2].id, content: "Let's review at standup.", createdAt: new Date(Date.now() - 20 * 60000) } })
   }
 
-  console.log('Seed complete!')
+  console.log('Seed complete')
   console.log('Demo accounts (password: password123):')
-  demoUsers.forEach((u) => console.log(`  - ${u.username} / ${u.name} (icon: ${u.avatarEmoji})`))
+  demoUsers.forEach((u) => console.log(`  ${u.username} / ${u.name}`))
 }
 
 main()
-  .catch((e) => {
-    console.error(e)
-    process.exit(1)
-  })
-  .finally(async () => {
-    await db.$disconnect()
-  })
+  .catch((e) => { console.error(e); process.exit(1) })
+  .finally(async () => { await db.$disconnect() })

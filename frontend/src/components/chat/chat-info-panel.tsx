@@ -135,7 +135,7 @@ export function ChatInfoPanel() {
                 const isOnline = onlineUserIds.has(u.id)
                 return (
                   <div key={m.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent">
-                    <ChatAvatar emoji={u.avatarEmoji} color={u.avatarColor} size="sm" online={isOnline} />
+                    <ChatAvatar emoji={u.avatarEmoji} color={u.avatarColor} size="sm" online={isOnline} userId={u.id} />
                     <div className="min-w-0 flex-1">
                       <div className="font-medium text-sm truncate">
                         {u.id === currentUser?.id ? 'You' : u.name}

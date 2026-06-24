@@ -39,8 +39,10 @@ import { toggleReaction, toggleStar, forwardMessage } from '@/lib/actions'
 import { motion, AnimatePresence } from 'framer-motion'
 import { lazy, Suspense } from 'react'
 import { apiGet, apiPatch, apiDelete } from '@/lib/api'
+import { isAnimatedSticker } from '@/lib/animated-stickers'
 
 const ForwardDialog = lazy(() => import('./forward-dialog').then(m => ({ default: m.ForwardDialog })))
+const AnimatedStickerDisplay = lazy(() => import('./animated-sticker').then(m => ({ default: m.AnimatedStickerDisplay })))
 
 const QUICK_REACTIONS = ['👍', '❤️', '🔥', '😂', '😮', '🎉', '👏', '🙏']
 
@@ -240,7 +242,7 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
             {!isOwn && (
               <div className="w-8 shrink-0">
                 {isLastInGroup && (
-                  <ChatAvatar emoji={message.sender.avatarEmoji} color={message.sender.avatarColor} size="sm" />
+                  <ChatAvatar emoji={message.sender.avatarEmoji} color={message.sender.avatarColor} size="sm" userId={message.sender.id} />
                 )}
               </div>
             )}
@@ -328,7 +330,11 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                     </div>
                   </div>
                 ) : isSticker ? (
-                  isLegacyEmoji(message.content) ? (
+                  isAnimatedSticker(message.content) ? (
+                    <Suspense fallback={<span className="text-6xl leading-none">⭐</span>}>
+                      <AnimatedStickerDisplay name={message.content} size={140} />
+                    </Suspense>
+                  ) : isLegacyEmoji(message.content) ? (
                     <span className="text-6xl leading-none">{message.content}</span>
                   ) : (
                     <img
