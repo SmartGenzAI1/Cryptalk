@@ -98,3 +98,49 @@ export async function updateChatSettings(
 export async function updateUserSettings(patch: any): Promise<any> {
   return apiPatch('/api/users/me', patch)
 }
+
+// ─── Social: connections, blocking, nicknames ──────────────────────────
+
+export async function sendConnectionRequest(toUsername: string): Promise<any> {
+  return apiPost('/api/social/connect', { to_username: toUsername })
+}
+
+export async function acceptConnection(requestId: string): Promise<any> {
+  return apiPost(`/api/social/accept/${requestId}`)
+}
+
+export async function declineConnection(requestId: string): Promise<any> {
+  return apiPost(`/api/social/decline/${requestId}`)
+}
+
+export async function listConnections(): Promise<any> {
+  return apiGet('/api/social/connections')
+}
+
+export async function listPendingRequests(): Promise<any> {
+  return apiGet('/api/social/requests')
+}
+
+export async function blockUser(userId: string): Promise<any> {
+  return apiPost('/api/social/block', { user_id: userId })
+}
+
+export async function unblockUser(userId: string): Promise<any> {
+  return apiPost('/api/social/unblock', { user_id: userId })
+}
+
+export async function listBlocked(): Promise<any> {
+  return apiGet('/api/social/blocked')
+}
+
+export async function setNickname(targetUserId: string, nickname: string): Promise<any> {
+  return apiPost('/api/social/nickname', { target_user_id: targetUserId, nickname })
+}
+
+export async function removeNickname(targetUserId: string): Promise<any> {
+  return apiDelete(`/api/social/nickname/${targetUserId}`)
+}
+
+export async function listNicknames(): Promise<any> {
+  return apiGet('/api/social/nicknames')
+}

@@ -41,13 +41,15 @@ export function Sidebar() {
 
   const navItems = [
     { icon: MessageCircle, label: 'Chats', active: true },
-    { icon: Users, label: 'Contacts', active: false },
+    { icon: Users, label: 'Connections', active: connectionsPanelOpen, onClick: () => { setConnectionsPanelOpen(!connectionsPanelOpen); if (!connectionsPanelOpen) { setSettingsOpen(false); setAiPanelOpen(false) } } },
     { icon: Megaphone, label: 'Channels', active: false },
     { icon: Bookmark, label: 'Saved', active: false },
   ]
 
   const isConnected = useChatStore((s) => s.isConnected)
   const e2eeEnabled = useChatStore((s) => s.e2eeEnabled)
+  const setConnectionsPanelOpen = useChatStore((s) => s.setConnectionsPanelOpen)
+  const connectionsPanelOpen = useChatStore((s) => s.connectionsPanelOpen)
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -78,6 +80,7 @@ export function Sidebar() {
             <Tooltip key={item.label}>
               <TooltipTrigger asChild>
                 <button
+                  onClick={(item as any).onClick}
                   className={cn(
                     'h-11 w-11 rounded-xl flex items-center justify-center transition-all zc-tap',
                     item.active

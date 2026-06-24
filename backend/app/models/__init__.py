@@ -12,28 +12,26 @@ from app.core.database import Base
 
 
 class User(Base):
-    """A registered user."""
-
     __tablename__ = "User"
 
     id = Column(String, primary_key=True)
-    username = Column(String, unique=True, nullable=False, index=True)
-    name = Column(String, nullable=False)
+    email = Column(String, unique=True, nullable=True, index=True)
+    username = Column(String, unique=True, nullable=True, index=True)
+    name = Column(String, nullable=True)
     password_hash = Column("passwordHash", String, nullable=False)
     bio = Column(String, default="")
     avatar_color = Column("avatarColor", String, default="emerald")
-    avatar_emoji = Column("avatarEmoji", String, default="🙂")
+    avatar_emoji = Column("avatarEmoji", String, default="fox")
     is_online = Column("isOnline", Boolean, default=False)
-    last_seen = Column("lastSeen", Integer)  # epoch ms
+    is_onboarded = Column("isOnboarded", Boolean, default=False)
+    last_seen = Column("lastSeen", Integer)
     accent_color = Column("accentColor", String, default="emerald")
     wallpaper = Column("wallpaper", String, default="dots")
-    created_at = Column("createdAt", Integer)  # epoch ms
-    updated_at = Column("updatedAt", Integer)  # epoch ms
+    created_at = Column("createdAt", Integer)
+    updated_at = Column("updatedAt", Integer)
 
-    # E2EE public keys — the server NEVER has access to private keys.
-    # These are uploaded by the client and used for key agreement.
-    identity_public_key = Column("identityPublicKey", String, nullable=True)  # X25519 public key (base64)
-    signing_public_key = Column("signingPublicKey", String, nullable=True)    # Ed25519 public key (base64)
+    identity_public_key = Column("identityPublicKey", String, nullable=True)
+    signing_public_key = Column("signingPublicKey", String, nullable=True)
     signed_prekey_public = Column("signedPreKeyPublic", String, nullable=True)
     signed_prekey_signature = Column("signedPreKeySignature", String, nullable=True)
 
@@ -43,19 +41,18 @@ class User(Base):
 
 
 class Chat(Base):
-    """A conversation — direct, group, channel, or saved messages."""
-
     __tablename__ = "Chat"
 
     id = Column(String, primary_key=True)
-    type = Column(String, default="direct")  # direct | group | channel | saved
+    type = Column(String, default="direct")
     title = Column(String, nullable=False)
     description = Column(String, default="")
     avatar_color = Column("avatarColor", String, default="emerald")
-    avatar_emoji = Column("avatarEmoji", String, default="💬")
+    avatar_emoji = Column("avatarEmoji", String, default="chat")
     created_by = Column("createdBy", String, ForeignKey("User.id"))
     created_at = Column("createdAt", Integer)
     updated_at = Column("updatedAt", Integer)
+    expires_at = Column("expiresAt", Integer, nullable=True)
 
     members = relationship("ChatMember", back_populates="chat", cascade="all, delete-orphan")
     messages = relationship("Message", back_populates="chat", cascade="all, delete-orphan")
@@ -125,12 +122,39 @@ class Reaction(Base):
 
 
 class StarredMessage(Base):
-    """A message bookmarked by a user."""
-
     __tablename__ = "StarredMessage"
 
     id = Column(String, primary_key=True)
     message_id = Column("messageId", String, ForeignKey("Message.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column("userId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False)
     chat_id = Column("chatId", String, nullable=False)
+    created_at = Column("createdAt", Integer)
+
+
+class UserBlock(Base):
+    __tablename__ = "UserBlock"
+
+    id = Column(String, primary_key=True)
+    blocker_id = Column("blockerId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
+    blocked_id = Column("blockedId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column("createdAt", Integer)
+
+
+class UserNickname(Base):
+    __tablename__ = "UserNickname"
+
+    id = Column(String, primary_key=True)
+    owner_id = Column("ownerId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_user_id = Column("targetUserId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False)
+    nickname = Column(String, nullable=False)
+    created_at = Column("createdAt", Integer)
+
+
+class ConnectionRequest(Base):
+    __tablename__ = "ConnectionRequest"
+
+    id = Column(String, primary_key=True)
+    from_user_id = Column("fromUserId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
+    to_user_id = Column("toUserId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String, default="pending")  # pending | accepted | declined
     created_at = Column("createdAt", Integer)

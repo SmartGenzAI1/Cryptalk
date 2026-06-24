@@ -9,6 +9,7 @@ import { ChatWindow } from './chat-window'
 import { AiAssistantPanel } from './ai-assistant-panel'
 import { ChatInfoPanel } from './chat-info-panel'
 import { SettingsPanel } from './settings-panel'
+import { ConnectionsPanel } from './connections-panel'
 import { AccentApplier } from './accent-applier'
 import { MobileNav } from './mobile-nav'
 import { Toaster } from '@/components/ui/toaster'
@@ -20,6 +21,7 @@ export function ChatApp() {
   const aiPanelOpen = useChatStore((s) => s.aiPanelOpen)
   const infoPanelOpen = useChatStore((s) => s.infoPanelOpen)
   const settingsOpen = useChatStore((s) => s.settingsOpen)
+  const connectionsPanelOpen = useChatStore((s) => s.connectionsPanelOpen)
   const activeChatId = useChatStore((s) => s.activeChatId)
   const setChats = useChatStore((s) => s.setChats)
   const setCurrentUser = useChatStore((s) => s.setCurrentUser)
@@ -71,6 +73,7 @@ export function ChatApp() {
           {infoPanelOpen && activeChatId && <ChatInfoPanel />}
           {aiPanelOpen && <AiAssistantPanel />}
           {settingsOpen && <SettingsPanel />}
+          {connectionsPanelOpen && <ConnectionsPanel />}
         </div>
         {/* On mobile: show AI/Settings panel full-screen when no chat selected */}
         {!activeChatId && (aiPanelOpen || settingsOpen) && (

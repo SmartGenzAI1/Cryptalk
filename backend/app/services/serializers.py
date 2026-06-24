@@ -16,16 +16,17 @@ def serialize_user(u: Optional[User]) -> Optional[Dict[str, Any]]:
         return None
     return {
         "id": u.id,
+        "email": u.email,
         "username": u.username,
         "name": u.name,
         "bio": u.bio or "",
         "avatarColor": u.avatar_color or "emerald",
-        "avatarEmoji": u.avatar_emoji or "🙂",
+        "avatarEmoji": u.avatar_emoji or "fox",
         "isOnline": bool(u.is_online),
+        "isOnboarded": bool(u.is_onboarded) if hasattr(u, 'is_onboarded') else True,
         "lastSeen": ms_to_iso(u.last_seen),
         "accentColor": u.accent_color or "emerald",
         "wallpaper": u.wallpaper or "dots",
-        # E2EE: include public key presence (NOT the keys themselves in user list)
         "hasE2EEKeys": bool(u.identity_public_key),
     }
 
@@ -99,10 +100,11 @@ def serialize_chat(
         "title": chat.title,
         "description": chat.description or "",
         "avatarColor": chat.avatar_color or "emerald",
-        "avatarEmoji": chat.avatar_emoji or "💬",
+        "avatarEmoji": chat.avatar_emoji or "chat",
         "createdBy": chat.created_by or "",
         "createdAt": ms_to_iso(chat.created_at),
         "updatedAt": ms_to_iso(chat.updated_at),
+        "expiresAt": ms_to_iso(chat.expires_at) if hasattr(chat, 'expires_at') and chat.expires_at else None,
         "lastReadAt": ms_to_iso(member.last_read_at),
         "role": member.role,
         "pinnedAt": ms_to_iso(member.pinned_at) if member.pinned_at else None,

@@ -29,6 +29,8 @@ class ChatService:
         result: List[dict] = []
 
         for member, chat in memberships:
+            if hasattr(chat, 'expires_at') and chat.expires_at and chat.expires_at < now_ms():
+                continue
             last_msg = await self._last_message(chat.id)
             unread = await self.messages.count_unread(
                 chat.id, user_id, member.last_read_at or 0
@@ -64,12 +66,13 @@ class ChatService:
         member_ids: Optional[List[str]] = None,
         avatar_emoji: Optional[str] = None,
         avatar_color: Optional[str] = None,
+        expires_in_days: Optional[int] = None,
     ) -> dict:
         if chat_type == "direct":
             return await self._create_direct(user_id, member_ids or [])
         return await self._create_group(
             user_id, chat_type, title, description, member_ids or [],
-            avatar_emoji, avatar_color,
+            avatar_emoji, avatar_color, expires_in_days,
         )
 
     async def _create_direct(self, user_id: str, member_ids: List[str]) -> dict:
@@ -95,12 +98,17 @@ class ChatService:
         self, user_id: str, chat_type: str, title: Optional[str],
         description: Optional[str], member_ids: List[str],
         avatar_emoji: Optional[str], avatar_color: Optional[str],
+        expires_in_days: Optional[int] = None,
     ) -> dict:
         title = sanitize_title(title or "")
         if not title:
             raise ValidationError("Title is required for group/channel chats")
 
-        all_members = list(dict.fromkeys([user_id] + member_ids))  # dedup, preserve order
+        expires_at = None
+        if expires_in_days and 1 <= expires_in_days <= 7:
+            expires_at = now_ms() + (expires_in_days * 86400 * 1000)
+
+        all_members = list(dict.fromkeys([user_id] + member_ids))
         chat = await self.chats.create(
             type=chat_type,
             title=title,
@@ -111,6 +119,7 @@ class ChatService:
             ),
             avatar_color=avatar_color or "violet",
             created_by=user_id,
+            expires_at=expires_at,
         )
         for i, uid in enumerate(all_members):
             await self.chats.add_member(chat.id, uid, role="owner" if i == 0 else "member")

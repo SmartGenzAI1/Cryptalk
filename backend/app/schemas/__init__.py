@@ -41,6 +41,7 @@ class ChatCreate(BaseModel):
     member_ids: Optional[List[str]] = None
     avatar_emoji: Optional[str] = None
     avatar_color: Optional[str] = None
+    expires_in_days: Optional[int] = None  # 1-7 days for temp groups
 
 
 class ChatSettingsUpdate(BaseModel):

@@ -50,6 +50,7 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
   const [groupEmoji, setGroupEmoji] = useState('groups')
   const [groupColor, setGroupColor] = useState('violet')
   const [isChannel, setIsChannel] = useState(false)
+  const [expiresInDays, setExpiresInDays] = useState<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -101,6 +102,7 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
         memberIds: selected,
         avatarEmoji: groupEmoji,
         avatarColor: groupColor,
+        expiresInDays: expiresInDays,
       })
       await openChatAfterCreate(data.chat)
     } catch (e: any) {
@@ -277,6 +279,36 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
             {selected.length > 0 && (
               <div className="text-xs text-muted-foreground">{selected.length} member(s) selected</div>
             )}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Auto-delete after (optional)</Label>
+              <div className="flex flex-wrap gap-1">
+                {[
+                  { label: 'Never', value: null },
+                  { label: '1 day', value: 1 },
+                  { label: '3 days', value: 3 },
+                  { label: '7 days', value: 7 },
+                ].map((opt) => (
+                  <button
+                    key={String(opt.value)}
+                    onClick={() => setExpiresInDays(opt.value)}
+                    className={cn(
+                      'px-2.5 py-1 rounded-full text-xs border transition-colors zc-tap',
+                      expiresInDays === opt.value
+                        ? 'bg-primary/15 border-primary text-primary font-medium'
+                        : 'border-border text-muted-foreground hover:bg-accent'
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {expiresInDays && (
+                <p className="text-[11px] text-amber-500">
+                  This {isChannel ? 'channel' : 'group'} will be permanently deleted after {expiresInDays} day{expiresInDays > 1 ? 's' : ''}.
+                </p>
+              )}
+            </div>
 
             <Button onClick={createGroup} className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 border-0">
               Create {isChannel ? 'channel' : 'group'}

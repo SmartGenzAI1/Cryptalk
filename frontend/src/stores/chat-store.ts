@@ -94,6 +94,10 @@ interface ChatState {
   e2eeEnabled: boolean
   setE2eeEnabled: (b: boolean) => void
 
+  // connections panel
+  connectionsPanelOpen: boolean
+  setConnectionsPanelOpen: (b: boolean) => void
+
   // chat settings (pin/mute) helpers
   updateChatListItem: (id: string, patch: Partial<ChatListItem>) => void
 }
@@ -200,6 +204,9 @@ export const useChatStore = create<ChatState>((set, _get) => ({
 
   e2eeEnabled: false,
   setE2eeEnabled: (b) => set({ e2eeEnabled: b }),
+
+  connectionsPanelOpen: false,
+  setConnectionsPanelOpen: (b) => set({ connectionsPanelOpen: b }),
 
   updateChatListItem: (id, patch) =>
     set((s) => ({

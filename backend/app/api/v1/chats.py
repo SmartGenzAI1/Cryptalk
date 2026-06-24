@@ -33,6 +33,7 @@ async def create_chat(
         member_ids=req.member_ids,
         avatar_emoji=req.avatar_emoji,
         avatar_color=req.avatar_color,
+        expires_in_days=req.expires_in_days,
     )
     return {"chat": chat}
 
