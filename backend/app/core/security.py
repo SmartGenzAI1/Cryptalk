@@ -1,10 +1,4 @@
-"""Security primitives — password hashing, session tokens, auth dependency.
-
-Password hashing uses scrypt with parameters matching the original
-Node.js implementation so that accounts created by either stack are
-interchangeable.  Session tokens are HMAC-signed user IDs stored in an
-HTTP-only cookie.
-"""
+"""Security: scrypt hashing, HMAC tokens, input validation."""
 
 import hashlib
 import hmac
@@ -27,9 +21,8 @@ _SCRYPT_R = 8
 _SCRYPT_P = 1
 _KEY_LEN = 64
 
-
 def hash_password(password: str) -> str:
-    """Return ``salt:derived_key`` — both hex strings."""
+
     salt = os.urandom(16).hex()
     derived = hashlib.scrypt(
         password.encode(),
@@ -41,9 +34,8 @@ def hash_password(password: str) -> str:
     )
     return f"{salt}:{derived.hex()}"
 
-
 def verify_password(password: str, stored: str) -> bool:
-    """Constant-time comparison of a password against a stored hash."""
+
     try:
         salt_hex, expected_hash = stored.split(":")
         derived = hashlib.scrypt(
@@ -58,9 +50,7 @@ def verify_password(password: str, stored: str) -> bool:
     except (ValueError, TypeError):
         return False
 
-
 # ─── Session tokens ────────────────────────────────────────────────────
-
 
 def _sign(payload: str) -> str:
     mac = hmac.new(
@@ -69,7 +59,6 @@ def _sign(payload: str) -> str:
         hashlib.sha256,
     )
     return f"{payload}.{mac.hexdigest()}"
-
 
 def _verify(token: str) -> Optional[str]:
     try:
@@ -85,22 +74,16 @@ def _verify(token: str) -> Optional[str]:
         pass
     return None
 
-
 def create_session_token(user_id: str) -> str:
-    """Sign a user ID into an opaque session token."""
+
     return _sign(user_id)
 
-
 def verify_session_token(token: str) -> Optional[str]:
-    """Return the user ID embedded in a valid token, else ``None``."""
+
     return _verify(token)
 
-
 def get_client_fingerprint(request) -> str:
-    """Generate a fingerprint from the client's IP + user agent.
 
-
-    """
     forwarded = request.headers.get("x-forwarded-for", "")
     ip = forwarded.split(",")[0].strip() if forwarded else (
         request.client.host if request.client else "unknown"
@@ -109,20 +92,17 @@ def get_client_fingerprint(request) -> str:
     raw = f"{ip}:{user_agent}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
-
 # ─── Date helpers ──────────────────────────────────────────────────────
 # Prisma stores datetimes as integer milliseconds since epoch in SQLite.
 # These helpers bridge between the integer storage and ISO-8601 strings
 # consumed by the API layer.
 
-
 def now_ms() -> int:
-    """Current UTC time as epoch milliseconds (Prisma-compatible)."""
+
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
-
 def ms_to_iso(ms: Optional[int]) -> str:
-    """Convert epoch milliseconds to an ISO-8601 string."""
+
     if ms is None:
         return datetime.now(timezone.utc).isoformat()
     if isinstance(ms, str):
@@ -132,15 +112,13 @@ def ms_to_iso(ms: Optional[int]) -> str:
             return ms  # already ISO string
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
 
-
 def iso_to_ms(iso_str: str) -> int:
-    """Convert an ISO-8601 string to epoch milliseconds."""
+
     try:
         dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
         return int(dt.timestamp() * 1000)
     except (ValueError, AttributeError):
         return now_ms()
-
 
 # ─── Input validation & sanitization ───────────────────────────────────
 
@@ -152,9 +130,8 @@ _MAX_CONTENT_LENGTH = 10_000  # 10 KB per message
 _MAX_TITLE_LENGTH = 100
 _MAX_BIO_LENGTH = 500
 
-
 def validate_username(username: str) -> str:
-    """Validate and normalize a username. Raises ``ValidationError`` on failure."""
+
     from app.core.exceptions import ValidationError
     username = (username or "").strip().lower()
     if not _USERNAME_RE.match(username):
@@ -163,16 +140,14 @@ def validate_username(username: str) -> str:
         )
     return username
 
-
 def validate_password(password: str) -> str:
-    """Validate password strength. Raises ``ValidationError`` on failure."""
+
     from app.core.exceptions import ValidationError
     if not password or len(password) < 4:
         raise ValidationError("Password must be at least 4 characters")
     if len(password) > 200:
         raise ValidationError("Password is too long")
     return password
-
 
 def sanitize_text(text: str, max_length: int = _MAX_CONTENT_LENGTH) -> str:
     if not text:
@@ -184,25 +159,18 @@ def sanitize_text(text: str, max_length: int = _MAX_CONTENT_LENGTH) -> str:
         cleaned = cleaned[:max_length]
     return cleaned
 
-
 def sanitize_title(text: str) -> str:
-    """Sanitize a chat/group/channel title."""
+
     return sanitize_text(text, _MAX_TITLE_LENGTH)
 
-
 def sanitize_bio(text: str) -> str:
-    """Sanitize a user bio."""
-    return sanitize_text(text, _MAX_BIO_LENGTH)
 
+    return sanitize_text(text, _MAX_BIO_LENGTH)
 
 # ─── FastAPI dependencies ──────────────────────────────────────────────
 
-
 def get_current_user_id(request: Request) -> str:
-    """Extract and verify the user ID from the session cookie.
 
-    Raises ``AuthError`` (401) if the user is not authenticated.
-    """
     token = request.cookies.get(settings.COOKIE_NAME)
     if not token:
         raise AuthError("Not authenticated")
@@ -211,14 +179,12 @@ def get_current_user_id(request: Request) -> str:
         raise AuthError("Invalid or expired session")
     return user_id
 
-
 def get_optional_user_id(request: Request) -> Optional[str]:
-    """Like ``get_current_user_id`` but returns ``None`` instead of raising."""
+
     token = request.cookies.get(settings.COOKIE_NAME)
     if not token:
         return None
     return _verify(token)
-
 
 # Type alias for dependency injection
 CurrentUser = Depends(get_current_user_id)

@@ -1,4 +1,4 @@
-""""""
+
 import re
 import secrets
 
@@ -24,33 +24,27 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{3,30}$")
 
-
 def _validate_email(email: str) -> str:
     email = email.lower().strip()
     if not _EMAIL_RE.match(email):
         raise ValidationError("Invalid email format")
     return email
 
-
 class EmailRegisterRequest(BaseModel):
     email: str
     password: str
-
 
 class UsernameOnboardingRequest(BaseModel):
     username: str
     name: str
 
-
 class EmailLoginRequest(BaseModel):
     email: str
     password: str
 
-
 class LegacyLoginRequest(BaseModel):
     username: str
     password: str
-
 
 def _set_cookie(response: Response, user_id: str) -> None:
     token = create_session_token(user_id)
@@ -62,7 +56,6 @@ def _set_cookie(response: Response, user_id: str) -> None:
         max_age=2592000,
         path="/",
     )
-
 
 @router.post("/register")
 async def register_with_email(req: EmailRegisterRequest, response: Response, db: AsyncSession = Depends(get_db)):
@@ -89,7 +82,6 @@ async def register_with_email(req: EmailRegisterRequest, response: Response, db:
 
     _set_cookie(response, user.id)
     return {"user": serialize_user(user)}
-
 
 @router.post("/onboard")
 async def set_username(req: UsernameOnboardingRequest, request: Request, db: AsyncSession = Depends(get_db)):
@@ -141,7 +133,6 @@ async def set_username(req: UsernameOnboardingRequest, request: Request, db: Asy
 
     return {"user": serialize_user(user)}
 
-
 @router.post("/login")
 async def login_with_email(req: EmailLoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
     email = _validate_email(req.email)
@@ -158,7 +149,6 @@ async def login_with_email(req: EmailLoginRequest, response: Response, db: Async
     _set_cookie(response, user.id)
     return {"user": serialize_user(user)}
 
-
 @router.post("/login-legacy")
 async def login_legacy(req: LegacyLoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.username == req.username.lower()))
@@ -173,12 +163,10 @@ async def login_legacy(req: LegacyLoginRequest, response: Response, db: AsyncSes
     _set_cookie(response, user.id)
     return {"user": serialize_user(user)}
 
-
 @router.post("/logout")
 async def logout(response: Response):
     response.delete_cookie(key="tc_session", path="/")
     return {"ok": True}
-
 
 @router.get("/me")
 async def me(request: Request, db: AsyncSession = Depends(get_db)):

@@ -1,6 +1,6 @@
 import json
-"""Message service — send, edit, delete, react, star, forward, search."""
 
+import json
 from typing import List, Optional
 
 from app.core.exceptions import ForbiddenError, NotFoundError, ValidationError
@@ -14,9 +14,7 @@ from app.repositories import (
 )
 from app.services.serializers import serialize_message
 
-
 class MessageService:
-    """All message-related business logic."""
 
     def __init__(
         self,

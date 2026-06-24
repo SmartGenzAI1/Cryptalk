@@ -68,6 +68,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
     final filtered = _searchController.text.isEmpty

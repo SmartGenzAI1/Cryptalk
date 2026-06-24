@@ -32,8 +32,10 @@ logger = logging.getLogger("cryptalk")
 # ─── Lifespan — startup & shutdown ─────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create database tables on startup (SQLite auto-creates the file)."""
-    sync_url = f"sqlite:///{settings.DB_PATH}"
+    if settings.is_postgres:
+        sync_url = settings.database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
+    else:
+        sync_url = f"sqlite:///{settings.DB_PATH}"
     sync_engine = create_engine(sync_url, echo=False)
     Base.metadata.create_all(sync_engine)
     sync_engine.dispose()

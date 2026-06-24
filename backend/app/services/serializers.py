@@ -1,15 +1,10 @@
-"""Serializers — convert ORM objects to plain dicts for the API response.
-
-Keeping all serialization in one place ensures consistent field naming
-(camelCase for the API) and prevents leaking internal fields.
-"""
+"""ORM to dict serializers."""
 
 import json
 from typing import Any, Dict, List, Optional
 
 from app.core.security import ms_to_iso
 from app.models import Chat, ChatMember, Message, Reaction, User
-
 
 def serialize_user(u: Optional[User]) -> Optional[Dict[str, Any]]:
     if u is None:
@@ -30,7 +25,6 @@ def serialize_user(u: Optional[User]) -> Optional[Dict[str, Any]]:
         "hasE2EEKeys": bool(u.identity_public_key),
     }
 
-
 def serialize_member(m: ChatMember, users_online: Optional[set] = None) -> Dict[str, Any]:
     data = {
         "id": m.id,
@@ -44,14 +38,12 @@ def serialize_member(m: ChatMember, users_online: Optional[set] = None) -> Dict[
         data["muted"] = bool(m.muted)
     return data
 
-
 def serialize_reaction(r: Reaction) -> Dict[str, Any]:
     return {
         "id": r.id,
         "emoji": r.emoji,
         "user": serialize_user(r.user),
     }
-
 
 def serialize_message(
     m: Message,
@@ -87,7 +79,6 @@ def serialize_message(
         "reactions": [serialize_reaction(r) for r in (m.reactions or [])],
     }
 
-
 def serialize_chat(
     chat: Chat,
     member: ChatMember,
@@ -113,7 +104,6 @@ def serialize_chat(
         "members": [serialize_member(m) for m in (chat.members or [])],
         "lastMessage": _serialize_last_message(last_message),
     }
-
 
 def _serialize_last_message(msg: Optional[Message]) -> Optional[Dict[str, Any]]:
     if msg is None:

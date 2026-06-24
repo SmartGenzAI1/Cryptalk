@@ -1,9 +1,4 @@
-"""Rate limiting middleware — sliding-window per-IP throttling.
-
-Protects auth endpoints (login/register) from brute-force attacks and
-prevents any single client from flooding the API.  Uses an in-memory
-dict; for multi-process deployments swap in Redis.
-"""
+"""Per-IP rate limiter."""
 
 import time
 from collections import defaultdict, deque
@@ -13,13 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Sliding-window rate limiter keyed by client IP + path prefix.
-
-    Different limits can be configured per route prefix.  Requests that
-    exceed the limit receive a 429 response with a ``Retry-After`` header.
-    """
 
     def __init__(self, app, limits: Dict[str, Tuple[int, int]] | None = None):
         """
@@ -37,14 +26,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._hits: Dict[str, Deque[float]] = defaultdict(deque)
 
     def _client_key(self, request: Request) -> str:
-        """Identify the client by IP (or forwarded IP behind a proxy)."""
+    
         forwarded = request.headers.get("x-forwarded-for", "")
         if forwarded:
             return forwarded.split(",")[0].strip()
         return request.client.host if request.client else "unknown"
 
     def _check(self, key: str, max_req: int, window: int) -> Tuple[bool, int]:
-        """Return (allowed, retry_after_seconds)."""
+    
         now = time.time()
         cutoff = now - window
         bucket = self._hits[key]

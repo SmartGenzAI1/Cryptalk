@@ -1,4 +1,4 @@
-"""Chat service — chat listing, creation, and per-user settings."""
+
 
 from typing import List, Optional
 
@@ -9,9 +9,7 @@ from app.models import Chat, ChatMember
 from app.repositories import ChatRepository, MessageRepository, UserRepository
 from app.services.serializers import serialize_chat
 
-
 class ChatService:
-    """Orchestrates chat operations across user / chat / message repos."""
 
     def __init__(
         self,

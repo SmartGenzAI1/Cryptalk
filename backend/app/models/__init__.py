@@ -1,15 +1,9 @@
-"""SQLAlchemy ORM models mapped to the existing Prisma SQLite schema.
-
-Date columns use ``Integer`` because Prisma stores datetimes as epoch
-milliseconds in SQLite.  The ``ms_to_iso`` helper in ``core.security``
-converts these to ISO-8601 strings at the API boundary.
-"""
+"""ORM models."""
 
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
-
 
 class User(Base):
     __tablename__ = "User"
@@ -39,7 +33,6 @@ class User(Base):
     messages = relationship("Message", back_populates="sender")
     created_chats = relationship("Chat", back_populates="creator")
 
-
 class Chat(Base):
     __tablename__ = "Chat"
 
@@ -59,7 +52,6 @@ class Chat(Base):
     messages = relationship("Message", back_populates="chat", cascade="all, delete-orphan")
     creator = relationship("User", back_populates="created_chats", foreign_keys=[created_by])
 
-
 class ChatMember(Base):
     """Membership join table — also stores per-user chat preferences."""
 
@@ -77,7 +69,6 @@ class ChatMember(Base):
 
     chat = relationship("Chat", back_populates="members")
     user = relationship("User", back_populates="memberships")
-
 
 class Message(Base):
     """A chat message — text, sticker, voice, image, or system notice."""
@@ -105,7 +96,6 @@ class Message(Base):
     reply_to = relationship("Message", remote_side="Message.id", backref="replies")
     reactions = relationship("Reaction", back_populates="message", cascade="all, delete-orphan")
 
-
 class Reaction(Base):
     """An emoji reaction on a message."""
 
@@ -120,7 +110,6 @@ class Reaction(Base):
     message = relationship("Message", back_populates="reactions")
     user = relationship("User")
 
-
 class StarredMessage(Base):
     __tablename__ = "StarredMessage"
 
@@ -130,7 +119,6 @@ class StarredMessage(Base):
     chat_id = Column("chatId", String, nullable=False)
     created_at = Column("createdAt", Integer)
 
-
 class UserBlock(Base):
     __tablename__ = "UserBlock"
 
@@ -138,7 +126,6 @@ class UserBlock(Base):
     blocker_id = Column("blockerId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
     blocked_id = Column("blockedId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at = Column("createdAt", Integer)
-
 
 class UserNickname(Base):
     __tablename__ = "UserNickname"
@@ -149,7 +136,6 @@ class UserNickname(Base):
     nickname = Column(String, nullable=False)
     created_at = Column("createdAt", Integer)
 
-
 class ConnectionRequest(Base):
     __tablename__ = "ConnectionRequest"
 
@@ -158,7 +144,6 @@ class ConnectionRequest(Base):
     to_user_id = Column("toUserId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
     status = Column(String, default="pending")
     created_at = Column("createdAt", Integer)
-
 
 class Report(Base):
     __tablename__ = "Report"
