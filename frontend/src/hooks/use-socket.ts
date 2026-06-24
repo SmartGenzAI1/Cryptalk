@@ -84,6 +84,22 @@ export function useSocket() {
       }
     })
 
+    socket.on('message-status', (data: { chatId: string; messageId: string; status: string; message?: MessageWithSender }) => {
+      // Update message delivery/read status in real-time
+      if (data.message) {
+        updateMessage(data.chatId, data.message)
+      }
+    })
+
+    socket.on('recording', (data: { chatId: string; userId: string; username: string; isRecording: boolean }) => {
+      // Voice recording indicator — reuse typing display
+      if (data.isRecording) {
+        addTyping(data.chatId, { userId: data.userId, username: data.username })
+      } else {
+        removeTyping(data.chatId, data.userId)
+      }
+    })
+
     socket.on('reaction', (data: { chatId: string; messageId: string; emoji: string; userId: string; added: boolean }) => {
       // handled in component via store refresh; trigger a lightweight update
       updateReactionInStore(data.chatId, data.messageId, data.emoji, data.userId, data.added)

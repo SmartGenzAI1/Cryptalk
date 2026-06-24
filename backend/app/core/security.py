@@ -96,6 +96,21 @@ def verify_session_token(token: str) -> Optional[str]:
     return _verify(token)
 
 
+def get_client_fingerprint(request) -> str:
+    """Generate a fingerprint from the client's IP + user agent.
+
+    This is used for anti-session-hijacking: if a session token is
+    used from a different IP/user-agent, it's considered stolen.
+    """
+    forwarded = request.headers.get("x-forwarded-for", "")
+    ip = forwarded.split(",")[0].strip() if forwarded else (
+        request.client.host if request.client else "unknown"
+    )
+    user_agent = request.headers.get("user-agent", "")
+    raw = f"{ip}:{user_agent}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
 # ─── Date helpers ──────────────────────────────────────────────────────
 # Prisma stores datetimes as integer milliseconds since epoch in SQLite.
 # These helpers bridge between the integer storage and ISO-8601 strings

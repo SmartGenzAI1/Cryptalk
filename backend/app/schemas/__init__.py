@@ -57,6 +57,7 @@ class MessageCreate(BaseModel):
     type: str = "text"
     reply_to_id: Optional[str] = None
     duration: Optional[int] = None
+    expires_in: Optional[int] = None  # seconds until self-destruct (null = no expiration)
 
 
 class MessageEdit(BaseModel):

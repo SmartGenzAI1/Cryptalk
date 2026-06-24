@@ -8,7 +8,9 @@ import {
   Trash2,
   Copy,
   Languages,
+  Check,
   CheckCheck,
+  Clock,
   Star,
   Forward,
   Play,
@@ -373,8 +375,9 @@ export function MessageItem({ message, isOwn, isFirstInGroup, isLastInGroup }: M
                   <div className={cn('flex items-center gap-1 justify-end mt-0.5 -mb-0.5 text-[10px]', isOwn ? 'text-white/75' : 'text-muted-foreground')}>
                     {starred && <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400" />}
                     {message.editedAt && <span>edited</span>}
+                    {message.expiresIn && <Clock className="h-2.5 w-2.5" />}
                     <span>{formatTime(message.createdAt)}</span>
-                    {isOwn && !isDeleted && <CheckCheck className="h-3 w-3" />}
+                    {isOwn && !isDeleted && <DeliveryTicks status={message.status || 'sent'} />}
                   </div>
                 )}
               </motion.div>
@@ -524,4 +527,16 @@ function VoiceBubble({
       </div>
     </div>
   )
+}
+
+// Delivery status ticks: ✓ sent, ✓✓ delivered, ✓✓ read (blue)
+function DeliveryTicks({ status }: { status: string }) {
+  if (status === 'read') {
+    return <CheckCheck className="h-3 w-3 text-sky-400" />
+  }
+  if (status === 'delivered') {
+    return <CheckCheck className="h-3 w-3" />
+  }
+  // sent (single check)
+  return <Check className="h-3 w-3" />
 }

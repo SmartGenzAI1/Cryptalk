@@ -81,6 +81,20 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
         if chat_id:
             await sio.emit("typing", data, room=f"chat:{chat_id}", skip_sid=sid)
 
+    @sio.on("message-status")
+    async def on_message_status(sid: str, data: dict) -> None:
+        """Broadcast message delivery/read status updates."""
+        chat_id = data.get("chatId")
+        if chat_id:
+            await sio.emit("message-status", data, room=f"chat:{chat_id}")
+
+    @sio.on("recording")
+    async def on_recording(sid: str, data: dict) -> None:
+        """Voice recording indicator."""
+        chat_id = data.get("chatId")
+        if chat_id:
+            await sio.emit("recording", data, room=f"chat:{chat_id}", skip_sid=sid)
+
     @sio.on("reaction")
     async def on_reaction(sid: str, data: dict) -> None:
         chat_id = data.get("chatId")

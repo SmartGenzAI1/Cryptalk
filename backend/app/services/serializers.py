@@ -4,6 +4,7 @@ Keeping all serialization in one place ensures consistent field naming
 (camelCase for the API) and prevents leaking internal fields.
 """
 
+import json
 from typing import Any, Dict, List, Optional
 
 from app.core.security import ms_to_iso
@@ -76,6 +77,10 @@ def serialize_message(
         "createdAt": ms_to_iso(m.created_at),
         "deletedAt": ms_to_iso(m.deleted_at) if m.deleted_at else None,
         "duration": m.duration,
+        "expiresIn": m.expires_in,
+        "expiresAt": ms_to_iso(m.created_at + (m.expires_in * 1000)) if m.expires_in else None,
+        "status": m.status or "sent",
+        "readBy": json.loads(m.read_by) if m.read_by else [],
         "starred": starred,
         "sender": serialize_user(m.sender),
         "reactions": [serialize_reaction(r) for r in (m.reactions or [])],

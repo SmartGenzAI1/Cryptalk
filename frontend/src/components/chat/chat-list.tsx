@@ -33,7 +33,8 @@ import { cn } from '@/lib/utils'
 import { updateChatSettings } from '@/lib/ai-actions'
 import { toast } from 'sonner'
 import { motion } from 'framer-motion'
-import { apiGet } from '@/lib/api'
+import { apiGet, apiPost } from '@/lib/api'
+import { getSocket } from '@/hooks/use-socket'
 
 export function ChatList() {
   const chats = useChatStore((s) => s.chats)
@@ -105,7 +106,21 @@ export function ChatList() {
     setActiveChatId(chat.id)
     setInfoPanelOpen(false)
     setMessagesLoading(chat.id, true)
+
+    // 1. Show cached messages instantly (< 200ms) for instant sync
     try {
+      const { loadCachedMessages } = await import('@/lib/message-cache')
+      const cached = await loadCachedMessages(chat.id)
+      if (cached.length > 0) {
+        setMessages(chat.id, cached)
+        setMessagesLoading(chat.id, false) // hide loading skeleton immediately
+      }
+    } catch {
+      // cache not ready — will show loading skeleton
+    }
+
+    try {
+      // 2. Fetch latest from server (background sync)
       const data = await apiGet<{ messages: any[] }>(`/api/${chat.id}/messages?limit=50`)
       if (data.messages) {
         // E2EE: decrypt all text messages before storing in state
@@ -124,9 +139,23 @@ export function ChatList() {
             })
           )
           setMessages(chat.id, decrypted)
+
+          // 3. Cache decrypted messages for instant sync next time
+          const { cacheMessages } = await import('@/lib/message-cache')
+          cacheMessages(chat.id, decrypted)
         } catch {
           // E2EE not ready — store as-is
           setMessages(chat.id, data.messages)
+        }
+
+        // 4. Mark messages as delivered (recipient opened the chat)
+        if (chat.type !== 'saved') {
+          apiPost(`/api/${chat.id}/messages/delivered`).catch(() => {})
+          // Broadcast delivery status via socket
+          getSocket()?.emit('message-status', {
+            chatId: chat.id,
+            status: 'delivered',
+          })
         }
       }
       // clear unread

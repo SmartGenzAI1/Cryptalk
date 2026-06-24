@@ -11,6 +11,7 @@ import {
   Sticker,
   Trash2,
   Check,
+  Clock,
 } from 'lucide-react'
 import { useChatStore, EMPTY_MESSAGES } from '@/stores/chat-store'
 import { Button } from '@/components/ui/button'
@@ -24,6 +25,7 @@ import { toast } from 'sonner'
 import { getSocket } from '@/hooks/use-socket'
 import { getSmartReplies } from '@/lib/ai-actions'
 import { apiPost } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import type { MessageWithSender } from '@/lib/types'
 
 const EMOJIS = [
@@ -52,6 +54,7 @@ export function MessageInput() {
   const [stickerOpen, setStickerOpen] = useState(false)
   const [recording, setRecording] = useState(false)
   const [recordSeconds, setRecordSeconds] = useState(0)
+  const [ expiresIn, setExpiresIn] = useState<number | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastTypingEmit = useRef(0)
@@ -139,6 +142,7 @@ export function MessageInput() {
         content: encryptedContent,
         type,
         replyToId: replyTo?.id || null,
+        expiresIn: type === 'text' ? expiresIn : null,
       })
       if (data.message) {
         // Decrypt our own message for local display
@@ -337,6 +341,36 @@ export function MessageInput() {
                     </button>
                   ))}
                 </div>
+              </PopoverContent>
+            </Popover>
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className={cn('h-10 w-10 rounded-full zc-tap', expiresIn ? 'text-amber-500' : 'text-muted-foreground')} title="Self-destruct timer">
+                  <Clock className="h-5 w-5" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-48 p-2" align="start">
+                <div className="text-xs font-medium text-muted-foreground mb-2 px-1">Self-destruct after</div>
+                {[
+                  { label: 'Off', value: null },
+                  { label: '10 seconds', value: 10 },
+                  { label: '1 minute', value: 60 },
+                  { label: '1 hour', value: 3600 },
+                  { label: '1 day', value: 86400 },
+                  { label: '1 week', value: 604800 },
+                ].map((opt) => (
+                  <button
+                    key={String(opt.value)}
+                    onClick={() => { setExpiresIn(opt.value); }}
+                    className={cn(
+                      'w-full text-left px-2 py-1.5 rounded-lg text-sm transition-colors zc-tap',
+                      expiresIn === opt.value ? 'bg-primary/15 text-primary font-medium' : 'hover:bg-accent'
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </PopoverContent>
             </Popover>
 

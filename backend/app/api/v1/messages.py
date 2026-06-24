@@ -39,9 +39,30 @@ async def send_message(
     service: MessageService = Depends(get_message_service),
 ):
     msg = await service.send(
-        chat_id, user_id, req.content, req.type, req.reply_to_id, req.duration,
+        chat_id, user_id, req.content, req.type, req.reply_to_id, req.duration, req.expires_in,
     )
     return {"message": msg}
+
+
+@chat_router.post("/{chat_id}/messages/delivered")
+async def mark_delivered(
+    chat_id: str,
+    user_id: str = Depends(get_current_user_id),
+    service: MessageService = Depends(get_message_service),
+):
+    """Mark all messages in a chat as delivered (called when chat is opened)."""
+    return await service.mark_delivered(chat_id, user_id)
+
+
+@chat_router.post("/{chat_id}/messages/read")
+async def mark_read(
+    chat_id: str,
+    message_id: str = Query(..., alias="messageId"),
+    user_id: str = Depends(get_current_user_id),
+    service: MessageService = Depends(get_message_service),
+):
+    """Mark a specific message as read."""
+    return {"message": await service.mark_read(chat_id, message_id, user_id)}
 
 
 @chat_router.patch("/{chat_id}/messages")

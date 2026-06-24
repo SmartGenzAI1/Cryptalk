@@ -21,6 +21,23 @@ export function MessageList() {
   const [unreadBelowCount, setUnreadBelowCount] = useState(0)
 
   const chatListItem = chats.find((c) => c.id === activeChatId)
+  const removeMessage = useChatStore((s) => s.removeMessage)
+
+  // Message expiration — remove expired messages from the UI every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now()
+      for (const msg of messages) {
+        if (msg.expiresIn && msg.createdAt) {
+          const expiresAt = new Date(msg.createdAt).getTime() + msg.expiresIn * 1000
+          if (now >= expiresAt && !msg.deletedAt) {
+            removeMessage(activeChatId, msg.id)
+          }
+        }
+      }
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [messages, activeChatId, removeMessage])
 
   // auto-scroll on new message (only if near bottom)
   useEffect(() => {

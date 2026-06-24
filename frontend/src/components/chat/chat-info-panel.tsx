@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { X, Bell, Users, Image as ImageIcon, Link2, Sparkles } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Bell, Users, Image as ImageIcon, Link2, Sparkles, Shield } from 'lucide-react'
 import { useChatStore, EMPTY_MESSAGES } from '@/stores/chat-store'
 import { ChatAvatar } from './chat-avatar'
 import { Button } from '@/components/ui/button'
@@ -18,14 +18,36 @@ export function ChatInfoPanel() {
   const messages = useChatStore((s) => s.messages[activeChatId] ?? EMPTY_MESSAGES)
   const onlineUserIds = useChatStore((s) => s.onlineUserIds)
   const currentUser = useChatStore((s) => s.currentUser)
+  const e2eeEnabled = useChatStore((s) => s.e2eeEnabled)
   const setInfoPanelOpen = useChatStore((s) => s.setInfoPanelOpen)
   const [summarizing, setSummarizing] = useState(false)
+  const [safetyNumber, setSafetyNumber] = useState('')
+
+  const isDirect = activeChat?.type === 'direct'
+  const other = activeChat?.members.find((m) => m.user.id !== currentUser?.id)
+  const online = other ? onlineUserIds.has(other.user.id) : false
+
+  // Generate safety number for E2EE verification (Signal-style)
+  useEffect(() => {
+    if (!activeChat || !e2eeEnabled || !isDirect || !other) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { generateSafetyNumber } = await import('@/lib/crypto')
+        const { apiGet } = await import('@/lib/api')
+        const keys = await apiGet<{ identity_public_key: string }>(`/api/keys/${other.user.id}`)
+        if (!cancelled && keys.identity_public_key) {
+          const num = await generateSafetyNumber(keys.identity_public_key)
+          if (!cancelled) setSafetyNumber(num)
+        }
+      } catch {
+        if (!cancelled) setSafetyNumber('Unable to generate')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [e2eeEnabled, isDirect, other, activeChat])
 
   if (!activeChat) return null
-
-  const isDirect = activeChat.type === 'direct'
-  const other = activeChat.members.find((m) => m.user.id !== currentUser?.id)
-  const online = other ? onlineUserIds.has(other.user.id) : false
 
   async function handleSummarize() {
     if (messages.length === 0) {
@@ -93,6 +115,27 @@ export function ChatInfoPanel() {
             <Sparkles className="h-4 w-4 mr-2" />
             {summarizing ? 'Summarizing…' : 'Summarize chat with AI'}
           </Button>
+
+          {/* E2EE Verification — Safety Number */}
+          {e2eeEnabled && isDirect && other && (
+            <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/20 p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Shield className="h-4 w-4 text-emerald-500" />
+                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">End-to-End Encrypted</span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-2">
+                Verify this chat's security by comparing the safety number below with {other.user.name}.
+              </p>
+              <div className="bg-background rounded-lg p-3 text-center">
+                <code className="text-sm font-mono font-bold tracking-wider text-emerald-600 dark:text-emerald-400">
+                  {safetyNumber || 'Loading…'}
+                </code>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1 text-center">
+                If the numbers match, your chat is secure.
+              </p>
+            </div>
+          )}
 
           {activeChat.description && (
             <div className="rounded-xl bg-accent/50 p-3">

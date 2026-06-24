@@ -63,6 +63,7 @@ class MessageService:
         msg_type: str = "text",
         reply_to_id: Optional[str] = None,
         duration: Optional[int] = None,
+        expires_in: Optional[int] = None,
     ) -> dict:
         """Create and persist a new message."""
         member = await self.chats.get_member(chat_id, user_id)
@@ -79,9 +80,44 @@ class MessageService:
             type=msg_type or "text",
             reply_to_id=reply_to_id or None,
             duration=duration if isinstance(duration, int) else None,
+            expires_in=expires_in if isinstance(expires_in, int) and expires_in > 0 else None,
+            status="sent",
         )
         await self.chats.touch(chat_id)
         return serialize_message(msg, starred=False)
+
+    async def mark_delivered(self, chat_id: str, user_id: str) -> dict:
+        """Mark all messages in a chat as delivered (recipient opened the chat)."""
+        member = await self.chats.get_member(chat_id, user_id)
+        if not member:
+            raise ForbiddenError("Not a member of this chat")
+        messages = await self.messages.list_for_chat(chat_id, limit=200)
+        updated = []
+        for m in messages:
+            if m.sender_id != user_id and m.status == "sent":
+                m = await self.messages.update(m.id, status="delivered")
+                updated.append(serialize_message(m))
+        return {"updated": updated}
+
+    async def mark_read(self, chat_id: str, message_id: str, user_id: str) -> dict:
+        """Mark a message as read by the current user."""
+        import json
+        msg = await self.messages.get_by_id(message_id)
+        if not msg or msg.chat_id != chat_id:
+            raise NotFoundError("Message not found")
+
+        read_by = json.loads(msg.read_by) if msg.read_by else []
+        if user_id not in read_by:
+            read_by.append(user_id)
+            # If all members have read it, update status to 'read'
+            members = await self.chats.get_by_id(chat_id)
+            total_members = len(members.members) if members else 1
+            if len(read_by) >= total_members - 1:  # -1 for sender
+                await self.messages.update(message_id, status="read", read_by=json.dumps(read_by))
+            else:
+                await self.messages.update(message_id, read_by=json.dumps(read_by))
+            msg = await self.messages.get_by_id(message_id)
+        return serialize_message(msg)
 
     async def edit_or_star(
         self, chat_id: str, message_id: str, user_id: str,
