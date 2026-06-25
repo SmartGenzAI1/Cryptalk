@@ -28,7 +28,7 @@ jobs:
         env:
           BACKEND_URL: ${{ secrets.BACKEND_URL }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cryptalk-apk
           path: flutter/build/app/outputs/flutter-apk/app-release.apk
