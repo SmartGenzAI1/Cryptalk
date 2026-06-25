@@ -2,10 +2,17 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || ''
 const BACKEND_PORT = process.env.NEXT_PUBLIC_BACKEND_PORT || process.env.BACKEND_PORT || '8001'
 
 function buildUrl(path: string): string {
+  // F5: when `BACKEND_URL` is set (CORS / direct backend) we hit the API
+  // server directly — no gateway, no `XTransformPort` query param needed.
+  // The previous code always appended a dangling `?`/`&`, producing URLs
+  // like `https://api/chats?` or `https://api/x?y=1&`. Just concat the path
+  // verbatim — the caller is responsible for any query string.
   if (BACKEND_URL) {
-    const sep = path.includes('?') ? '&' : '?'
-    return `${BACKEND_URL}${path}${sep}`
+    return `${BACKEND_URL}${path}`
   }
+  // Gateway path: Caddy needs `XTransformPort` to know which backend port
+  // to forward to. Append it to whatever query string (if any) the caller
+  // already supplied.
   const sep = path.includes('?') ? '&' : '?'
   return `${path}${sep}XTransformPort=${BACKEND_PORT}`
 }

@@ -70,6 +70,16 @@ export function MessageInput() {
   const lastTypingEmit = useRef(0)
   const recordTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // F3: mirror `recording` into a ref so the unmount cleanup below can read
+  // the *current* value rather than the value captured when the cleanup was
+  // registered. Without this, navigating away mid-recording leaks the mic
+  // stream (the OS mic indicator stays on) because the cleanup closure sees
+  // the stale `false`.
+  const recordingRef = useRef(false)
+  useEffect(() => {
+    recordingRef.current = recording
+  }, [recording])
+
   // listen for reply events
   useEffect(() => {
     function onReply(e: Event) {
@@ -79,6 +89,32 @@ export function MessageInput() {
     }
     window.addEventListener('zc-reply', onReply)
     return () => window.removeEventListener('zc-reply', onReply)
+  }, [])
+
+  // F3 + F9: on unmount, release any in-flight mic stream (so the OS mic
+  // indicator doesn't stay lit after navigating away mid-recording) and clear
+  // any pending typing-stop timer (otherwise `emitTyping(false)` would fire
+  // on a gone socket). Reads `recordingRef.current` (the ref mirror of
+  // `recording`) so the closure sees the up-to-date value.
+  useEffect(() => {
+    return () => {
+      if (recordingRef.current) {
+        try {
+          const rec = mediaRecorderRef.current
+          if (rec && rec.state !== 'inactive') {
+            rec.stop()
+            rec.stream.getTracks().forEach((t) => t.stop())
+          }
+          if (recordTimer.current) clearInterval(recordTimer.current)
+        } catch {
+          // best-effort — never throw from a cleanup
+        }
+      }
+      if (typingTimer.current) {
+        clearTimeout(typingTimer.current)
+        typingTimer.current = null
+      }
+    }
   }, [])
 
   function emitTyping(isTyping: boolean) {

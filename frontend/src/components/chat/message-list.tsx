@@ -3,9 +3,23 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from 'react'
 import { useChatStore, EMPTY_MESSAGES, EMPTY_TYPING } from '@/stores/chat-store'
 import { MessageItem } from './message-item'
+import { ErrorBoundary } from '@/components/error-boundary'
 import { formatDateSeparator, sameDay } from '@/lib/format'
 import { ArrowDown } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+
+/**
+ * Fallback for a single message whose render threw — keeps the chat list
+ * alive when one message has a malformed payload (F2). Rendered inside the
+ * same wrapper div so the unread-divider above it still works.
+ */
+function MessageErrorFallback() {
+  return (
+    <div className="my-1 px-3 py-2 max-w-[80%] rounded-2xl bg-muted/40 border border-dashed border-muted-foreground/30 text-xs text-muted-foreground italic">
+      This message couldn&apos;t be displayed
+    </div>
+  )
+}
 
 export function MessageList() {
   const activeChatId = useChatStore((s) => s.activeChatId)
@@ -145,13 +159,17 @@ export function MessageList() {
                             <div className="flex-1 h-px bg-primary/30" />
                           </div>
                         )}
-                      <MessageItem
-                        message={m}
-                        isOwn={m.senderId === currentUser?.id}
-                        isFirstInGroup={isFirstInGroup}
-                        isLastInGroup={isLastInGroup}
-                        showAvatar={activeChatId !== undefined}
-                      />
+                      {/* F2: per-message error boundary so one malformed message
+                          payload only takes itself out, not the whole chat. */}
+                      <ErrorBoundary fallback={<MessageErrorFallback />}>
+                        <MessageItem
+                          message={m}
+                          isOwn={m.senderId === currentUser?.id}
+                          isFirstInGroup={isFirstInGroup}
+                          isLastInGroup={isLastInGroup}
+                          showAvatar={activeChatId !== undefined}
+                        />
+                      </ErrorBoundary>
                       </div>
                     )
                   })}

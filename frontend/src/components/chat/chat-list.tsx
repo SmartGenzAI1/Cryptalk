@@ -151,22 +151,36 @@ export function ChatList() {
     }
   }, [])
   async function prefetchChat(chat: ChatListItem) {
+    // F12: capture the chat id at start. Before each `setMessages(...)` call,
+    // re-check `useChatStore.getState().activeChatId` — if the user has
+    // switched to a different chat in the meantime, abort the prefetch so we
+    // don't write this chat's (potentially stale) messages into a slot the
+    // user is no longer viewing. We treat `activeChatId === null` (user
+    // closed all chats) as "still here" so the hover-prefetch use case keeps
+    // working before the user has opened any chat.
+    const chatId = chat.id
+    const switchedAway = () => {
+      const a = useChatStore.getState().activeChatId
+      return a !== null && a !== chatId
+    }
     // Skip if another render populated the store meanwhile
-    const cur = useChatStore.getState().messages[chat.id]
+    const cur = useChatStore.getState().messages[chatId]
     if (cur && cur.length > 0) return
     try {
       // 1. Try IndexedDB cache first (instant)
       const { loadCachedMessages } = await import('@/lib/message-cache')
-      const cached = await loadCachedMessages(chat.id)
-      const storeNow = useChatStore.getState().messages[chat.id]
+      const cached = await loadCachedMessages(chatId)
+      const storeNow = useChatStore.getState().messages[chatId]
       if (storeNow && storeNow.length > 0) return
       if (cached.length > 0) {
-        useChatStore.getState().setMessages(chat.id, cached)
+        if (switchedAway()) return
+        useChatStore.getState().setMessages(chatId, cached)
       }
       // 2. Background-fetch latest from server (no loading state, no toast)
-      const data = await apiGet<{ messages: any[] }>(`/api/${chat.id}/messages?limit=50`)
+      const data = await apiGet<{ messages: any[] }>(`/api/${chatId}/messages?limit=50`)
       if (!data.messages) return
-      const storeAfter = useChatStore.getState().messages[chat.id]
+      if (switchedAway()) return
+      const storeAfter = useChatStore.getState().messages[chatId]
       if (storeAfter && storeAfter.length > 0 && cached.length > 0) return
       try {
         const { decryptMessageForChat } = await import('@/lib/e2ee')
@@ -174,7 +188,7 @@ export function ChatList() {
           data.messages.map(async (m) => {
             if (m.type === 'text' && m.content) {
               try {
-                m.content = await decryptMessageForChat(m.content, chat.id, chat.type)
+                m.content = await decryptMessageForChat(m.content, chatId, chat.type)
               } catch {
                 // keep ciphertext if decryption fails
               }
@@ -182,11 +196,13 @@ export function ChatList() {
             return m
           })
         )
-        useChatStore.getState().setMessages(chat.id, decrypted)
+        if (switchedAway()) return
+        useChatStore.getState().setMessages(chatId, decrypted)
         const { cacheMessages } = await import('@/lib/message-cache')
-        cacheMessages(chat.id, decrypted)
+        cacheMessages(chatId, decrypted)
       } catch {
-        useChatStore.getState().setMessages(chat.id, data.messages)
+        if (switchedAway()) return
+        useChatStore.getState().setMessages(chatId, data.messages)
       }
     } catch {
       // silent — prefetch is best-effort
@@ -241,7 +257,13 @@ export function ChatList() {
 
         // 4. Mark messages as delivered (recipient opened the chat)
         if (chat.type !== 'saved') {
-          apiPost(`/api/${chat.id}/messages/delivered`).catch(() => {})
+          // F13: was `.catch(() => {})` — silently swallowing all errors
+          // meant delivery receipts would silently stop working if the
+          // endpoint broke, with no log to trace. Surface to the console so
+          // debugging is possible.
+          apiPost(`/api/${chat.id}/messages/delivered`).catch((e) =>
+            console.warn('mark_delivered failed:', e)
+          )
           // Broadcast delivery status via socket
           getSocket()?.emit('message-status', {
             chatId: chat.id,

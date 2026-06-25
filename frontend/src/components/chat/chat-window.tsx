@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Phone,
   Video,
@@ -107,21 +107,49 @@ export function ChatWindow() {
     }
   }
 
-  async function runSearch(q: string) {
+  // F7: in-chat search input is committed immediately to `searchQuery` for
+  // instant input feedback, but the actual server call (`searchInChat`) is
+  // debounced 250ms so we don't hit the API on every keystroke. The previous
+  // implementation fired `searchInChat` synchronously inside the `onChange`
+  // handler.
+  function runSearch(q: string) {
     setSearchQuery(q)
     if (!q.trim() || !activeChatId) {
       setSearchResults([])
-      return
-    }
-    const results = await searchInChat(activeChatId, q)
-    setSearchResults(results)
-    setSearchIndex(0)
-    if (results.length > 0) {
-      // scroll to first result
-      const el = document.getElementById(`msg-${results[0].id}`)
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setSearchIndex(0)
     }
   }
+
+  useEffect(() => {
+    if (!activeChatId) return
+    const q = searchQuery.trim()
+    // The empty-query case is handled synchronously in `runSearch` (which
+    // clears results immediately for snappy UX) — we must not call setState
+    // here for the empty branch or React's `react-hooks/set-state-in-effect`
+    // rule fires (cascading renders). Just bail and let the debounce run
+    // only when there's an actual query to send.
+    if (!q) return
+    let cancelled = false
+    const t = setTimeout(async () => {
+      try {
+        const results = await searchInChat(activeChatId, q)
+        if (cancelled) return
+        setSearchResults(results)
+        setSearchIndex(0)
+        if (results.length > 0) {
+          // scroll to first result
+          const el = document.getElementById(`msg-${results[0].id}`)
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      } catch (e) {
+        if (!cancelled) console.warn('in-chat search failed:', e)
+      }
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+    }
+  }, [searchQuery, activeChatId])
 
   function navigateResults(dir: 'up' | 'down') {
     if (searchResults.length === 0) return

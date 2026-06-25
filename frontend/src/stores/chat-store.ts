@@ -156,10 +156,36 @@ export const useChatStore = create<ChatState>((set, _get) => ({
     }),
 
   onlineUserIds: new Set(),
-  setOnlineUserIds: (ids) => set({ onlineUserIds: ids }),
+  setOnlineUserIds: (ids) =>
+    set((s) => {
+      // F6: every presence broadcast used to allocate a fresh `Set`, which
+      // changed the identity and triggered re-renders of every selector that
+      // reads `onlineUserIds` (chat list, chat window, message items via
+      // `isOnline`) — even when the actual user ids hadn't changed. Skip the
+      // swap if the new Set is shallow-equal to the current one.
+      const cur = s.onlineUserIds
+      if (cur === ids) return s
+      if (cur.size === ids.size) {
+        let same = true
+        for (const id of ids) {
+          if (!cur.has(id)) {
+            same = false
+            break
+          }
+        }
+        if (same) return s
+      }
+      return { onlineUserIds: ids }
+    }),
   setUserOnline: (userId, online) =>
     set((s) => {
-      const next = new Set(s.onlineUserIds)
+      // F6: no-op if the user is already in the desired state — avoids the
+      // new-`Set`-on-every-broadcast re-render storm.
+      const cur = s.onlineUserIds
+      const already = cur.has(userId)
+      if (online && already) return s
+      if (!online && !already) return s
+      const next = new Set(cur)
       if (online) next.add(userId)
       else next.delete(userId)
       return { onlineUserIds: next }

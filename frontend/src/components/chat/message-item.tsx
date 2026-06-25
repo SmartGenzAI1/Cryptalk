@@ -64,7 +64,17 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
   const removeMessage = useChatStore((s) => s.removeMessage)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(message.content)
-  const [starred, setStarred] = useState(false)
+  // F1: initialize from the server value so previously-starred messages show
+  // the star indicator on mount (was always `false`). We use the React 19
+  // "adjust state during render" pattern (not a useEffect) to sync when
+  // `message.starred` changes from elsewhere — avoids the lint rule against
+  // calling setState synchronously inside an effect.
+  const [starred, setStarred] = useState(() => !!message.starred)
+  const [prevStarred, setPrevStarred] = useState(message.starred)
+  if (message.starred !== prevStarred) {
+    setPrevStarred(message.starred)
+    setStarred(!!message.starred)
+  }
   const [showHoverBar, setShowHoverBar] = useState(false)
   const [showQuickReact, setShowQuickReact] = useState(false)
   const [forwardOpen, setForwardOpen] = useState(false)

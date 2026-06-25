@@ -11,6 +11,12 @@ export function getSocket(): Socket | null {
   return socket
 }
 
+// X5: socket auth is now handled at CONNECTION TIME, not via an `identify`
+// event. The browser automatically sends the `tc_session` cookie with
+// `withCredentials: true`, and the backend's `connect` handler verifies it.
+// This works because the cookie is httponly (JS can't read it) but the
+// browser CAN send it as part of the WebSocket handshake.
+
 export function useSocket() {
   const currentUser = useChatStore((s) => s.currentUser)
   const addMessage = useChatStore((s) => s.addMessage)
@@ -24,6 +30,7 @@ export function useSocket() {
   const upsertChat = useChatStore((s) => s.upsertChat)
   const setActiveChat = useChatStore((s) => s.setActiveChat)
   const setConnected = useChatStore((s) => s.setConnected)
+  const setCurrentUser = useChatStore((s) => s.setCurrentUser)
   const initialised = useRef(false)
 
   useEffect(() => {
@@ -36,6 +43,10 @@ export function useSocket() {
       : `/?XTransformPort=${process.env.NEXT_PUBLIC_BACKEND_PORT || '8001'}`
     socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
+      // X5: send the tc_session cookie automatically so the backend can
+      // authenticate the socket at connect time (the cookie is httponly so
+      // we can't read it in JS — but the browser CAN send it here).
+      withCredentials: true,
       forceNew: true,
       reconnection: true,
       reconnectionAttempts: Infinity,
@@ -45,11 +56,30 @@ export function useSocket() {
 
     socket.on('connect', () => {
       setConnected(true)
-      socket?.emit('identify', { userId: currentUser.id, username: currentUser.username })
+      // No `identify` emit needed — auth happened at connection time via
+      // the cookie header. The backend's `connect` handler verified the
+      // token and registered the userId in the connection manager.
     })
 
     socket.on('disconnect', () => {
       setConnected(false)
+    })
+
+    // X5: if the backend rejects the connection (e.g. expired/invalid cookie),
+    // it emits `auth-error`. Force re-login so the user gets a fresh cookie.
+    socket.on('auth-error', (data: { message?: string } | undefined) => {
+      console.warn('[socket] auth-error:', data?.message || 'unauthorized')
+      try {
+        socket?.removeAllListeners()
+        socket?.disconnect()
+      } catch {}
+      socket = null
+      initialised.current = false
+      setConnected(false)
+      setCurrentUser(null)
+      if (typeof window !== 'undefined') {
+        window.location.assign('/')
+      }
     })
 
     socket.on('presence', (data: { users: { userId: string; username: string; isOnline: boolean }[] }) => {
@@ -133,9 +163,9 @@ export function useSocket() {
       }
     })
 
-    socket.on('disconnect', () => {
-      setConnected(false)
-    })
+    // F4: the duplicate `socket.on('disconnect', ...)` registration that used
+    // to live here has been removed — the single registration above (next to
+    // `connect`) is the source of truth.
 
     return () => {
       if (socket) {
