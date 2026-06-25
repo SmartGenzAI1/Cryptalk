@@ -1,0 +1,751 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { memo, useState, useRef, useEffect } from 'react'
+     4→     4→import {
+     5→     5→  Reply,
+     6→     6→  Smile,
+     7→     7→  Pencil,
+     8→     8→  Trash2,
+     9→     9→  Copy,
+    10→    10→  Check,
+    11→    11→  CheckCheck,
+    12→    12→  Clock,
+    13→    13→  Star,
+    14→    14→  Forward,
+    15→    15→  Play,
+    16→    16→  Pause,
+    17→    17→  Pin,
+    18→    18→  FileIcon,
+    19→    19→  Loader2,
+    20→    20→  FileWarning,
+    21→    21→} from 'lucide-react'
+    22→    22→import { fetchAndDecryptAttachment } from '@/lib/attachments'
+    23→    23→import { useChatStore } from '@/stores/chat-store'
+    24→    24→import { MessageWithSender, stickerIconUrl, isLegacyEmoji } from '@/lib/icons'
+    25→    25→import { ChatAvatar } from './chat-avatar'
+    26→    26→import { Button } from '@/components/ui/button'
+    27→    27→import {
+    28→    28→  ContextMenu,
+    29→    29→  ContextMenuContent,
+    30→    30→  ContextMenuItem,
+    31→    31→  ContextMenuSeparator,
+    32→    32→  ContextMenuTrigger,
+    33→    33→  ContextMenuSub,
+    34→    34→  ContextMenuSubContent,
+    35→    35→  ContextMenuSubTrigger,
+    36→    36→} from '@/components/ui/context-menu'
+    37→    37→import { toast } from 'sonner'
+    38→    38→import { formatTime } from '@/lib/format'
+    39→    39→import { cn } from '@/lib/utils'
+    40→    40→import { getSocket } from '@/hooks/use-socket'
+    41→    41→import { toggleReaction, toggleStar } from '@/lib/actions'
+    42→    42→import { motion, AnimatePresence } from 'framer-motion'
+    43→    43→import { lazy, Suspense } from 'react'
+    44→    44→import { apiGet, apiPatch, apiDelete } from '@/lib/api'
+    45→    45→import { isAnimatedSticker } from '@/lib/animated-stickers'
+    46→    46→
+    47→    47→const ForwardDialog = lazy(() => import('./forward-dialog').then(m => ({ default: m.ForwardDialog })))
+    48→    48→const AnimatedStickerDisplay = lazy(() => import('./animated-sticker').then(m => ({ default: m.AnimatedStickerDisplay })))
+    49→    49→
+    50→    50→const QUICK_REACTIONS = ['👍', '❤️', '🔥', '😂', '😮', '🎉', '👏', '🙏']
+    51→    51→
+    52→    52→interface MessageItemProps {
+    53→    53→  message: MessageWithSender
+    54→    54→  isOwn: boolean
+    55→    55→  isFirstInGroup: boolean
+    56→    56→  isLastInGroup: boolean
+    57→    57→  showAvatar: boolean
+    58→    58→}
+    59→    59→
+    60→    60→function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: MessageItemProps) {
+    61→    61→  const currentUser = useChatStore((s) => s.currentUser)
+    62→    62→  const activeChat = useChatStore((s) => s.activeChat)
+    63→    63→  const updateMessage = useChatStore((s) => s.updateMessage)
+    64→    64→  const removeMessage = useChatStore((s) => s.removeMessage)
+    65→    65→  const [editing, setEditing] = useState(false)
+    66→    66→  const [editText, setEditText] = useState(message.content)
+    67→    67→  const [starred, setStarred] = useState(false)
+    68→    68→  const [showHoverBar, setShowHoverBar] = useState(false)
+    69→    69→  const [showQuickReact, setShowQuickReact] = useState(false)
+    70→    70→  const [forwardOpen, setForwardOpen] = useState(false)
+    71→    71→  // voice playback
+    72→    72→  const [playing, setPlaying] = useState(false)
+    73→    73→  const [progress, setProgress] = useState(0)
+    74→    74→  const playTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+    75→    75→
+    76→    76→  // Attachment resolution state — for image / file / voice messages the
+    77→    77→  // `content` field may be an encrypted URL (Supabase path), an encrypted
+    78→    78→  // data URL (dev fallback), or the literal "[delivered]" placeholder after
+    79→    79→  // the server wipes content post-delivery. We resolve it asynchronously.
+    80→    80→  const [attachment, setAttachment] = useState<{
+    81→    81→    status: 'loading' | 'ready' | 'delivered' | 'error'
+    82→    82→    dataUrl: string | null
+    83→    83→  }>({ status: 'loading', dataUrl: null })
+    84→    84→
+    85→    85→  const isDeleted = !!message.deletedAt
+    86→    86→  const isSystem = message.type === 'system'
+    87→    87→  const isVoice = message.type === 'voice'
+    88→    88→  const isSticker = message.type === 'sticker'
+    89→    89→  const isImage = message.type === 'image'
+    90→    90→  const isFile = message.type === 'file'
+    91→    91→
+    92→    92→  // Resolve attachment content for image / file / voice messages.
+    93→    93→  // Deps are intentionally limited to message.id + message.content (stable
+    94→    94→  // across re-renders of the memoized component) plus the chat type which
+    95→    95→  // is needed for E2EE decryption.
+    96→    96→  const chatType = activeChat?.type || 'direct'
+    97→    97→  useEffect(() => {
+    98→    98→    if (!isImage && !isFile && !isVoice) return
+    99→    99→    let cancelled = false
+   100→   100→
+   101→   101→    async function resolve() {
+   102→   102→      const raw = message.content
+   103→   103→      if (!raw) {
+   104→   104→        if (!cancelled) setAttachment({ status: 'error', dataUrl: null })
+   105→   105→        return
+   106→   106→      }
+   107→   107→      // Fast-path: server wiped content after delivery confirmation
+   108→   108→      if (raw === '[delivered]') {
+   109→   109→        if (!cancelled) setAttachment({ status: 'delivered', dataUrl: null })
+   110→   110→        return
+   111→   111→      }
+   112→   112→      try {
+   113→   113→        let resolved = raw
+   114→   114→        // If content isn't already a URL or data URL, it's an encrypted
+   115→   115→        // ciphertext JSON string — decrypt it first.
+   116→   116→        if (
+   117→   117→          !resolved.startsWith('http://') &&
+   118→   118→          !resolved.startsWith('https://') &&
+   119→   119→          !resolved.startsWith('data:')
+   120→   120→        ) {
+   121→   121→          const { decryptMessageForChat } = await import('@/lib/e2ee')
+   122→   122→          resolved = await decryptMessageForChat(resolved, message.chatId, chatType)
+   123→   123→        }
+   124→   124→
+   125→   125→        if (cancelled) return
+   126→   126→
+   127→   127→        if (resolved === '[delivered]') {
+   128→   128→          setAttachment({ status: 'delivered', dataUrl: null })
+   129→   129→          return
+   130→   130→        }
+   131→   131→        if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
+   132→   132→          // Supabase-stored attachment — fetch ciphertext bytes & decrypt
+   133→   133→          const dataUrl = await fetchAndDecryptAttachment(resolved, message.chatId, chatType)
+   134→   134→          if (!cancelled) setAttachment({ status: 'ready', dataUrl })
+   135→   135→        } else if (resolved.startsWith('data:')) {
+   136→   136→          // Dev fallback — content is already the decrypted data URL
+   137→   137→          if (!cancelled) setAttachment({ status: 'ready', dataUrl: resolved })
+   138→   138→        } else {
+   139→   139→          // Legacy plaintext (no E2EE) — treat as data URL if it looks like one,
+   140→   140→          // otherwise mark as error.
+   141→   141→          if (!cancelled) setAttachment({ status: 'ready', dataUrl: resolved })
+   142→   142→        }
+   143→   143→      } catch {
+   144→   144→        if (!cancelled) setAttachment({ status: 'error', dataUrl: null })
+   145→   145→      }
+   146→   146→    }
+   147→   147→
+   148→   148→    resolve()
+   149→   149→    return () => { cancelled = true }
+   150→   150→  }, [message.id, message.content, message.chatId, chatType, isImage, isFile, isVoice])
+   151→   151→
+   152→   152→  // reaction grouped by emoji
+   153→   153→  const reactionGroups = message.reactions.reduce<Record<string, { count: number; mine: boolean }>>((acc, r) => {
+   154→   154→    if (!acc[r.emoji]) acc[r.emoji] = { count: 0, mine: false }
+   155→   155→    acc[r.emoji].count++
+   156→   156→    if (r.user.id === currentUser?.id) acc[r.emoji].mine = true
+   157→   157→    return acc
+   158→   158→  }, {})
+   159→   159→
+   160→   160→  async function handleReact(emoji: string) {
+   161→   161→    try {
+   162→   162→      const data = await toggleReaction(message.chatId, message.id, emoji)
+   163→   163→      getSocket()?.emit('reaction', {
+   164→   164→        chatId: message.chatId,
+   165→   165→        messageId: message.id,
+   166→   166→        emoji,
+   167→   167→        userId: currentUser?.id,
+   168→   168→        added: data.added,
+   169→   169→      })
+   170→   170→      // locally refresh this message reactions
+   171→   171→      const refreshed = await apiGet<{ messages: any[] }>(`/api/${message.chatId}/messages?limit=200`)
+   172→   172→      if (refreshed.messages) {
+   173→   173→        const m = refreshed.messages.find((x: any) => x.id === message.id)
+   174→   174→        if (m) updateMessage(message.chatId, m)
+   175→   175→      }
+   176→   176→      setShowQuickReact(false)
+   177→   177→    } catch (e) {
+   178→   178→      console.error(e)
+   179→   179→    }
+   180→   180→  }
+   181→   181→
+   182→   182→  async function handleEdit() {
+   183→   183→    if (!editText.trim()) return
+   184→   184→    try {
+   185→   185→      const data = await apiPatch<{ message: any }>(`/api/${message.chatId}/messages?messageId=${message.id}`, {
+   186→   186→        content: editText.trim(),
+   187→   187→      })
+   188→   188→      if (data.message) {
+   189→   189→        updateMessage(message.chatId, data.message)
+   190→   190→        getSocket()?.emit('message-update', { chatId: message.chatId, message: data.message, action: 'edit' })
+   191→   191→      }
+   192→   192→      setEditing(false)
+   193→   193→    } catch (e) {
+   194→   194→      console.error(e)
+   195→   195→    }
+   196→   196→  }
+   197→   197→
+   198→   198→  async function handleDelete(forEveryone: boolean = false) {
+   199→   199→    try {
+   200→   200→      await apiDelete(`/api/${message.chatId}/messages?messageId=${message.id}${forEveryone ? '&forEveryone=true' : ''}`)
+   201→   201→      removeMessage(message.chatId, message.id)
+   202→   202→      getSocket()?.emit('message-update', {
+   203→   203→        chatId: message.chatId,
+   204→   204→        message: { ...message, deletedAt: new Date().toISOString(), content: '🗑️ Message deleted' },
+   205→   205→        action: 'delete',
+   206→   206→      })
+   207→   207→      toast.success(forEveryone ? 'Deleted for everyone' : 'Message deleted')
+   208→   208→    } catch (e) {
+   209→   209→      console.error(e)
+   210→   210→    }
+   211→   211→  }
+   212→   212→
+   213→   213→  async function handleStar() {
+   214→   214→    try {
+   215→   215→      const data = await toggleStar(message.chatId, message.id)
+   216→   216→      setStarred(data.starred)
+   217→   217→      toast.success(data.starred ? 'Added to starred' : 'Removed from starred')
+   218→   218→    } catch (e) {
+   219→   219→      console.error(e)
+   220→   220→    }
+   221→   221→  }
+   222→   222→
+   223→   223→  function handleCopy() {
+   224→   224→    navigator.clipboard.writeText(message.content)
+   225→   225→    toast.success('Copied to clipboard')
+   226→   226→  }
+   227→   227→
+   228→   228→  function startReply() {
+   229→   229→    window.dispatchEvent(new CustomEvent('zc-reply', { detail: message }))
+   230→   230→  }
+   231→   231→
+   232→   232→  const audioRef = useRef<HTMLAudioElement | null>(null)
+   233→   233→
+   234→   234→  function togglePlay() {
+   235→   235→    if (playing) {
+   236→   236→      setPlaying(false)
+   237→   237→      audioRef.current?.pause()
+   238→   238→      return
+   239→   239→    }
+   240→   240→
+   241→   241→    const audioContent = attachment.status === 'ready' ? attachment.dataUrl : null
+   242→   242→
+   243→   243→    if (!audioContent) {
+   244→   244→      if (attachment.status === 'delivered') {
+   245→   245→        toast.error('Voice message no longer available')
+   246→   246→      } else if (attachment.status === 'error') {
+   247→   247→        toast.error('Could not load voice message')
+   248→   248→      } else {
+   249→   249→        toast.error('Voice message is still loading…')
+   250→   250→      }
+   251→   251→      return
+   252→   252→    }
+   253→   253→
+   254→   254→    if (!audioContent.startsWith('data:audio')) {
+   255→   255→      // legacy voice message (no actual audio) — simulate playback
+   256→   256→      setPlaying(true)
+   257→   257→      const duration = message.duration || 5
+   258→   258→      const step = 100 / (duration * 10)
+   259→   259→      playTimer.current = setInterval(() => {
+   260→   260→        setProgress((p) => {
+   261→   261→          const next = p + step
+   262→   262→          if (next >= 100) {
+   263→   263→            setPlaying(false)
+   264→   264→            if (playTimer.current) clearInterval(playTimer.current)
+   265→   265→            return 0
+   266→   266→          }
+   267→   267→          return next
+   268→   268→        })
+   269→   269→      }, 100)
+   270→   270→      return
+   271→   271→    }
+   272→   272→
+   273→   273→    const audio = new Audio(audioContent)
+   274→   274→    audioRef.current = audio
+   275→   275→    audio.onended = () => {
+   276→   276→      setPlaying(false)
+   277→   277→      setProgress(0)
+   278→   278→    }
+   279→   279→    audio.ontimeupdate = () => {
+   280→   280→      if (audio.duration) {
+   281→   281→        setProgress((audio.currentTime / audio.duration) * 100)
+   282→   282→      }
+   283→   283→    }
+   284→   284→    audio.play()
+   285→   285→    setPlaying(true)
+   286→   286→  }
+   287→   287→
+   288→   288→  useEffect(() => {
+   289→   289→    return () => {
+   290→   290→      audioRef.current?.pause()
+   291→   291→      if (playTimer.current) clearInterval(playTimer.current)
+   292→   292→    }
+   293→   293→  }, [])
+   294→   294→
+   295→   295→  if (isSystem) {
+   296→   296→    return (
+   297→   297→      <div className="flex justify-center my-2">
+   298→   298→        <span className="px-3 py-1 rounded-full bg-background/80 backdrop-blur text-xs text-muted-foreground border">
+   299→   299→          {message.content}
+   300→   300→        </span>
+   301→   301→      </div>
+   302→   302→    )
+   303→   303→  }
+   304→   304→
+   305→   305→  const HoverActions = (
+   306→   306→    <AnimatePresence>
+   307→   307→      {showHoverBar && !editing && !isDeleted && (
+   308→   308→        <motion.div
+   309→   309→          initial={{ opacity: 0, scale: 0.85 }}
+   310→   310→          animate={{ opacity: 1, scale: 1 }}
+   311→   311→          exit={{ opacity: 0, scale: 0.85 }}
+   312→   312→          transition={{ duration: 0.15 }}
+   313→   313→          className={cn(
+   314→   314→            'absolute top-1/2 -translate-y-1/2 flex items-center gap-0.5 bg-background/95 backdrop-blur rounded-full shadow-lg border p-0.5 z-20',
+   315→   315→            isOwn ? '-left-1' : '-right-1'
+   316→   316→          )}
+   317→   317→          onMouseLeave={() => setShowHoverBar(false)}
+   318→   318→        >
+   319→   319→          <button onClick={() => setShowQuickReact((v) => !v)} className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center" title="React">
+   320→   320→            <Smile className="h-4 w-4" />
+   321→   321→          </button>
+   322→   322→          <button onClick={startReply} className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center" title="Reply">
+   323→   323→            <Reply className="h-4 w-4" />
+   324→   324→          </button>
+   325→   325→          <button onClick={() => setForwardOpen(true)} className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center" title="Forward">
+   326→   326→            <Forward className="h-4 w-4" />
+   327→   327→          </button>
+   328→   328→          <button onClick={handleStar} className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center" title="Star">
+   329→   329→            <Star className={cn('h-4 w-4', starred && 'fill-amber-400 text-amber-400')} />
+   330→   330→          </button>
+   331→   331→          {isOwn && (
+   332→   332→            <button onClick={() => { setEditing(true); setEditText(message.content) }} className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center" title="Edit">
+   333→   333→              <Pencil className="h-4 w-4" />
+   334→   334→            </button>
+   335→   335→          )}
+   336→   336→        </motion.div>
+   337→   337→      )}
+   338→   338→    </AnimatePresence>
+   339→   339→  )
+   340→   340→
+   341→   341→  return (
+   342→   342→    <>
+   343→   343→      <ContextMenu>
+   344→   344→        <ContextMenuTrigger asChild>
+   345→   345→          <div
+   346→   346→            className={cn('group relative flex items-end gap-2 px-1', isOwn ? 'justify-end' : 'justify-start', isLastInGroup ? 'mb-2' : 'mb-0.5')}
+   347→   347→            onMouseEnter={() => setShowHoverBar(true)}
+   348→   348→            onMouseLeave={() => { setShowHoverBar(false); setShowQuickReact(false) }}
+   349→   349→          >
+   350→   350→            {!isOwn && (
+   351→   351→              <div className="w-8 shrink-0">
+   352→   352→                {isLastInGroup && (
+   353→   353→                  <ChatAvatar emoji={message.sender.avatarEmoji} color={message.sender.avatarColor} size="sm" userId={message.sender.id} />
+   354→   354→                )}
+   355→   355→              </div>
+   356→   356→            )}
+   357→   357→
+   358→   358→            <div className={cn('relative max-w-[85%] sm:max-w-[65%] min-w-0 flex flex-col', isOwn ? 'items-end' : 'items-start')}>
+   359→   359→              {!isOwn && isFirstInGroup && activeChat?.type !== 'direct' && activeChat?.type !== 'saved' && (
+   360→   360→                <span className="text-xs font-bold ml-1 mb-0.5 text-primary">
+   361→   361→                  {message.sender.name}
+   362→   362→                </span>
+   363→   363→              )}
+   364→   364→
+   365→   365→              {HoverActions}
+   366→   366→
+   367→   367→              {/* Quick react popover */}
+   368→   368→              <AnimatePresence>
+   369→   369→                {showQuickReact && (
+   370→   370→                  <motion.div
+   371→   371→                    initial={{ opacity: 0, y: 8, scale: 0.9 }}
+   372→   372→                    animate={{ opacity: 1, y: 0, scale: 1 }}
+   373→   373→                    exit={{ opacity: 0, y: 8, scale: 0.9 }}
+   374→   374→                    transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+   375→   375→                    className={cn(
+   376→   376→                      'absolute -top-11 bg-background/95 backdrop-blur rounded-full shadow-lg border p-1 flex items-center gap-0.5 z-30',
+   377→   377→                      isOwn ? 'right-0' : 'left-0'
+   378→   378→                    )}
+   379→   379→                  >
+   380→   380→                    {QUICK_REACTIONS.map((e) => (
+   381→   381→                      <button
+   382→   382→                        key={e}
+   383→   383→                        onClick={() => handleReact(e)}
+   384→   384→                        className="h-8 w-8 rounded-full hover:bg-accent hover:scale-125 transition-all flex items-center justify-center text-lg"
+   385→   385→                      >
+   386→   386→                        {e}
+   387→   387→                      </button>
+   388→   388→                    ))}
+   389→   389→                  </motion.div>
+   390→   390→                )}
+   391→   391→              </AnimatePresence>
+   392→   392→
+   393→   393→              <motion.div
+   394→   394→                layout
+   395→   395→                initial={{ opacity: 0, y: 6, scale: 0.97 }}
+   396→   396→                animate={{ opacity: 1, y: 0, scale: 1 }}
+   397→   397→                transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+   398→   398→                className={cn(
+   399→   399→                  'relative rounded-2xl px-3.5 py-2 shadow-sm',
+   400→   400→                  isOwn
+   401→   401→                    ? 'bg-gradient-to-br from-primary to-primary text-primary-foreground rounded-br-md'
+   402→   402→                    : 'bg-background border rounded-bl-md',
+   403→   403→                  isDeleted && 'opacity-60 italic',
+   404→   404→                  starred && 'ring-1 ring-amber-400/50'
+   405→   405→                )}
+   406→   406→              >
+   407→   407→                {/* Reply preview */}
+   408→   408→                {message.replyTo && (
+   409→   409→                  <div className={cn('mb-1.5 pl-2 border-l-2 text-xs', isOwn ? 'border-white/50' : 'border-primary')}>
+   410→   410→                    <div className={cn('font-semibold', isOwn ? 'text-white/90' : 'text-primary')}>
+   411→   411→                      {message.replyTo.senderName}
+   412→   412→                    </div>
+   413→   413→                    <div className={cn('truncate max-w-[200px]', isOwn ? 'text-white/75' : 'text-muted-foreground')}>
+   414→   414→                      {message.replyTo.content}
+   415→   415→                    </div>
+   416→   416→                  </div>
+   417→   417→                )}
+   418→   418→
+   419→   419→                {editing ? (
+   420→   420→                  <div className="min-w-[200px]">
+   421→   421→                    <textarea
+   422→   422→                      value={editText}
+   423→   423→                      onChange={(e) => setEditText(e.target.value)}
+   424→   424→                      className={cn(
+   425→   425→                        'w-full bg-transparent outline-none resize-none text-sm',
+   426→   426→                        isOwn ? 'placeholder-white/60' : ''
+   427→   427→                      )}
+   428→   428→                      rows={2}
+   429→   429→                      autoFocus
+   430→   430→                    />
+   431→   431→                    <div className="flex justify-end gap-1 mt-1">
+   432→   432→                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setEditing(false); setEditText(message.content) }}>
+   433→   433→                        Cancel
+   434→   434→                      </Button>
+   435→   435→                      <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={handleEdit}>
+   436→   436→                        Save
+   437→   437→                      </Button>
+   438→   438→                    </div>
+   439→   439→                  </div>
+   440→   440→                ) : isSticker ? (
+   441→   441→                  isAnimatedSticker(message.content) ? (
+   442→   442→                    <Suspense fallback={<span className="text-6xl leading-none">⭐</span>}>
+   443→   443→                      <AnimatedStickerDisplay name={message.content} size={140} />
+   444→   444→                    </Suspense>
+   445→   445→                  ) : isLegacyEmoji(message.content) ? (
+   446→   446→                    <span className="text-6xl leading-none">{message.content}</span>
+   447→   447→                  ) : (
+   448→   448→                    <img
+   449→   449→                      src={stickerIconUrl(message.content)}
+   450→   450→                      alt={message.content}
+   451→   451→                      width={128}
+   452→   452→                      height={128}
+   453→   453→                      loading="lazy"
+   454→   454→                      className="object-contain"
+   455→   455→                    />
+   456→   456→                  )
+   457→   457→                ) : isImage ? (
+   458→   458→                  attachment.status === 'delivered' ? (
+   459→   459→                    <AttachmentPlaceholder text="Image no longer available (delivered & wiped)" />
+   460→   460→                  ) : attachment.status === 'loading' ? (
+   461→   461→                    <AttachmentLoading label="Loading image…" />
+   462→   462→                  ) : attachment.status === 'error' ? (
+   463→   463→                    <AttachmentPlaceholder text="Failed to load image" isError />
+   464→   464→                  ) : attachment.dataUrl && attachment.dataUrl.startsWith('data:image') ? (
+   465→   465→                    <img
+   466→   466→                      src={attachment.dataUrl}
+   467→   467→                      alt="shared"
+   468→   468→                      loading="lazy"
+   469→   469→                      className="rounded-lg max-w-[280px] max-h-[280px] object-contain cursor-pointer"
+   470→   470→                      onClick={() => attachment.dataUrl && window.open(attachment.dataUrl, '_blank')}
+   471→   471→                    />
+   472→   472→                  ) : (
+   473→   473→                    <AttachmentPlaceholder text="Unsupported image format" isError />
+   474→   474→                  )
+   475→   475→                ) : isFile ? (
+   476→   476→                  attachment.status === 'delivered' ? (
+   477→   477→                    <AttachmentPlaceholder text="File no longer available (delivered & wiped)" />
+   478→   478→                  ) : attachment.status === 'loading' ? (
+   479→   479→                    <AttachmentLoading label="Loading file…" />
+   480→   480→                  ) : attachment.status === 'error' ? (
+   481→   481→                    <AttachmentPlaceholder text="Failed to load file" isError />
+   482→   482→                  ) : (
+   483→   483→                    <div className="flex items-center gap-2 min-w-[200px]">
+   484→   484→                      <a
+   485→   485→                        href={attachment.dataUrl || '#'}
+   486→   486→                        download={attachment.dataUrl ? 'file' : undefined}
+   487→   487→                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/10 hover:bg-black/20 transition-colors"
+   488→   488→                      >
+   489→   489→                        <FileIcon className="h-5 w-5" />
+   490→   490→                        <span className="text-sm">Download file</span>
+   491→   491→                      </a>
+   492→   492→                    </div>
+   493→   493→                  )
+   494→   494→                ) : isVoice ? (
+   495→   495→                  attachment.status === 'delivered' ? (
+   496→   496→                    <AttachmentPlaceholder text="Voice message no longer available (delivered & wiped)" />
+   497→   497→                  ) : attachment.status === 'error' ? (
+   498→   498→                    <AttachmentPlaceholder text="Failed to load voice message" isError />
+   499→   499→                  ) : (
+   500→   500→                    <VoiceBubble
+   501→   501→                      duration={message.duration || 5}
+   502→   502→                      playing={playing}
+   503→   503→                      progress={progress}
+   504→   504→                      onToggle={togglePlay}
+   505→   505→                      isOwn={isOwn}
+   506→   506→                      time={formatTime(message.createdAt)}
+   507→   507→                      loading={attachment.status === 'loading'}
+   508→   508→                    />
+   509→   509→                  )
+   510→   510→                ) : (
+   511→   511→                  <div className="text-sm whitespace-pre-wrap break-words">
+   512→   512→                    {message.content}
+   513→   513→                      </div>
+   514→   514→                    )}
+   515→   515→
+   516→   516→                {/* Meta */}
+   517→   517→                {!editing && !isVoice && !isSticker && !isImage && !isFile && (
+   518→   518→                  <div className={cn('flex items-center gap-1 justify-end mt-0.5 -mb-0.5 text-[10px]', isOwn ? 'text-white/75' : 'text-muted-foreground')}>
+   519→   519→                    {starred && <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400" />}
+   520→   520→                    {message.editedAt && <span>edited</span>}
+   521→   521→                    {message.expiresIn && <Clock className="h-2.5 w-2.5" />}
+   522→   522→                    <span>{formatTime(message.createdAt)}</span>
+   523→   523→                    {isOwn && !isDeleted && <DeliveryTicks status={message.status || 'sent'} />}
+   524→   524→                  </div>
+   525→   525→                )}
+   526→   526→              </motion.div>
+   527→   527→
+   528→   528→              {/* Reactions */}
+   529→   529→              {Object.keys(reactionGroups).length > 0 && (
+   530→   530→                <div className={cn('flex flex-wrap gap-1 mt-1', isOwn ? 'justify-end' : 'justify-start')}>
+   531→   531→                  {Object.entries(reactionGroups).map(([emoji, info]) => (
+   532→   532→                    <motion.button
+   533→   533→                      key={emoji}
+   534→   534→                      initial={{ scale: 0 }}
+   535→   535→                      animate={{ scale: 1 }}
+   536→   536→                      transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+   537→   537→                      onClick={() => handleReact(emoji)}
+   538→   538→                      className={cn(
+   539→   539→                        'flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs border transition-colors zc-tap',
+   540→   540→                        info.mine
+   541→   541→                          ? 'bg-primary/15 border-primary text-primary'
+   542→   542→                          : 'bg-background border-border hover:bg-accent'
+   543→   543→                      )}
+   544→   544→                    >
+   545→   545→                      <span>{emoji}</span>
+   546→   546→                      <span className="font-medium">{info.count}</span>
+   547→   547→                    </motion.button>
+   548→   548→                  ))}
+   549→   549→                </div>
+   550→   550→              )}
+   551→   551→            </div>
+   552→   552→          </div>
+   553→   553→        </ContextMenuTrigger>
+   554→   554→
+   555→   555→        <ContextMenuContent className="w-52">
+   556→   556→          <ContextMenuItem onClick={handleCopy}>
+   557→   557→            <Copy className="h-4 w-4 mr-2" /> Copy
+   558→   558→          </ContextMenuItem>
+   559→   559→          <ContextMenuItem onClick={startReply}>
+   560→   560→            <Reply className="h-4 w-4 mr-2" /> Reply
+   561→   561→          </ContextMenuItem>
+   562→   562→          <ContextMenuItem onClick={handleStar}>
+   563→   563→            <Star className={cn('h-4 w-4 mr-2', starred && 'fill-amber-400 text-amber-400')} />
+   564→   564→            {starred ? 'Unstar' : 'Star'}
+   565→   565→          </ContextMenuItem>
+   566→   566→          <ContextMenuItem onClick={() => setForwardOpen(true)}>
+   567→   567→            <Forward className="h-4 w-4 mr-2" /> Forward
+   568→   568→          </ContextMenuItem>
+   569→   569→          <ContextMenuSub>
+   570→   570→            <ContextMenuSubTrigger>
+   571→   571→              <Smile className="h-4 w-4 mr-2" /> React
+   572→   572→            </ContextMenuSubTrigger>
+   573→   573→            <ContextMenuSubContent className="w-auto p-2">
+   574→   574→              <div className="grid grid-cols-4 gap-1">
+   575→   575→                {QUICK_REACTIONS.map((e) => (
+   576→   576→                  <button
+   577→   577→                    key={e}
+   578→   578→                    onClick={() => handleReact(e)}
+   579→   579→                    className="h-9 w-9 rounded-lg hover:bg-accent hover:scale-110 transition-all flex items-center justify-center text-xl"
+   580→   580→                  >
+   581→   581→                    {e}
+   582→   582→                  </button>
+   583→   583→                ))}
+   584→   584→              </div>
+   585→   585→            </ContextMenuSubContent>
+   586→   586→          </ContextMenuSub>
+   587→   587→          {isOwn && !isDeleted && (
+   588→   588→            <>
+   589→   589→              <ContextMenuSeparator />
+   590→   590→              <ContextMenuItem onClick={() => { setEditing(true); setEditText(message.content) }}>
+   591→   591→                <Pencil className="h-4 w-4 mr-2" /> Edit
+   592→   592→              </ContextMenuItem>
+   593→   593→              <ContextMenuItem onClick={() => handleDelete(false)} className="text-muted-foreground">
+   594→   594→                <Trash2 className="h-4 w-4 mr-2" /> Delete for me
+   595→   595→              </ContextMenuItem>
+   596→   596→              <ContextMenuItem onClick={() => handleDelete(true)} className="text-destructive focus:text-destructive">
+   597→   597→                <Trash2 className="h-4 w-4 mr-2" /> Delete for everyone
+   598→   598→              </ContextMenuItem>
+   599→   599→            </>
+   600→   600→          )}
+   601→   601→        </ContextMenuContent>
+   602→   602→      </ContextMenu>
+   603→   603→
+   604→   604→      {forwardOpen && (
+   605→   605→        <Suspense fallback={null}>
+   606→   606→          <ForwardDialog
+   607→   607→            open={forwardOpen}
+   608→   608→            onOpenChange={setForwardOpen}
+   609→   609→            messageId={message.id}
+   610→   610→          />
+   611→   611→        </Suspense>
+   612→   612→      )}
+   613→   613→    </>
+   614→   614→  )
+   615→   615→}
+   616→   616→
+   617→   617→export const MessageItem = memo(MessageItemImpl, (prev, next) => {
+   618→   618→  // Custom comparator: skip re-render when nothing visual changed.
+   619→   619→  // Compares message identity + the small set of fields that affect the
+   620→   620→  // rendered output. Avoids re-rendering the whole list when an unrelated
+   621→   621→  // store slice (e.g. typing indicators, online users) changes.
+   622→   622→  //
+   623→   623→  // Reactions and sender are compared by reference — the Zustand store always
+   624→   624→  // allocates new arrays/objects on updates (see updateMessage /
+   625→   625→  // updateReactionInStore), so a reference change reliably signals a real
+   626→   626→  // content change. This avoids the length-only pitfall (e.g. swap 👍 for ❤️
+   627→   627→  // keeps length identical but visually differs).
+   628→   628→  const pm = prev.message
+   629→   629→  const nm = next.message
+   630→   630→  return (
+   631→   631→    pm === nm ||
+   632→   632→    (pm.id === nm.id &&
+   633→   633→      pm.content === nm.content &&
+   634→   634→      pm.status === nm.status &&
+   635→   635→      pm.type === nm.type &&
+   636→   636→      pm.deletedAt === nm.deletedAt &&
+   637→   637→      pm.editedAt === nm.editedAt &&
+   638→   638→      pm.duration === nm.duration &&
+   639→   639→      pm.expiresIn === nm.expiresIn &&
+   640→   640→      pm.senderId === nm.senderId &&
+   641→   641→      pm.sender === nm.sender &&
+   642→   642→      pm.reactions === nm.reactions &&
+   643→   643→      pm.replyTo === nm.replyTo &&
+   644→   644→      prev.isOwn === next.isOwn &&
+   645→   645→      prev.isFirstInGroup === next.isFirstInGroup &&
+   646→   646→      prev.isLastInGroup === next.isLastInGroup &&
+   647→   647→      prev.showAvatar === next.showAvatar)
+   648→   648→  )
+   649→   649→})
+   650→   650→
+   651→   651→// Voice message bubble with waveform + play button
+   652→   652→function VoiceBubble({
+   653→   653→  duration,
+   654→   654→  playing,
+   655→   655→  progress,
+   656→   656→  onToggle,
+   657→   657→  isOwn,
+   658→   658→  time,
+   659→   659→  loading = false,
+   660→   660→}: {
+   661→   661→  duration: number
+   662→   662→  playing: boolean
+   663→   663→  progress: number
+   664→   664→  onToggle: () => void
+   665→   665→  isOwn: boolean
+   666→   666→  time: string
+   667→   667→  loading?: boolean
+   668→   668→}) {
+   669→   669→  const bars = Math.min(Math.max(Math.floor(duration * 2), 12), 40)
+   670→   670→  return (
+   671→   671→    <div className="flex items-center gap-2.5 min-w-[180px] py-0.5">
+   672→   672→      <button
+   673→   673→        onClick={onToggle}
+   674→   674→        disabled={loading}
+   675→   675→        className={cn(
+   676→   676→          'h-9 w-9 rounded-full flex items-center justify-center shrink-0 zc-tap',
+   677→   677→          isOwn ? 'bg-white/20' : 'bg-primary',
+   678→   678→          loading && 'opacity-60'
+   679→   679→        )}
+   680→   680→      >
+   681→   681→        {loading ? (
+   682→   682→          <Loader2 className="h-4 w-4 animate-spin" />
+   683→   683→        ) : playing ? (
+   684→   684→          <Pause className="h-4 w-4" />
+   685→   685→        ) : (
+   686→   686→          <Play className="h-4 w-4 ml-0.5" />
+   687→   687→        )}
+   688→   688→      </button>
+   689→   689→      <div className="flex-1">
+   690→   690→        <div className="flex items-center gap-[2px] h-6">
+   691→   691→          {Array.from({ length: bars }).map((_, i) => {
+   692→   692→            const filled = (i / bars) * 100 < progress
+   693→   693→            const h = 30 + Math.abs(Math.sin(i * 1.7)) * 70
+   694→   694→            return (
+   695→   695→              <div
+   696→   696→                key={i}
+   697→   697→                className={cn(
+   698→   698→                  'flex-1 rounded-full transition-colors',
+   699→   699→                  filled ? (isOwn ? 'bg-white' : 'bg-primary') : (isOwn ? 'bg-white/40' : 'bg-muted-foreground/40'),
+   700→   700→                  playing && filled && 'zc-wave-bar'
+   701→   701→                )}
+   702→   702→                style={{ height: `${h}%`, animationDelay: `${i * 0.05}s` }}
+   703→   703→              />
+   704→   704→            )
+   705→   705→          })}
+   706→   706→        </div>
+   707→   707→        <div className={cn('flex items-center justify-between text-[10px] mt-1', isOwn ? 'text-white/75' : 'text-muted-foreground')}>
+   708→   708→          <span>{loading ? '…' : playing ? `${Math.ceil(duration * (1 - progress / 100))}s` : `${duration}s`}</span>
+   709→   709→          <span>{time}</span>
+   710→   710→        </div>
+   711→   711→      </div>
+   712→   712→    </div>
+   713→   713→  )
+   714→   714→}
+   715→   715→
+   716→   716→// Delivery status ticks: ✓ sent, ✓✓ delivered, ✓✓ read (blue)
+   717→   717→function DeliveryTicks({ status }: { status: string }) {
+   718→   718→  if (status === 'read') {
+   719→   719→    return <CheckCheck className="h-3 w-3 text-sky-400" />
+   720→   720→  }
+   721→   721→  if (status === 'delivered') {
+   722→   722→    return <CheckCheck className="h-3 w-3" />
+   723→   723→  }
+   724→   724→  // sent (single check)
+   725→   725→  return <Check className="h-3 w-3" />
+   726→   726→}
+   727→   727→
+   728→   728→// Attachment loading spinner (shown while fetching + decrypting from Supabase)
+   729→   729→function AttachmentLoading({ label }: { label: string }) {
+   730→   730→  return (
+   731→   731→    <div className="flex items-center gap-2 py-3 px-4 min-w-[180px]">
+   732→   732→      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+   733→   733→      <span className="text-xs text-muted-foreground">{label}</span>
+   734→   734→    </div>
+   735→   735→  )
+   736→   736→}
+   737→   737→
+   738→   738→// Placeholder for attachments that have been wiped (post-delivery) or failed to load
+   739→   739→function AttachmentPlaceholder({ text, isError = false }: { text: string; isError?: boolean }) {
+   740→   740→  return (
+   741→   741→    <div className="flex items-center gap-2 py-2.5 px-3 min-w-[200px] max-w-[280px]">
+   742→   742→      {isError ? (
+   743→   743→        <FileWarning className="h-4 w-4 shrink-0 text-muted-foreground" />
+   744→   744→      ) : (
+   745→   745→        <FileIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+   746→   746→      )}
+   747→   747→      <span className="text-xs text-muted-foreground italic truncate">{text}</span>
+   748→   748→    </div>
+   749→   749→  )
+   750→   750→}
+   751→   751→
