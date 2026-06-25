@@ -1,0 +1,1178 @@
+     1→import 'dart:async';
+     2→import 'dart:io';
+     3→import 'package:flutter/material.dart';
+     4→import 'package:provider/provider.dart';
+     5→import 'package:record/record.dart';
+     6→import 'package:audioplayers/audioplayers.dart';
+     7→import 'package:permission_handler/permission_handler.dart';
+     8→import 'package:image_picker/image_picker.dart';
+     9→import 'package:http/http.dart' as http;
+    10→import 'dart:convert';
+    11→import 'package:flutter/services.dart';
+    12→import '../../core/auth_service.dart';
+    13→import '../../core/chat_service.dart';
+    14→import '../../core/api_client.dart';
+    15→import '../../core/crypto_service.dart';
+    16→import '../../core/socket_service.dart';
+    17→import '../../core/models.dart';
+    18→
+    19→String _basename(String path) {
+    20→  final i = path.lastIndexOf('/');
+    21→  final j = path.lastIndexOf('\\');
+    22→  final idx = i > j ? i : j;
+    23→  return idx >= 0 ? path.substring(idx + 1) : path;
+    24→}
+    25→
+    26→class ChatViewScreen extends StatefulWidget {
+    27→  final Chat chat;
+    28→
+    29→  const ChatViewScreen({super.key, required this.chat});
+    30→
+    31→  @override
+    32→  State<ChatViewScreen> createState() => _ChatViewScreenState();
+    33→}
+    34→
+    35→class _ChatViewScreenState extends State<ChatViewScreen> {
+    36→  final _inputController = TextEditingController();
+    37→  final _scrollController = ScrollController();
+    38→  final _audioPlayer = AudioPlayer();
+    39→  List<Message> _messages = [];
+    40→  bool _loading = true;
+    41→  bool _loadingMore = false;
+    42→  Timer? _typingTimer;
+    43→  bool _isRecording = false;
+    44→  int _recordSeconds = 0;
+    45→  Timer? _recordTimer;
+    46→  final _record = Record();
+    47→  final _imagePicker = ImagePicker();
+    48→  Message? _replyTo;
+    49→  int? _editingMessageIndex;
+    50→  String? _lastReadAt;
+    51→  bool _showScrollDown = false;
+    52→  List<String> _typingUsers = [];
+    53→  int? _selfDestructSeconds;
+    54→
+    55→  /// Subscription IDs returned by `SocketService.on*` — cancelled in
+    56→  /// `dispose` so we remove ONLY this screen's listeners, not every screen's
+    57→  /// (L3 fix).
+    58→  final List<int> _socketSubIds = [];
+    59→
+    60→  /// Web-client sticker names (e.g. `"fox"`, `"like"`) mapped to emoji so
+    61→  /// stickers sent from the web app render as an icon on Flutter instead of
+    62→  /// the literal string "fox" (L8 fix). Names not in the map (e.g. an emoji
+    63→  /// sent from another Flutter client) fall through unchanged.
+    64→  static const Map<String, String> _stickerEmojiMap = {
+    65→    'like': '👍',
+    66→    'star': '⭐',
+    67→    'gift': '🎁',
+    68→    'birthday-cake': '🎂',
+    69→    'rocket': '🚀',
+    70→    'trophy': '🏆',
+    71→    'crown': '👑',
+    72→    'diamond': '💎',
+    73→    'rainbow': '🌈',
+    74→    'sun': '☀️',
+    75→    'moon': '🌙',
+    76→    'cloud': '☁️',
+    77→    'flower': '🌸',
+    78→    'mountain': '⛰️',
+    79→    'volcano': '🌋',
+    80→    'island': '🏝️',
+    81→  };
+    82→
+    83→  static const _stickers = ['👍', '❤️', '🔥', '😂', '🎉', '👏', '🙏', '👋', '⭐', '🚀'];
+    84→  static const _reactions = ['👍', '❤️', '🔥', '😂', '😮', '🎉'];
+    85→  static const _selfDestructOptions = [10, 60, 3600, 86400, 604800];
+    86→
+    87→  @override
+    88→  void initState() {
+    89→    super.initState();
+    90→    _loadDraft();
+    91→    _loadMessages();
+    92→    _joinChat();
+    93→    _setupSocketListeners();
+    94→    _scrollController.addListener(_onScroll);
+    95→  }
+    96→
+    97→  void _loadDraft() {
+    98→    final draft = _getDraft();
+    99→    if (draft.isNotEmpty) _inputController.text = draft;
+   100→  }
+   101→
+   102→  String _getDraft() {
+   103→    return _readPrefs('draft_${widget.chat.id}') ?? '';
+   104→  }
+   105→
+   106→  void _saveDraft(String text) {
+   107→    _writePrefs('draft_${widget.chat.id}', text);
+   108→  }
+   109→
+   110→  void _clearDraft() {
+   111→    _writePrefs('draft_${widget.chat.id}', '');
+   112→  }
+   113→
+   114→  String? _readPrefs(String key) {
+   115→    return _sharedPrefsCache[key];
+   116→  }
+   117→
+   118→  void _writePrefs(String key, String value) {
+   119→    _sharedPrefsCache[key] = value;
+   120→  }
+   121→
+   122→  static final Map<String, String> _sharedPrefsCache = {};
+   123→
+   124→  Future<void> _loadMessages() async {
+   125→    try {
+   126→      final chatService = context.read<ChatService>();
+   127→      final messages = await chatService.getMessages(widget.chat.id);
+   128→      if (mounted)
+   129→      setState(() {
+   130→        _messages = messages;
+   131→        _loading = false;
+   132→      });
+   133→      _scrollToBottom();
+   134→      await chatService.markDelivered(widget.chat.id);
+   135→    } catch (_) {
+   136→      if (mounted)
+   137→      setState(() => _loading = false);
+   138→    }
+   139→  }
+   140→
+   141→  Future<void> _loadMore() async {
+   142→    if (_loadingMore || _messages.isEmpty) return;
+   143→    if (mounted)
+   144→    setState(() => _loadingMore = true);
+   145→    try {
+   146→      final chatService = context.read<ChatService>();
+   147→      final firstMsg = _messages.first;
+   148→      final older = await chatService.getMessages(widget.chat.id, before: firstMsg.createdAt);
+   149→      if (older.isNotEmpty) {
+   150→        if (mounted)
+   151→        setState(() {
+   152→          _messages.insertAll(0, older.reversed);
+   153→        });
+   154→      }
+   155→    } catch (e) { debugPrint('Error: $e'); } finally {
+   156→      // L15 fix: guard setState after the async getMessages() call.
+   157→      if (mounted)
+   158→      setState(() => _loadingMore = false);
+   159→    }
+   160→  }
+   161→
+   162→  void _onScroll() {
+   163→    if (_scrollController.position.pixels <= 100 && !_loadingMore) {
+   164→      _loadMore();
+   165→    }
+   166→    final distFromBottom = _scrollController.position.maxScrollExtent - _scrollController.position.pixels;
+   167→    setState(() => _showScrollDown = distFromBottom > 400);
+   168→  }
+   169→
+   170→  void _joinChat() {
+   171→    final socket = context.read<SocketService>();
+   172→    socket.joinChat(widget.chat.id);
+   173→  }
+   174→
+   175→  void _setupSocketListeners() {
+   176→    final socket = context.read<SocketService>();
+   177→    _socketSubIds.add(socket.onMessage((data) {
+   178→      if (data['chatId'] == widget.chat.id && data['message'] != null) {
+   179→        // L5 fix: guard setState — a message arriving during a navigation
+   180→        // transition would otherwise crash on a disposed State.
+   181→        if (!mounted) return;
+   182→        final msg = Message.fromJson(data['message']);
+   183→        setState(() => _messages.add(msg));
+   184→        _scrollToBottom();
+   185→      }
+   186→    }));
+   187→    _socketSubIds.add(socket.onTyping((data) {
+   188→      if (data['chatId'] != widget.chat.id) return;
+   189→      if (!mounted) return;
+   190→      if (data['isTyping'] == true) {
+   191→        final username = data['username'] ?? 'Someone';
+   192→        setState(() {
+   193→          if (!_typingUsers.contains(username)) _typingUsers.add(username);
+   194→        });
+   195→        // L4 fix: capture `mounted` inside the delayed callback so a
+   196→        // setState-after-dispose crash can't happen if the user navigates
+   197→        // away within the 3-second window.
+   198→        Future.delayed(const Duration(seconds: 3), () {
+   199→          if (!mounted) return;
+   200→          setState(() => _typingUsers.remove(username));
+   201→        });
+   202→      } else {
+   203→        setState(() => _typingUsers.remove(data['username']));
+   204→      }
+   205→    }));
+   206→    _socketSubIds.add(socket.onMessageUpdate((data) {
+   207→      if (data['chatId'] == widget.chat.id && data['message'] != null) {
+   208→        if (!mounted) return;
+   209→        final msg = Message.fromJson(data['message']);
+   210→        setState(() {
+   211→          final idx = _messages.indexWhere((m) => m.id == msg.id);
+   212→          if (idx >= 0) {
+   213→            _messages[idx] = msg;
+   214→          }
+   215→        });
+   216→      }
+   217→    }));
+   218→  }
+   219→
+   220→  /// For direct chats, return the other member's userId (used to fetch their
+   221→  /// E2EE public key). Returns null for saved/group chats.
+   222→  String? _recipientUserId() {
+   223→    if (widget.chat.type != 'direct') return null;
+   224→    final auth = context.read<AuthService>();
+   225→    final me = auth.currentUser?.id;
+   226→    final other = widget.chat.members
+   227→        .where((m) => m.user.id != me)
+   228→        .firstOrNull;
+   229→    return other?.user.id;
+   230→  }
+   231→
+   232→  void _scrollToBottom() {
+   233→    WidgetsBinding.instance.addPostFrameCallback((_) {
+   234→      if (_scrollController.hasClients) {
+   235→        _scrollController.animateTo(
+   236→          _scrollController.position.maxScrollExtent,
+   237→          duration: const Duration(milliseconds: 200),
+   238→          curve: Curves.easeOut,
+   239→        );
+   240→      }
+   241→    });
+   242→  }
+   243→
+   244→  Future<void> _sendMessage() async {
+   245→    if (_editingMessageIndex != null) {
+   246→      await _saveEdit();
+   247→      return;
+   248→    }
+   249→
+   250→    final text = _inputController.text.trim();
+   251→    if (text.isEmpty) return;
+   252→
+   253→    _inputController.clear();
+   254→    _clearDraft();
+   255→    _stopTyping();
+   256→
+   257→    try {
+   258→      final chatService = context.read<ChatService>();
+   259→      final socket = context.read<SocketService>();
+   260→      final msg = await chatService.sendMessage(
+   261→        widget.chat.id,
+   262→        text,
+   263→        replyToId: _replyTo?.id,
+   264→        expiresIn: _selfDestructSeconds,
+   265→        chatType: widget.chat.type,
+   266→        recipientUserId: _recipientUserId(),
+   267→      );
+   268→      // L6 fix: guard setState after the await.
+   269→      if (!mounted) return;
+   270→      setState(() {
+   271→        _messages.add(msg);
+   272→        _replyTo = null;
+   273→        _selfDestructSeconds = null;
+   274→      });
+   275→      socket.sendMessage(widget.chat.id, _messageToJson(msg));
+   276→      _scrollToBottom();
+   277→    } catch (e) {
+   278→      if (mounted) {
+   279→        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+   280→      }
+   281→    }
+   282→  }
+   283→
+   284→  Map<String, dynamic> _messageToJson(Message msg) {
+   285→    return {
+   286→      'id': msg.id,
+   287→      'chatId': msg.chatId,
+   288→      'senderId': msg.senderId,
+   289→      'content': msg.content,
+   290→      'type': msg.type,
+   291→      'createdAt': msg.createdAt,
+   292→      if (msg.duration != null) 'duration': msg.duration,
+   293→      if (msg.attachmentPath != null) 'attachmentPath': msg.attachmentPath,
+   294→      'sender': {
+   295→        'id': msg.sender.id,
+   296→        'name': msg.sender.name,
+   297→        'username': msg.sender.username,
+   298→        'avatarColor': msg.sender.avatarColor,
+   299→        'avatarEmoji': msg.sender.avatarEmoji,
+   300→      },
+   301→    };
+   302→  }
+   303→
+   304→  Future<void> _saveEdit() async {
+   305→    final text = _inputController.text.trim();
+   306→    if (text.isEmpty || _editingMessageIndex == null) return;
+   307→    final msg = _messages[_editingMessageIndex!];
+   308→    try {
+   309→      final chatService = context.read<ChatService>();
+   310→      final edited = await chatService.editMessage(widget.chat.id, msg.id, text);
+   311→      if (mounted)
+   312→      setState(() {
+   313→        _messages[_editingMessageIndex!] = edited;
+   314→        _editingMessageIndex = null;
+   315→      });
+   316→      _inputController.clear();
+   317→      _clearDraft();
+   318→    } catch (e) { debugPrint('Error: $e'); }
+   319→  }
+   320→
+   321→  void _startEditing(int index) {
+   322→    setState(() {
+   323→      _editingMessageIndex = index;
+   324→      _inputController.text = _messages[index].content;
+   325→      _replyTo = null;
+   326→    });
+   327→    FocusScope.of(context).requestFocus(FocusNode());
+   328→  }
+   329→
+   330→  void _onTypingChanged(String text) {
+   331→    _saveDraft(text);
+   332→    final auth = context.read<AuthService>();
+   333→    final socket = context.read<SocketService>();
+   334→    final user = auth.currentUser;
+   335→    if (user == null) return;
+   336→
+   337→    socket.sendTyping(widget.chat.id, user.id, user.name ?? '', true);
+   338→    _typingTimer?.cancel();
+   339→    _typingTimer = Timer(const Duration(seconds: 2), _stopTyping);
+   340→  }
+   341→
+   342→  void _stopTyping() {
+   343→    final auth = context.read<AuthService>();
+   344→    final socket = context.read<SocketService>();
+   345→    final user = auth.currentUser;
+   346→    if (user == null) return;
+   347→    socket.sendTyping(widget.chat.id, user.id, user.name ?? '', false);
+   348→    _typingTimer?.cancel();
+   349→  }
+   350→
+   351→  Future<void> _startRecording() async {
+   352→    final status = await Permission.microphone.request();
+   353→    if (!status.isGranted) {
+   354→      if (mounted) {
+   355→        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Microphone denied')));
+   356→      }
+   357→      return;
+   358→    }
+   359→    await _record.start();
+   360→    if (!mounted) return;
+   361→    setState(() {
+   362→      _isRecording = true;
+   363→      _recordSeconds = 0;
+   364→    });
+   365→    _recordTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+   366→      // L5 fix: the periodic timer can fire after dispose — guard setState.
+   367→      if (!mounted) {
+   368→        t.cancel();
+   369→        return;
+   370→      }
+   371→      setState(() => _recordSeconds++);
+   372→      if (_recordSeconds >= 60) _stopAndSendVoice();
+   373→    });
+   374→  }
+   375→
+   376→  Future<void> _stopAndSendVoice() async {
+   377→    if (!_isRecording) return;
+   378→    final path = await _record.stop();
+   379→    _recordTimer?.cancel();
+   380→    if (mounted)
+   381→    setState(() => _isRecording = false);
+   382→    if (path == null || _recordSeconds < 1) return;
+   383→
+   384→    try {
+   385→      final file = File(path);
+   386→      final bytes = await file.readAsBytes();
+   387→
+   388→      if (bytes.length > kMaxAttachmentBytes) {
+   389→        if (mounted) {
+   390→          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Voice file exceeds 25MB limit')));
+   391→        }
+   392→        return;
+   393→      }
+   394→
+   395→      final chatService = context.read<ChatService>();
+   396→      final socket = context.read<SocketService>();
+   397→      final msg = await chatService.sendFileMessage(
+   398→        widget.chat.id,
+   399→        bytes,
+   400→        'voice.m4a',
+   401→        type: 'voice',
+   402→        contentType: 'audio/m4a',
+   403→        duration: _recordSeconds,
+   404→        chatType: widget.chat.type,
+   405→        recipientUserId: _recipientUserId(),
+   406→      );
+   407→      if (mounted)
+   408→      setState(() => _messages.add(msg));
+   409→      socket.sendMessage(widget.chat.id, _messageToJson(msg));
+   410→      _scrollToBottom();
+   411→    } on ApiException catch (e) {
+   412→      if (mounted) {
+   413→        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+   414→      }
+   415→    } catch (e) { debugPrint('Error: $e'); }
+   416→  }
+   417→
+   418→  void _cancelRecording() async {
+   419→    if (_isRecording) await _record.stop();
+   420→    _recordTimer?.cancel();
+   421→    if (mounted)
+   422→    setState(() {
+   423→      _isRecording = false;
+   424→      _recordSeconds = 0;
+   425→    });
+   426→  }
+   427→
+   428→  Future<void> _sendSticker(String emoji) async {
+   429→    try {
+   430→      final chatService = context.read<ChatService>();
+   431→      final socket = context.read<SocketService>();
+   432→      final msg = await chatService.sendMessage(
+   433→        widget.chat.id,
+   434→        emoji,
+   435→        type: 'sticker',
+   436→        chatType: widget.chat.type,
+   437→        recipientUserId: _recipientUserId(),
+   438→      );
+   439→      if (mounted)
+   440→      setState(() => _messages.add(msg));
+   441→      socket.sendMessage(widget.chat.id, _messageToJson(msg));
+   442→      _scrollToBottom();
+   443→    } catch (e) { debugPrint('Error: $e'); }
+   444→  }
+   445→
+   446→  Future<void> _sendReaction(String messageId, String emoji) async {
+   447→    try {
+   448→      await context.read<ChatService>().toggleReaction(widget.chat.id, messageId, emoji);
+   449→    } catch (e) { debugPrint('Error: $e'); }
+   450→  }
+   451→
+   452→  Future<void> _deleteMessage(int index, {bool forEveryone = false}) async {
+   453→    final msg = _messages[index];
+   454→    try {
+   455→      await context.read<ChatService>().deleteMessage(msg.chatId, msg.id, forEveryone: forEveryone);
+   456→      if (mounted)
+   457→      setState(() => _messages.removeAt(index));
+   458→    } catch (e) { debugPrint('Error: $e'); }
+   459→  }
+   460→
+   461→  Future<void> _pickImage() async {
+   462→    final picker = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+   463→    if (picker == null) return;
+   464→    final file = File(picker.path);
+   465→    final bytes = await file.readAsBytes();
+   466→
+   467→    if (bytes.length > kMaxAttachmentBytes) {
+   468→      if (mounted) {
+   469→        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('File exceeds 25MB limit')));
+   470→      }
+   471→      return;
+   472→    }
+   473→
+   474→    try {
+   475→      final chatService = context.read<ChatService>();
+   476→      final socket = context.read<SocketService>();
+   477→      final msg = await chatService.sendFileMessage(
+   478→        widget.chat.id,
+   479→        bytes,
+   480→        _basename(picker.path),
+   481→        type: 'image',
+   482→        contentType: 'image/jpeg',
+   483→        chatType: widget.chat.type,
+   484→        recipientUserId: _recipientUserId(),
+   485→      );
+   486→      if (mounted)
+   487→      setState(() => _messages.add(msg));
+   488→      socket.sendMessage(widget.chat.id, _messageToJson(msg));
+   489→      _scrollToBottom();
+   490→    } on ApiException catch (e) {
+   491→      if (mounted) {
+   492→        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+   493→      }
+   494→    } catch (e) { debugPrint('Error: $e'); }
+   495→  }
+   496→
+   497→  void _showMessageOptions(int index) {
+   498→    final msg = _messages[index];
+   499→    final auth = context.read<AuthService>();
+   500→    final isOwn = msg.senderId == auth.currentUser?.id;
+   501→
+   502→    showModalBottomSheet(
+   503→      context: context,
+   504→      builder: (context) => SafeArea(
+   505→        child: Column(
+   506→          mainAxisSize: MainAxisSize.min,
+   507→          children: [
+   508→            Padding(
+   509→              padding: const EdgeInsets.all(8),
+   510→              child: Row(
+   511→                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+   512→                children: _reactions.map((emoji) {
+   513→                  return IconButton(
+   514→                    icon: Text(emoji, style: const TextStyle(fontSize: 28)),
+   515→                    onPressed: () {
+   516→                      _sendReaction(msg.id, emoji);
+   517→                      Navigator.pop(context);
+   518→                    },
+   519→                  );
+   520→                }).toList(),
+   521→              ),
+   522→            ),
+   523→            const Divider(),
+   524→            ListTile(
+   525→              leading: const Icon(Icons.reply),
+   526→              title: const Text('Reply'),
+   527→              onTap: () {
+   528→                setState(() {
+   529→                  _replyTo = msg;
+   530→                  _editingMessageIndex = null;
+   531→                });
+   532→                Navigator.pop(context);
+   533→                FocusScope.of(context).requestFocus(FocusNode());
+   534→              },
+   535→            ),
+   536→            ListTile(
+   537→              leading: const Icon(Icons.star),
+   538→              title: const Text('Star'),
+   539→              onTap: () async {
+   540→                await context.read<ChatService>().toggleStar(msg.chatId, msg.id);
+   541→                if (context.mounted) Navigator.pop(context);
+   542→              },
+   543→            ),
+   544→            ListTile(
+   545→              leading: const Icon(Icons.copy),
+   546→              title: const Text('Copy'),
+   547→              onTap: () {
+   548→                Clipboard.setData(ClipboardData(text: msg.content));
+   549→                Navigator.pop(context);
+   550→              },
+   551→            ),
+   552→            if (isOwn) ...[
+   553→              ListTile(
+   554→                leading: const Icon(Icons.edit),
+   555→                title: const Text('Edit'),
+   556→                onTap: () {
+   557→                  Navigator.pop(context);
+   558→                  _startEditing(index);
+   559→                },
+   560→              ),
+   561→              ListTile(
+   562→                leading: const Icon(Icons.delete_outline),
+   563→                title: const Text('Delete for me'),
+   564→                onTap: () {
+   565→                  _deleteMessage(index);
+   566→                  Navigator.pop(context);
+   567→                },
+   568→              ),
+   569→              ListTile(
+   570→                leading: const Icon(Icons.delete_forever, color: Colors.red),
+   571→                title: const Text('Delete for everyone', style: TextStyle(color: Colors.red)),
+   572→                onTap: () {
+   573→                  _deleteMessage(index, forEveryone: true);
+   574→                  Navigator.pop(context);
+   575→                },
+   576→              ),
+   577→            ],
+   578→          ],
+   579→        ),
+   580→      ),
+   581→    );
+   582→  }
+   583→
+   584→  void _showStickerPicker() {
+   585→    showModalBottomSheet(
+   586→      context: context,
+   587→      builder: (context) => GridView.builder(
+   588→        shrinkWrap: true,
+   589→        padding: const EdgeInsets.all(16),
+   590→        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 5),
+   591→        itemCount: _stickers.length,
+   592→        itemBuilder: (context, index) {
+   593→          return GestureDetector(
+   594→            onTap: () {
+   595→              _sendSticker(_stickers[index]);
+   596→              Navigator.pop(context);
+   597→            },
+   598→            child: Center(child: Text(_stickers[index], style: const TextStyle(fontSize: 32))),
+   599→          );
+   600→        },
+   601→      ),
+   602→    );
+   603→  }
+   604→
+   605→  void _showSelfDestructPicker() {
+   606→    showModalBottomSheet(
+   607→      context: context,
+   608→      builder: (context) => Column(
+   609→        mainAxisSize: MainAxisSize.min,
+   610→        children: [
+   611→          const Padding(padding: EdgeInsets.all(16), child: Text('Self-destruct after', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+   612→          ListTile(title: const Text('Off'), onTap: () { setState(() => _selfDestructSeconds = null); Navigator.pop(context); }),
+   613→          ListTile(title: const Text('10 seconds'), onTap: () { setState(() => _selfDestructSeconds = 10); Navigator.pop(context); }),
+   614→          ListTile(title: const Text('1 minute'), onTap: () { setState(() => _selfDestructSeconds = 60); Navigator.pop(context); }),
+   615→          ListTile(title: const Text('1 hour'), onTap: () { setState(() => _selfDestructSeconds = 3600); Navigator.pop(context); }),
+   616→          ListTile(title: const Text('1 day'), onTap: () { setState(() => _selfDestructSeconds = 86400); Navigator.pop(context); }),
+   617→          ListTile(title: const Text('1 week'), onTap: () { setState(() => _selfDestructSeconds = 604800); Navigator.pop(context); }),
+   618→          const SizedBox(height: 16),
+   619→        ],
+   620→      ),
+   621→    );
+   622→  }
+   623→
+   624→  @override
+   625→  void dispose() {
+   626→    _inputController.dispose();
+   627→    _scrollController.removeListener(_onScroll);
+   628→    _scrollController.dispose();
+   629→    _typingTimer?.cancel();
+   630→    _recordTimer?.cancel();
+   631→    _audioPlayer.dispose();
+   632→    _record.dispose();
+   633→    // L3 fix: cancel ONLY this screen's socket subscriptions — not every
+   634→    // screen's (which is what the old `clearCallbacks()` call did, wiping the
+   635→    // chat list's listeners too).
+   636→    final socket = SocketService();
+   637→    for (final id in _socketSubIds) {
+   638→      socket.cancelSubscription(id);
+   639→    }
+   640→    _socketSubIds.clear();
+   641→    super.dispose();
+   642→  }
+   643→
+   644→  @override
+   645→  Widget build(BuildContext context) {
+   646→    final auth = context.watch<AuthService>();
+   647→    final userId = auth.currentUser?.id;
+   648→    final chatService = context.read<ChatService>();
+   649→
+   650→    return Scaffold(
+   651→      appBar: AppBar(
+   652→        title: Column(
+   653→          crossAxisAlignment: CrossAxisAlignment.start,
+   654→          children: [
+   655→            Text(widget.chat.type == 'saved' ? 'Saved Messages' : widget.chat.title, style: const TextStyle(fontSize: 16)),
+   656→            if (_typingUsers.isNotEmpty)
+   657→              Text(_typingUsers.length == 1 ? '${_typingUsers[0]} is typing...' : '${_typingUsers.length} typing...',
+   658→                  style: TextStyle(fontSize: 12, color: Colors.green[300])),
+   659→          ],
+   660→        ),
+   661→        actions: [
+   662→          IconButton(icon: const Icon(Icons.emoji_emotions_outlined), onPressed: _showStickerPicker),
+   663→          IconButton(icon: const Icon(Icons.image_outlined), onPressed: _pickImage),
+   664→          if (_selfDestructSeconds != null)
+   665→            IconButton(icon: const Icon(Icons.timer, color: Colors.amber), onPressed: _showSelfDestructPicker),
+   666→          PopupMenuButton(
+   667→            itemBuilder: (context) => [
+   668→              if (widget.chat.type != 'saved') ...[
+   669→                const PopupMenuItem(value: 'invite', child: Text('Invite Link')),
+   670→                const PopupMenuItem(value: 'pin', child: Text('Pin/Unpin')),
+   671→                const PopupMenuItem(value: 'mute', child: Text('Mute/Unmute')),
+   672→                const PopupMenuItem(value: 'leave', child: Text('Leave')),
+   673→                const PopupMenuItem(value: 'delete', child: Text('Delete Chat')),
+   674→              ],
+   675→            ],
+   676→            onSelected: (value) async {
+   677→              if (value == 'invite') {
+   678→                final token = await chatService.generateInviteLink(widget.chat.id);
+   679→                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('cryptalk.app/join/$token')));
+   680→              } else if (value == 'pin') {
+   681→                await chatService.pinChat(widget.chat.id, true);
+   682→              } else if (value == 'mute') {
+   683→                await chatService.muteChat(widget.chat.id, true);
+   684→              } else if (value == 'leave') {
+   685→                await chatService.leaveChat(widget.chat.id);
+   686→                if (mounted) Navigator.pop(context);
+   687→              } else if (value == 'delete') {
+   688→                await chatService.deleteChat(widget.chat.id);
+   689→                if (mounted) Navigator.pop(context);
+   690→              }
+   691→            },
+   692→          ),
+   693→        ],
+   694→      ),
+   695→      body: Column(
+   696→        children: [
+   697→          if (_replyTo != null)
+   698→            Container(
+   699→              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+   700→              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+   701→              child: Row(
+   702→                children: [
+   703→                  Expanded(child: Text('Replying to: ${_replyTo!.content}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
+   704→                  IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () => setState(() => _replyTo = null)),
+   705→                ],
+   706→              ),
+   707→            ),
+   708→          if (_editingMessageIndex != null)
+   709→            Container(
+   710→              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+   711→              color: Colors.blue.withOpacity(0.1),
+   712→              child: Row(
+   713→                children: [
+   714→                  Expanded(child: Text('Editing: ${_messages[_editingMessageIndex!].content}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
+   715→                  IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () { setState(() => _editingMessageIndex = null); _inputController.clear(); }),
+   716→                ],
+   717→              ),
+   718→            ),
+   719→          Expanded(
+   720→            child: Stack(
+   721→              children: [
+   722→                _loading
+   723→                    ? const Center(child: CircularProgressIndicator())
+   724→                    : _messages.isEmpty
+   725→                        ? const Center(child: Text('No messages yet', style: TextStyle(color: Colors.grey)))
+   726→                        : ListView.builder(
+   727→                            controller: _scrollController,
+   728→                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+   729→                            itemCount: _messages.length,
+   730→                            itemBuilder: (context, index) {
+   731→                              final msg = _messages[index];
+   732→                              final isOwn = msg.senderId == userId;
+   733→                              final showDateDivider = index == 0 || !_sameDay(_messages[index - 1].createdAt, msg.createdAt);
+   734→                              return Column(
+   735→                                crossAxisAlignment: CrossAxisAlignment.start,
+   736→                                children: [
+   737→                                  if (showDateDivider)
+   738→                                    Padding(
+   739→                                      padding: const EdgeInsets.symmetric(vertical: 8),
+   740→                                      child: Center(child: Text(_formatDate(msg.createdAt), style: const TextStyle(fontSize: 12, color: Colors.grey))),
+   741→                                    ),
+   742→                                  _MessageBubble(
+   743→                                    message: msg,
+   744→                                    isOwn: isOwn,
+   745→                                    showSender: widget.chat.type != 'direct' && widget.chat.type != 'saved' && !isOwn,
+   746→                                    onLongPress: () => _showMessageOptions(index),
+   747→                                    reactions: msg.reactions,
+   748→                                  ),
+   749→                                ],
+   750→                              );
+   751→                            },
+   752→                          ),
+   753→                if (_showScrollDown)
+   754→                  Positioned(
+   755→                    bottom: 16,
+   756→                    right: 16,
+   757→                    child: FloatingActionButton(
+   758→                      mini: true,
+   759→                      onPressed: _scrollToBottom,
+   760→                      child: const Icon(Icons.arrow_downward),
+   761→                    ),
+   762→                  ),
+   763→              ],
+   764→            ),
+   765→          ),
+   766→          if (_isRecording)
+   767→            Container(
+   768→              padding: const EdgeInsets.all(12),
+   769→              color: Colors.red.withOpacity(0.1),
+   770→              child: Row(
+   771→                children: [
+   772→                  const Icon(Icons.mic, color: Colors.red),
+   773→                  const SizedBox(width: 8),
+   774→                  Text('${_recordSeconds}s', style: const TextStyle(fontWeight: FontWeight.bold)),
+   775→                  const Spacer(),
+   776→                  IconButton(icon: const Icon(Icons.close, color: Colors.red), onPressed: _cancelRecording),
+   777→                  IconButton(icon: const Icon(Icons.send, color: Colors.green), onPressed: _stopAndSendVoice),
+   778→                ],
+   779→              ),
+   780→            )
+   781→          else
+   782→            Padding(
+   783→              padding: const EdgeInsets.all(8),
+   784→              child: Row(
+   785→                children: [
+   786→                  IconButton(icon: const Icon(Icons.timer_outlined), onPressed: _showSelfDestructPicker),
+   787→                  IconButton(icon: const Icon(Icons.mic), onPressed: _startRecording),
+   788→                  Expanded(
+   789→                    child: TextField(
+   790→                      controller: _inputController,
+   791→                      onChanged: _onTypingChanged,
+   792→                      decoration: InputDecoration(
+   793→                        hintText: _editingMessageIndex != null ? 'Edit message...' : 'Type a message...',
+   794→                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
+   795→                        filled: true,
+   796→                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+   797→                      ),
+   798→                      onSubmitted: (_) => _sendMessage(),
+   799→                    ),
+   800→                  ),
+   801→                  const SizedBox(width: 8),
+   802→                  IconButton.filled(
+   803→                    onPressed: _sendMessage,
+   804→                    icon: Icon(_editingMessageIndex != null ? Icons.check : Icons.send),
+   805→                  ),
+   806→                ],
+   807→              ),
+   808→            ),
+   809→        ],
+   810→      ),
+   811→    );
+   812→  }
+   813→
+   814→  bool _sameDay(String a, String b) {
+   815→    try {
+   816→      return DateTime.parse(a).day == DateTime.parse(b).day;
+   817→    } catch (_) {
+   818→      return false;
+   819→    }
+   820→  }
+   821→
+   822→  String _formatDate(String iso) {
+   823→    try {
+   824→      final dt = DateTime.parse(iso);
+   825→      final now = DateTime.now();
+   826→      if (dt.day == now.day) return 'Today';
+   827→      if (dt.day == now.subtract(const Duration(days: 1)).day) return 'Yesterday';
+   828→      return '${dt.day}/${dt.month}/${dt.year}';
+   829→    } catch (_) {
+   830→      return '';
+   831→    }
+   832→  }
+   833→}
+   834→
+   835→class _MessageBubble extends StatelessWidget {
+   836→  final Message message;
+   837→  final bool isOwn;
+   838→  final bool showSender;
+   839→  final VoidCallback onLongPress;
+   840→  final List<Reaction> reactions;
+   841→
+   842→  const _MessageBubble({
+   843→    required this.message,
+   844→    required this.isOwn,
+   845→    this.showSender = false,
+   846→    required this.onLongPress,
+   847→    this.reactions = const [],
+   848→  });
+   849→
+   850→  @override
+   851→  Widget build(BuildContext context) {
+   852→    return GestureDetector(
+   853→      onLongPress: onLongPress,
+   854→      child: Align(
+   855→        alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
+   856→        child: Container(
+   857→          margin: const EdgeInsets.symmetric(vertical: 2),
+   858→          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+   859→          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+   860→          decoration: BoxDecoration(
+   861→            color: isOwn ? const Color(0xFF10b981) : Theme.of(context).colorScheme.surfaceContainerHighest,
+   862→            borderRadius: BorderRadius.only(
+   863→              topLeft: const Radius.circular(16),
+   864→              topRight: const Radius.circular(16),
+   865→              bottomLeft: isOwn ? const Radius.circular(16) : Radius.zero,
+   866→              bottomRight: isOwn ? Radius.zero : const Radius.circular(16),
+   867→            ),
+   868→          ),
+   869→          child: Column(
+   870→            crossAxisAlignment: CrossAxisAlignment.start,
+   871→            children: [
+   872→              if (showSender)
+   873→                Text(message.sender.name ?? 'Unknown', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue[300])),
+   874→              _buildContent(),
+   875→              if (reactions.isNotEmpty)
+   876→                Padding(
+   877→                  padding: const EdgeInsets.only(top: 4),
+   878→                  child: Wrap(
+   879→                    spacing: 4,
+   880→                    children: reactions.map((r) => Text(r.emoji, style: const TextStyle(fontSize: 16))).toList(),
+   881→                  ),
+   882→                ),
+   883→              const SizedBox(height: 2),
+   884→              Row(
+   885→                mainAxisSize: MainAxisSize.min,
+   886→                children: [
+   887→                  if (message.editedAt != null) const Text('edited ', style: TextStyle(fontSize: 9, color: Colors.grey)),
+   888→                  if (message.expiresIn != null) const Icon(Icons.timer, size: 10, color: Colors.amber),
+   889→                  Text(_formatTime(message.createdAt), style: TextStyle(fontSize: 10, color: isOwn ? Colors.white70 : Colors.grey)),
+   890→                  if (isOwn) ...[
+   891→                    const SizedBox(width: 2),
+   892→                    Icon(message.status == 'read' ? Icons.done_all : Icons.done, size: 14, color: message.status == 'read' ? Colors.lightBlue : (isOwn ? Colors.white70 : Colors.grey)),
+   893→                  ],
+   894→                ],
+   895→              ),
+   896→            ],
+   897→          ),
+   898→        ),
+   899→      ),
+   900→    );
+   901→  }
+   902→
+   903→  Widget _buildContent() {
+   904→    final t = message.type;
+   905→    // E2EE attachments (image / file / voice): content is either a decrypted
+   906→    // URL, a decrypted data URL (dev fallback), or the "[delivered]" sentinel
+   907→    // — handled by `_AttachmentView` with fetch+decrypt+cache.
+   908→    if (t == 'image' || t == 'file' || t == 'voice') {
+   909→      return _AttachmentView(message: message, isOwn: isOwn);
+   910→    }
+   911→    if (t == 'sticker') {
+   912→      // L8 fix: stickers sent from the web app carry a *name* (e.g. "fox",
+   913→      // "like", "rocket") rather than an emoji. Map known names to emoji;
+   914→      // anything else (an emoji sent from another Flutter client, or an
+   915→      // unknown name) falls through and renders as-is.
+   916→      final emoji = _stickerEmojiMap[message.content] ?? message.content;
+   917→      return Text(emoji, style: const TextStyle(fontSize: 48));
+   918→    }
+   919→    return Text(message.content, style: TextStyle(color: isOwn ? Colors.white : null, fontSize: 15));
+   920→  }
+   921→
+   922→  String _formatTime(String iso) {
+   923→    try {
+   924→      final dt = DateTime.parse(iso);
+   925→      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+   926→    } catch (_) {
+   927→      return '';
+   928→    }
+   929→  }
+   930→}
+   931→
+   932→/// Renders an E2EE file/image/voice attachment. Resolves the message
+   933→/// `content` (a decrypted URL, data URL, or "[delivered]" sentinel) into a
+   934→/// renderable data URL by:
+   935→///   1. Returning the cached value if we've already resolved this message id.
+   936→///   2. Returning immediately if `content` is already a `data:` URL (dev
+   937→///      fallback path — content embedded directly).
+   938→///   3. Showing the muted "no longer available" placeholder if `content` is
+   939→///      `"[delivered]"` (server wiped the blob after delivery).
+   940→///   4. Otherwise fetching the URL → UTF-8 decode → `CryptoService.decrypt`
+   941→///      → original data URL, then caching it for next time.
+   942→class _AttachmentView extends StatefulWidget {
+   943→  final Message message;
+   944→  final bool isOwn;
+   945→
+   946→  const _AttachmentView({required this.message, required this.isOwn});
+   947→
+   948→  @override
+   949→  State<_AttachmentView> createState() => _AttachmentViewState();
+   950→}
+   951→
+   952→class _AttachmentViewState extends State<_AttachmentView> {
+   953→  /// Per-message-id cache: resolved data URL string, or one of the
+   954→  /// sentinels `"[delivered]"` / `"[error]"`. Survives widget rebuilds so
+   955→  /// scrolling doesn't refetch.
+   956→  static final Map<String, String> _cache = {};
+   957→
+   958→  static const _kDelivered = '[delivered]';
+   959→  static const _kError = '[error]';
+   960→
+   961→  String? _resolved;
+   962→  bool _loading = true;
+   963→
+   964→  @override
+   965→  void initState() {
+   966→    super.initState();
+   967→    _resolve();
+   968→  }
+   969→
+   970→  Future<void> _resolve() async {
+   971→    final msg = widget.message;
+   972→    final content = msg.content;
+   973→
+   974→    if (_cache.containsKey(msg.id)) {
+   975→      if (mounted) {
+   976→        setState(() {
+   977→          _resolved = _cache[msg.id];
+   978→          _loading = false;
+   979→        });
+   980→      }
+   981→      return;
+   982→    }
+   983→
+   984→    // Server wipes content to "[delivered]" once everyone has received it.
+   985→    if (content == _kDelivered || content.isEmpty) {
+   986→      _cache[msg.id] = _kDelivered;
+   987→      if (mounted) {
+   988→        setState(() {
+   989→          _resolved = _kDelivered;
+   990→          _loading = false;
+   991→        });
+   992→      }
+   993→      return;
+   994→    }
+   995→
+   996→    // Dev fallback: content is already the decrypted data URL.
+   997→    if (content.startsWith('data:')) {
+   998→      _cache[msg.id] = content;
+   999→      if (mounted) {
+  1000→        setState(() {
+  1001→          _resolved = content;
+  1002→          _loading = false;
+  1003→        });
+  1004→      }
+  1005→      return;
+  1006→    }
+  1007→
+  1008→    // Production: content is a (decrypted) Supabase URL → fetch the
+  1009→    // ciphertext bytes → UTF-8 decode → decrypt → original data URL.
+  1010→    if (content.startsWith('http://') || content.startsWith('https://')) {
+  1011→      try {
+  1012→        final res = await http.get(Uri.parse(content)).timeout(const Duration(seconds: 30));
+  1013→        if (res.statusCode != 200) {
+  1014→          _cache[msg.id] = _kError;
+  1015→          if (mounted) {
+  1016→            setState(() {
+  1017→              _resolved = _kError;
+  1018→              _loading = false;
+  1019→            });
+  1020→          }
+  1021→          return;
+  1022→        }
+  1023→        final cipherText = utf8.decode(res.bodyBytes);
+  1024→        final dataUrl = await CryptoService().decrypt(cipherText);
+  1025→        _cache[msg.id] = dataUrl;
+  1026→        if (mounted) {
+  1027→          setState(() {
+  1028→            _resolved = dataUrl;
+  1029→            _loading = false;
+  1030→          });
+  1031→        }
+  1032→      } catch (_) {
+  1033→        _cache[msg.id] = _kError;
+  1034→        if (mounted) {
+  1035→          setState(() {
+  1036→            _resolved = _kError;
+  1037→            _loading = false;
+  1038→          });
+  1039→        }
+  1040→      }
+  1041→      return;
+  1042→    }
+  1043→
+  1044→    // Unknown format — fall back to displaying the raw content.
+  1045→    _cache[msg.id] = content;
+  1046→    if (mounted) {
+  1047→      setState(() {
+  1048→        _resolved = content;
+  1049→        _loading = false;
+  1050→      });
+  1051→    }
+  1052→  }
+  1053→
+  1054→  @override
+  1055→  Widget build(BuildContext context) {
+  1056→    final msg = widget.message;
+  1057→
+  1058→    if (_loading) {
+  1059→      return const Padding(
+  1060→        padding: EdgeInsets.all(12),
+  1061→        child: SizedBox(
+  1062→          width: 24,
+  1063→          height: 24,
+  1064→          child: CircularProgressIndicator(strokeWidth: 2),
+  1065→        ),
+  1066→      );
+  1067→    }
+  1068→
+  1069→    final data = _resolved ?? '';
+  1070→
+  1071→    if (data == _kDelivered || data == _kError) {
+  1072→      return Container(
+  1073→        padding: const EdgeInsets.all(10),
+  1074→        constraints: const BoxConstraints(maxWidth: 220),
+  1075→        decoration: BoxDecoration(
+  1076→          color: Colors.black.withOpacity(0.05),
+  1077→          borderRadius: BorderRadius.circular(8),
+  1078→        ),
+  1079→        child: Row(
+  1080→          mainAxisSize: MainAxisSize.min,
+  1081→          children: [
+  1082→            Icon(Icons.lock_clock, size: 16, color: Colors.grey[400]),
+  1083→            const SizedBox(width: 6),
+  1084→            Flexible(
+  1085→              child: Text(
+  1086→                data == _kError
+  1087→                    ? 'Failed to load attachment'
+  1088→                    : 'File no longer available (delivered & wiped)',
+  1089→                style: TextStyle(fontSize: 12, color: Colors.grey[400], fontStyle: FontStyle.italic),
+  1090→              ),
+  1091→            ),
+  1092→          ],
+  1093→        ),
+  1094→      );
+  1095→    }
+  1096→
+  1097→    if (msg.type == 'image') {
+  1098→      // `_resolved` is either a data: URL (the common case after decryption)
+  1099→      // or a plain http(s) URL. Decode data URLs to bytes for Image.memory
+  1100→      // since Image.network doesn't speak the `data:` scheme.
+  1101→      if (data.startsWith('data:')) {
+  1102→        try {
+  1103→          final commaIdx = data.indexOf(',');
+  1104→          final b64 = commaIdx >= 0 ? data.substring(commaIdx + 1) : data;
+  1105→          final bytes = base64Decode(b64);
+  1106→          return ClipRRect(
+  1107→            borderRadius: BorderRadius.circular(8),
+  1108→            child: Image.memory(
+  1109→              bytes,
+  1110→              width: 220,
+  1111→              fit: BoxFit.cover,
+  1112→              errorBuilder: (_, __, ___) => Container(
+  1113→                width: 220,
+  1114→                height: 120,
+  1115→                color: Colors.black12,
+  1116→                child: const Icon(Icons.broken_image, size: 32),
+  1117→              ),
+  1118→            ),
+  1119→          );
+  1120→        } catch (_) {
+  1121→          return Container(
+  1122→            width: 220,
+  1123→            height: 120,
+  1124→            color: Colors.black12,
+  1125→            child: const Icon(Icons.broken_image, size: 32),
+  1126→          );
+  1127→        }
+  1128→      }
+  1129→      return ClipRRect(
+  1130→        borderRadius: BorderRadius.circular(8),
+  1131→        child: Image.network(
+  1132→          data,
+  1133→          width: 220,
+  1134→          fit: BoxFit.cover,
+  1135→          errorBuilder: (_, __, ___) => Container(
+  1136→            width: 220,
+  1137→            height: 120,
+  1138→            color: Colors.black12,
+  1139→            child: const Icon(Icons.broken_image, size: 32),
+  1140→          ),
+  1141→        ),
+  1142→      );
+  1143→    }
+  1144→
+  1145→    if (msg.type == 'voice') {
+  1146→      return Row(
+  1147→        mainAxisSize: MainAxisSize.min,
+  1148→        children: [
+  1149→          Icon(Icons.play_arrow, color: widget.isOwn ? Colors.white : null),
+  1150→          const SizedBox(width: 4),
+  1151→          Text('${msg.duration ?? 0}s',
+  1152→              style: TextStyle(color: widget.isOwn ? Colors.white : null)),
+  1153→        ],
+  1154→      );
+  1155→    }
+  1156→
+  1157→    // Generic file attachment.
+  1158→    final name = msg.attachmentPath?.split('/').last ?? 'file';
+  1159→    return Row(
+  1160→      mainAxisSize: MainAxisSize.min,
+  1161→      children: [
+  1162→        Icon(Icons.insert_drive_file,
+  1163→            size: 18, color: widget.isOwn ? Colors.white70 : Colors.grey[300]),
+  1164→        const SizedBox(width: 6),
+  1165→        ConstrainedBox(
+  1166→          constraints: const BoxConstraints(maxWidth: 180),
+  1167→          child: Text(
+  1168→            name,
+  1169→            overflow: TextOverflow.ellipsis,
+  1170→            style: TextStyle(fontSize: 13, color: widget.isOwn ? Colors.white : null),
+  1171→          ),
+  1172→        ),
+  1173→      ],
+  1174→    );
+  1175→  }
+  1176→}
+  1177→
+  1178→

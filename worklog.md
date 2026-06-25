@@ -558,3 +558,125 @@ Stage Summary:
 - Socket auth verified end-to-end: backend log shows authenticated connections with user IDs derived from the cookie.
 - Caveat: Flutter↔web cross-client E2EE still needs cipher alignment (Flutter uses Chacha20-Poly1305, web uses XSalsa20-Poly1305). Flutter↔Flutter works. Group E2EE is plaintext with TODO.
 - All 4 commits pushed to GitHub (fb83893..fbdf0b6).
+
+---
+
+## Task 13 — Flutter mobile UX + onboarding polish
+
+**Scope:** Best-in-class onboarding screen, seamless login → register → onboarding
+→ chat-list flow, mobile-first design across every screen, no useless overlays,
+prefilled sensible defaults, no UI bugs. Backend/Next.js untouched. No new pubspec
+dependencies.
+
+**Files touched (Flutter only):**
+- `lib/core/auth_service.dart` — `extends ChangeNotifier`, `notifyListeners()` after every state change, new `refreshMe()`.
+- `lib/core/chat_service.dart` — `updateProfile` extended to accept `avatarEmoji`/`avatarColor`/`accentColor`/`wallpaper`.
+- `lib/core/ui/avatar.dart` — **NEW** shared `AvatarIcon` widget + `colorFor()` / `resolveEmoji()` helpers (40-key animal → emoji map, 8-color map). Fixes the pre-existing "literal text 'fox'" rendering bug everywhere avatars appear.
+- `lib/app_router.dart` — `if (mounted)` guard on `_checkAuth` setState; comment explaining why no explicit navigation is needed post-login.
+- `lib/features/auth/onboarding_screen.dart` — **full rewrite** (418 lines, was 102). Hero avatar, one-tap bottom-sheet avatar picker (16 emoji × 8 colors), username prefilled from email local-part (sanitized to `[a-z0-9_]`, 3–20 chars), display name prefilled Capitalized prefix, inline `Form` validation (no useless overlays), 52px CTA, scrollable to avoid keyboard overflow, optional avatar persistence via `PATCH /api/users/me` (silent on failure).
+- `lib/features/auth/auth_screen.dart` — mobile-first rewrite. Inline `Form` validation, password show/hide toggle, 52px CTA, scrollable, no longer references the missing `assets/logo.png` (replaced with a Material icon so the screen doesn't crash on launch).
+- `lib/features/chat/chat_list_screen.dart` — `AvatarIcon` everywhere, extended FAB ("New Chat"), differentiated empty states (no chats vs no search matches), dedicated error state with retry, smart subtitle (`📷 Photo` / `🎤 Voice message` / sender prefix in groups), relative timestamps, search clear button, `if (mounted)` guards, `silent` refresh on return.
+- `lib/features/chat/chat_view_screen.dart` — mobile-first input bar (`+` attach menu → Photo / Sticker / Self-destruct; mic icon when empty, send icon when has text), keyboard-aware `SafeArea`, AppBar now shows avatar + ellipsized title + typing indicator (1 user / 2 users / N users), self-destruct active-state chip with Change/Off buttons (no more duplicated timer buttons), `_AttachOption` helper widget, `_resolveTitle`/`_resolveAvatar`/`_typingLabel` helpers, cleaner reply/edit preview bars with leading icons, improved "No messages yet" empty state.
+- `lib/features/connections/connections_screen.dart` — split into 3 dedicated StatefulWidget tabs (`_FindTab`, `_RequestsTab`, `_ConnectionsTab`), each owning its own data; AppBar badge for request count via `ValueNotifier<int>`; `AvatarIcon` everywhere; `IconButton.filled` accept / `IconButton.outlined` decline (44px+ touch targets); proper empty/loading/error states per tab; quick-message shortcut from the Mine tab; all `setState` in async gaps mounted-guarded; uses the public `chatService.api` getter (was reaching into private `_api`).
+- `lib/features/settings/settings_screen.dart` — grouped sections (`Account` / `Search` / `Support` / `Sign out`) in card containers with dividers; large profile header with avatar + name + @username + email; **removed 4 stacked-dialog anti-patterns** — Blocked Users / Search Messages / Report a Problem now each get their own dedicated screen (`BlockedUsersScreen`, `CrossChatSearchScreen`, `ReportScreen`); Edit Profile gained the same one-tap avatar picker as OnboardingScreen; sign-out / delete-account are now confirmation dialogs with a clear primary button; **fixed the duplicate `if (mounted) if (mounted) setState(...)` bug** in the old `ProfileEditScreen._save()`; refreshes cached user via `auth.refreshMe()` after a profile save so every screen reflects the change.
+- `lib/features/chat/new_chat_screen.dart` — `AvatarIcon`, autofocus on the search field, clear button, distinct empty state ("Find someone to chat with"), `if (mounted)` guards, 44px+ touch targets.
+
+### Critical flow fix (UX-blocker)
+
+`AuthService` was registered with `ChangeNotifierProvider` but **didn't extend `ChangeNotifier`** — so `context.watch<AuthService>()` in `AppRouter` never rebuilt after `login()`/`register()`/`onboard()`/`logout()`. The "login → onboarding → chat list" flow was effectively broken (the user would stay on AuthScreen after a successful login). Now `AuthService` notifies listeners on every state mutation, and the router swaps screens automatically — no `Navigator.pushReplacement` needed.
+
+### Onboarding screen — the headline deliverable
+
+Best-in-class:
+- **Hero avatar** (96px) at the top, tappable, with a "Change avatar" TextButton pill below it.
+- **One-tap avatar picker** as a drag-handle bottom sheet (not a center modal): live preview, 16-animal emoji grid, 8-color Wrap, "Done" button. Selection is persisted via `PATCH /api/users/me` after onboarding succeeds (silent failure — the user can change it later from Settings → Edit Profile).
+- **Prefilled username** derived from the email local-part (sanitized to `[a-z0-9_]`, only prefilled if 3–20 chars).
+- **Prefilled display name** = the prefix Capitalized (e.g. `alex.rivera` → `Alexrivera`). User can edit either.
+- **Inline validation** with `TextFormField.validator` — no overlays, no modals, no dead-ends. Helper text under the username field documents the rules.
+- **Single 52px primary CTA** ("Start Chatting"), full-width, with a loading spinner inside it while submitting.
+- **Scrollable** (`SingleChildScrollView`) so the form never overflows when the keyboard opens.
+- **Error surfacing**: thrown API exceptions go to a floating `SnackBar`. The form validator catches the rest before the API call.
+
+### Mobile-first patterns applied everywhere
+
+- 44–52px touch targets on every primary action.
+- `SafeArea` + `SingleChildScrollView` on form-heavy screens (auth, onboarding, edit profile, report).
+- Bottom-sheet pickers (avatar, attach menu, sticker, self-destruct) instead of center `AlertDialog`s.
+- Keyboard-friendly `textInputAction: next/done/newline` chains.
+- `FloatingActionButton.extended` ("New Chat") on the chat list.
+- Pull-to-refresh with `AlwaysScrollableScrollPhysics` (works even with 1 chat).
+- Distinct empty states per scenario (no data yet / no search matches / error), each with a clear next action.
+- Smart list subtitles (`📷 Photo` / `🎤 Voice message` / sender prefix in groups) so the chat list preview is useful.
+- `Badge` for unread counts and pending connection requests.
+
+### No-useless-overlays cleanup
+
+| Before | After |
+|---|---|
+| Settings → Blocked Users: stacked `AlertDialog` inside an already-mounted Scaffold | Dedicated `BlockedUsersScreen` with per-row Unblock |
+| Settings → Search All Chats: `AlertDialog` → on submit, pop + push ANOTHER `AlertDialog` with results (modal-on-modal) | Dedicated `CrossChatSearchScreen` with inline search + result list |
+| Settings → Report a Problem: `AlertDialog` with a 3-line text field | Dedicated `ReportScreen` with full-width multiline field + char counter |
+| Chat view → sticker picker + image picker + self-destruct timer all on the AppBar (cluttered, duplicated) | Single `+` attach button in the input bar opens a bottom sheet with Photo / Sticker / Self-destruct |
+| Chat view → self-destruct timer button in BOTH the AppBar and the input row | Single attach-menu entry + an active-state chip above the input bar (with Change/Off) |
+| Sign-out / Delete Account: bare tap triggers the action immediately | Confirmation `AlertDialog` with clear Cancel + FilledButton primary |
+
+### Analyze result
+
+`flutter` is not installed in this sandbox (`which flutter` and `which dart` both return nothing; no SDK under `/usr/local`, `/opt`, `~/.pub-cache`, or any depth-5 search of `/home`). Manual review performed instead:
+
+- All modified files pass brace/paren balance and string-quote balance checks.
+- Every new public API surface (`AuthService.refreshMe`, `ChatService.updateProfile` new params, `AvatarIcon`/`AvatarIcon.colorFor`/`AvatarIcon.resolveEmoji`, `BlockedUsersScreen`/`CrossChatSearchScreen`/`ReportScreen`) is consumed correctly at every call site.
+- Every `setState` call inside an `async` gap is guarded by `if (mounted)` — verified by grep.
+- No new pubspec dependencies were added (`AvatarIcon` uses only Material widgets; the bottom sheets use only `showModalBottomSheet`).
+- `firstOrNull` is used unchanged (already transitively available per Task 10 caveat).
+- The `assets/logo.png` reference was removed because the file does not exist on disk — the previous code would crash with a `FlutterError` on the auth screen.
+- Pre-existing errors NOT introduced by this task (out of scope):
+  - `widget_test.dart` smoke test references nonexistent `MyApp` (default template).
+  - Group E2EE is plaintext with TODO (Task 12 leftover).
+  - Flutter↔web cross-client E2EE cipher mismatch (Chacha20-Poly1305 vs XSalsa20-Poly1305, Task 12 leftover).
+  - `_audioPlayer` in chat_view_screen is constructed but never used (pre-existing dead code).
+
+### Caveats / known follow-ups
+
+1. **Avatar persistence during onboarding** is best-effort: if `PATCH /api/users/me` fails after `onboard()` succeeds, the avatar change is silently dropped (the user is still onboarded). They can fix it from Settings → Edit Profile. This was a deliberate trade-off to keep the onboarding CTA single-tap (no second "are you sure?" step).
+2. **Avatar emoji mapping** is comprehensive for the backend's 40-key animal registry but the icon keys `'seahorse'` and `'starfish'` have no exact unicode emoji — they fall through to a generic 🦊. If the backend ever serves those keys the user will see the default rather than their chosen animal. Fixing would require bundling per-animal PNG/SVG assets (deferred per "no new pubspec deps" + no new asset bundle work).
+3. **Chat-list socket-driven refresh** still calls `_loadChats` on every `onMessage` event (pre-existing behavior). Task 10/12 made this idempotent but it's still a full re-fetch. A future task should diff the response against `_chats` and patch in-place.
+4. **Cross-client cipher mismatch** (Task 12 leftover) — not in scope for this UX task, but worth flagging that the onboarding screen still tries to call `initE2EE()` (via the chat list's `_loadChats` path) which will succeed but produce keys that can't decrypt web-client messages.
+5. **`widget_test.dart`** still references the nonexistent `MyApp` class — pre-existing, out of scope.
+6. **No `flutter analyze`** was run because the SDK is not installed in this sandbox. All checks above are manual. If CI runs `flutter analyze` and surfaces new lints, the most likely candidates are: `prefer_const_constructors` on a few `Container`/`BoxDecoration` instances where the linter wanted `const` but a `Theme.of(context)` call made it impossible; and `use_super_parameters` (already used everywhere I added new constructors).
+
+### Code changes
+
+- `flutter/lib/core/auth_service.dart` — ChangeNotifier + notifyListeners + refreshMe (109 lines, was 90)
+- `flutter/lib/core/chat_service.dart` — `updateProfile` extended (8 lines changed)
+- `flutter/lib/core/ui/avatar.dart` — **NEW** (157 lines)
+- `flutter/lib/app_router.dart` — mounted guard + doc comment (51 lines, was 43)
+- `flutter/lib/features/auth/onboarding_screen.dart` — full rewrite (418 lines, was 102)
+- `flutter/lib/features/auth/auth_screen.dart` — full rewrite (213 lines, was 115)
+- `flutter/lib/features/chat/chat_list_screen.dart` — rewrite + helpers (491 lines, was 229)
+- `flutter/lib/features/chat/chat_view_screen.dart` — AppBar + input bar + attach menu + helpers (1592 lines, was 1178)
+- `flutter/lib/features/chat/new_chat_screen.dart` — polish rewrite (148 lines, was 103)
+- `flutter/lib/features/connections/connections_screen.dart` — split into 3 tab widgets (475 lines, was 196)
+- `flutter/lib/features/settings/settings_screen.dart` — grouped + 3 new sub-screens (944 lines, was 271)
+
+---
+Task ID: 14
+Agent: main (Z.ai Code)
+Task: Full security hardening + graceful requests + Flutter mobile UX + Dependabot PRs.
+
+Work Log:
+- Backdoor audit: scanned all 40+ routes for hidden endpoints, hardcoded secrets, debug bypasses. None found — `secrets.token_hex` usages are legitimate ID generation, `login-legacy` hidden from docs, no hardcoded passwords.
+- Brute-force protection (new `core/brute_force.py`): per-account failed-login tracker. 5 wrong passwords → 15-min lockout (429 + Retry-After). Counter resets on success. Wired into both email + legacy login. Verified: 5×401 → 6th=429.
+- Per-user rate limiting (B18): rate-limit key now combines IP + user_id (from session cookie). Authenticated users get per-user buckets; unauth stays IP-only. Fixes NAT-throttles-everyone + rotating-IP-bypasses-limits.
+- Graceful error responses: 404/405 now return JSON (not HTML). RequestValidationError handler no longer leaks Pydantic field names. 500s already masked.
+- Security headers middleware: X-Content-Type-Options=nosniff, X-Frame-Options=DENY, X-XSS-Protection=1;mode=block, Referrer-Policy=strict-origin-when-cross-origin, HSTS (prod only), X-Permitted-Cross-Domain-Policies=none. Verified via curl.
+- Flutter mobile UX (subagent Task 13): AuthService now extends ChangeNotifier (was broken — login→onboarding→chat list flow didn't work). Onboarding screen full rewrite (hero avatar, prefilled username from email, one-tap avatar picker). Removed 4 stacked-dialog anti-patterns in Settings. Mobile-first input bar in chat view. Shared AvatarIcon widget fixes "literal text fox" bug. NewChatScreen autofocus. ConnectionsScreen 3-tab redesign.
+- Dependabot PRs: bumped 5 backend deps (aiosqlite, asyncpg, python-socketio, redis, sentry-sdk), 5 GitHub Actions (checkout, setup-python, upload-artifact, action-gh-release, codeql-action), 1 frontend dep (sharp). Closed 11 PRs (#1,2,3,14,15,16,17,18,19,20,22). Skipped 3 major version bumps (typescript 5→6, eslint 9→10, @mdxeditor 3→4).
+- CONTRIBUTING.md: added 8 good first issues + security review checklist.
+- 36/36 backend tests pass. All 3 commits pushed (fbdf0b6..b8bfe5c).
+
+Stage Summary:
+- Security: brute-force lockout, per-user rate limiting, graceful JSON errors, 6 security headers, no backdoors found.
+- Flutter: auth flow fixed (ChangeNotifier), onboarding redesigned, 4 stacked dialogs → dedicated screens, mobile-first input bar, avatar rendering fixed.
+- Deps: 11 Dependabot PRs resolved + closed, 3 major bumps intentionally skipped.
+- 3 commits pushed: f145d5c (security), c221d73 (flutter UX), b8bfe5c (deps + contributing).
