@@ -1,3 +1,9 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,150 +14,19 @@ datasource db {
 }
 
 model User {
-  id              String   @id @default(cuid())
-  email           String?  @unique
-  username        String?  @unique
-  name            String?
-  passwordHash    String
-  bio             String   @default("")
-  avatarColor     String   @default("emerald")
-  avatarEmoji     String   @default("fox")
-  isOnline        Boolean  @default(false)
-  isOnboarded     Boolean  @default(false)
-  lastSeen        DateTime @default(now())
-  accentColor     String   @default("emerald")
-  wallpaper       String   @default("dots")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  identityPublicKey     String?
-  signingPublicKey      String?
-  signedPreKeyPublic    String?
-  signedPreKeySignature String?
-
-  memberships    ChatMember[]
-  messages       Message[]
-  reactions      Reaction[]
-  stars          StarredMessage[]
-  createdChats   Chat[]     @relation("ChatCreator")
-}
-
-model Chat {
-  id          String    @id @default(cuid())
-  type        String    @default("direct")
-  title       String
-  description String    @default("")
-  avatarColor String    @default("emerald")
-  avatarEmoji String    @default("chat")
-  createdBy   String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  expiresAt   DateTime?
-
-  members     ChatMember[]
-  messages    Message[]
-  creator     User      @relation("ChatCreator", fields: [createdBy], references: [id])
-}
-
-model ChatMember {
-  id               String   @id @default(cuid())
-  chatId           String
-  userId           String
-  role             String   @default("member")
-  joinedAt         DateTime @default(now())
-  lastReadAt       DateTime @default(now())
-  pinnedAt         DateTime?
-  muted            Boolean  @default(false)
-  pinnedMessageId  String?
-
-  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([chatId, userId])
-  @@index([userId])
-}
-
-model Message {
-  id           String    @id @default(cuid())
-  chatId       String
-  senderId     String
-  content      String
-  type         String    @default("text")
-  replyToId    String?
-  editedAt     DateTime?
-  createdAt    DateTime  @default(now())
-  deletedAt    DateTime?
-  duration     Int?
-  expiresIn    Int?
-  status       String    @default("sent")
-  readBy       String?
-  deliveredTo  String?
-
-  chat       Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  sender     User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
-  replyTo    Message?  @relation("ReplyTo", fields: [replyToId], references: [id])
-  replies    Message[] @relation("ReplyTo")
-  reactions  Reaction[]
-  stars      StarredMessage[]
-
-  @@index([chatId, createdAt])
-}
-
-model Reaction {
   id        String   @id @default(cuid())
-  messageId String
-  userId    String
-  emoji     String
+  email     String   @unique
+  name      String?
   createdAt DateTime @default(now())
-
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([messageId, userId, emoji])
+  updatedAt DateTime @updatedAt
 }
 
-model StarredMessage {
+model Post {
   id        String   @id @default(cuid())
-  messageId String
-  userId    String
-  chatId    String
+  title     String
+  content   String?
+  published Boolean  @default(false)
+  authorId  String
   createdAt DateTime @default(now())
-
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([messageId, userId])
-}
-
-model UserBlock {
-  id         String   @id @default(cuid())
-  blockerId  String
-  blockedId  String
-  createdAt  DateTime @default(now())
-
-  @@unique([blockerId, blockedId])
-  @@index([blockerId])
-  @@index([blockedId])
-}
-
-model UserNickname {
-  id            String   @id @default(cuid())
-  ownerId       String
-  targetUserId  String
-  nickname      String
-  createdAt     DateTime @default(now())
-
-  @@unique([ownerId, targetUserId])
-  @@index([ownerId])
-}
-
-model ConnectionRequest {
-  id         String   @id @default(cuid())
-  fromUserId String
-  toUserId   String
-  status     String   @default("pending")
-  createdAt  DateTime @default(now())
-
-  @@index([fromUserId])
-  @@index([toUserId])
+  updatedAt DateTime @updatedAt
 }

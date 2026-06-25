@@ -1,103 +1,54 @@
-# Dependencies
-node_modules/
-__pycache__/
-*.pyc
-*.pyo
-.venv/
-venv/
-env/
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Build outputs
-.next/
-out/
-dist/
-build/
-*.tsbuildinfo
+# dependencies
+node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
-# Environment variables
-.env
-.env.local
-.env.*.local
+# testing
+/coverage
 
-# Database
-*.db
-*.db-journal
-*.sqlite
-*.sqlite3
+# next.js
+/.next/
+/out/
 
-# Logs
-*.log
-logs/
+# production
+/build
 
-# OS files
+# misc
 .DS_Store
-Thumbs.db
-*.swp
-*.swo
+*.pem
 
-# IDE / Editor
-.vscode/
-.idea/
-*.sublime-project
-*.sublime-workspace
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-# Screenshots / uploads (internal use only)
-*.png
-!frontend/public/icons/**/*.png
-!frontend/public/logo.png
-!frontend/public/logo-small.png
-!frontend/public/favicon-32.png
-!frontend/public/apple-icon.png
-!frontend/public/icon-512.png
-upload/
-download/
+# env files (can opt-in for committing if needed)
+.env*
 
-# Internal working files
-worklog.md
-supervisor.log
-dev-start.log
-start-servers.sh
-.zscripts/
-skills/
-examples/
-mini-services/
+# vercel
+.vercel
 
-# Next.js
+
+# typescript
+*.tsbuildinfo
 next-env.d.ts
+local-*
+.claude
+.z-ai-config
+*.log
+dev.log
+dev.out.log
+test
+prompt
 
-# Prisma generated client (regenerated on install)
-frontend/node_modules/.prisma/
-
-# Python
-*.egg-info/
-.pytest_cache/
-.mypy_cache/
-
-# Deployment artifacts
-Caddyfile
-bun.lock
-frontend/bun.lock
-
-# Flutter build
-flutter/build/
-flutter/.dart_tool/
-flutter/ios/Pods/
-flutter/android/.gradle/
-
-# Flutter
-flutter/build/
-flutter/.dart_tool/
-flutter/ios/Pods/
-flutter/android/.gradle/
-flutter/android/app/debug/
-flutter/android/app/profile/
-flutter/android/app/release/
-flutter/.flutter-plugins
-flutter/.flutter-plugins-dependencies
-flutter/.packages
-
-# Agent scratch / local helper files
-tool-results/
-agent-ctx/
-start-backend.sh
-start-servers.sh
+server.log
+# Skills directory
+/skills/
