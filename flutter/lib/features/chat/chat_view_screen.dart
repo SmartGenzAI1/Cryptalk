@@ -15,6 +15,7 @@ import '../../core/api_client.dart';
 import '../../core/crypto_service.dart';
 import '../../core/socket_service.dart';
 import '../../core/models.dart';
+import '../../core/ui/avatar.dart';
 
 String _basename(String path) {
   final i = path.lastIndexOf('/');
@@ -582,43 +583,206 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   }
 
   void _showStickerPicker() {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
-      builder: (context) => GridView.builder(
-        shrinkWrap: true,
-        padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 5),
-        itemCount: _stickers.length,
-        itemBuilder: (context, index) {
-          return GestureDetector(
-            onTap: () {
-              _sendSticker(_stickers[index]);
-              Navigator.pop(context);
-            },
-            child: Center(child: Text(_stickers[index], style: const TextStyle(fontSize: 32))),
-          );
-        },
+      showDragHandle: true,
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                'Stickers',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 5,
+                childAspectRatio: 1,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+              ),
+              itemCount: _stickers.length,
+              itemBuilder: (ctx, index) => InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  _sendSticker(_stickers[index]);
+                  Navigator.pop(sheetCtx);
+                },
+                child: Center(
+                  child: Text(_stickers[index],
+                      style: const TextStyle(fontSize: 32)),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   void _showSelfDestructPicker() {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Padding(padding: EdgeInsets.all(16), child: Text('Self-destruct after', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
-          ListTile(title: const Text('Off'), onTap: () { setState(() => _selfDestructSeconds = null); Navigator.pop(context); }),
-          ListTile(title: const Text('10 seconds'), onTap: () { setState(() => _selfDestructSeconds = 10); Navigator.pop(context); }),
-          ListTile(title: const Text('1 minute'), onTap: () { setState(() => _selfDestructSeconds = 60); Navigator.pop(context); }),
-          ListTile(title: const Text('1 hour'), onTap: () { setState(() => _selfDestructSeconds = 3600); Navigator.pop(context); }),
-          ListTile(title: const Text('1 day'), onTap: () { setState(() => _selfDestructSeconds = 86400); Navigator.pop(context); }),
-          ListTile(title: const Text('1 week'), onTap: () { setState(() => _selfDestructSeconds = 604800); Navigator.pop(context); }),
-          const SizedBox(height: 16),
-        ],
+      showDragHandle: true,
+      builder: (sheetCtx) {
+        final options = <(int?, String)>[
+          (null, 'Off'),
+          (10, '10 seconds'),
+          (60, '1 minute'),
+          (3600, '1 hour'),
+          (86400, '1 day'),
+          (604800, '1 week'),
+        ];
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: Text(
+                  'Self-destruct timer',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              ...options.map((o) {
+                final selected = _selfDestructSeconds == o.$1;
+                return ListTile(
+                  leading: Icon(selected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked),
+                  title: Text(o.$2),
+                  onTap: () {
+                    setState(() => _selfDestructSeconds = o.$1);
+                    Navigator.pop(sheetCtx);
+                  },
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Mobile-first attachment menu — opens a bottom sheet with the available
+  /// attachment options (photo, sticker, self-destruct timer). Replaces the
+  /// old design that put two icon buttons on the AppBar AND duplicated the
+  /// timer button in the input row.
+  void _showAttachMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12, left: 4),
+                child: Text(
+                  'Attach',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _AttachOption(
+                    icon: Icons.photo_outlined,
+                    color: const Color(0xFF8b5cf6),
+                    label: 'Photo',
+                    onTap: () {
+                      Navigator.pop(sheetCtx);
+                      _pickImage();
+                    },
+                  ),
+                  _AttachOption(
+                    icon: Icons.emoji_emotions_outlined,
+                    color: const Color(0xFFf59e0b),
+                    label: 'Sticker',
+                    onTap: () {
+                      Navigator.pop(sheetCtx);
+                      _showStickerPicker();
+                    },
+                  ),
+                  _AttachOption(
+                    icon: Icons.timer_outlined,
+                    color: const Color(0xFF06b6d4),
+                    label: 'Self-destruct',
+                    badge: _selfDestructSeconds != null,
+                    onTap: () {
+                      Navigator.pop(sheetCtx);
+                      _showSelfDestructPicker();
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
+  }
+
+  /// Resolve what to show as the AppBar title for the current chat — for
+  /// direct chats, the other member's display name; otherwise the chat title.
+  String _resolveTitle() {
+    final chat = widget.chat;
+    if (chat.type == 'saved') return 'Saved Messages';
+    if (chat.type == 'direct') {
+      final me = context.read<AuthService>().currentUser?.id;
+      final other = chat.members
+          .where((m) => m.user.id != me)
+          .firstOrNull;
+      return other?.user.name ?? chat.title;
+    }
+    return chat.title;
+  }
+
+  ({String emoji, String color}) _resolveAvatar() {
+    final chat = widget.chat;
+    if (chat.type == 'saved') {
+      return (emoji: 'bookmark', color: chat.avatarColor);
+    }
+    if (chat.type == 'direct') {
+      final me = context.read<AuthService>().currentUser?.id;
+      final other = chat.members
+          .where((m) => m.user.id != me)
+          .firstOrNull;
+      return (
+        emoji: other?.user.avatarEmoji ?? chat.avatarEmoji,
+        color: other?.user.avatarColor ?? chat.avatarColor,
+      );
+    }
+    return (emoji: chat.avatarEmoji, color: chat.avatarColor);
+  }
+
+  String _typingLabel() {
+    if (_typingUsers.isEmpty) return '';
+    if (_typingUsers.length == 1) return '${_typingUsers[0]} is typing…';
+    if (_typingUsers.length == 2) return '${_typingUsers[0]}, ${_typingUsers[1]} are typing…';
+    return '${_typingUsers.length} people are typing…';
   }
 
   @override
@@ -647,23 +811,56 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     final userId = auth.currentUser?.id;
     final chatService = context.read<ChatService>();
 
+    final avatar = _resolveAvatar();
+    final title = _resolveTitle();
+    final typing = _typingLabel();
+    final hasText = _inputController.text.trim().isNotEmpty;
+
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        titleSpacing: 0,
+        title: Row(
           children: [
-            Text(widget.chat.type == 'saved' ? 'Saved Messages' : widget.chat.title, style: const TextStyle(fontSize: 16)),
-            if (_typingUsers.isNotEmpty)
-              Text(_typingUsers.length == 1 ? '${_typingUsers[0]} is typing...' : '${_typingUsers.length} typing...',
-                  style: TextStyle(fontSize: 12, color: Colors.green[300])),
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: AvatarIcon(
+                iconKey: avatar.emoji,
+                colorName: avatar.color,
+                size: 36,
+              ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (typing.isNotEmpty)
+                    Text(
+                      typing,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green[300],
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ],
         ),
         actions: [
-          IconButton(icon: const Icon(Icons.emoji_emotions_outlined), onPressed: _showStickerPicker),
-          IconButton(icon: const Icon(Icons.image_outlined), onPressed: _pickImage),
-          if (_selfDestructSeconds != null)
-            IconButton(icon: const Icon(Icons.timer, color: Colors.amber), onPressed: _showSelfDestructPicker),
-          PopupMenuButton(
+          PopupMenuButton<String>(
+            tooltip: 'Chat options',
+            icon: const Icon(Icons.more_vert),
             itemBuilder: (context) => [
               if (widget.chat.type != 'saved') ...[
                 const PopupMenuItem(value: 'invite', child: Text('Invite Link')),
@@ -676,7 +873,14 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
             onSelected: (value) async {
               if (value == 'invite') {
                 final token = await chatService.generateInviteLink(widget.chat.id);
-                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('cryptalk.app/join/$token')));
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('cryptalk.app/join/$token'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
               } else if (value == 'pin') {
                 await chatService.pinChat(widget.chat.id, true);
               } else if (value == 'mute') {
@@ -700,8 +904,21 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
               child: Row(
                 children: [
-                  Expanded(child: Text('Replying to: ${_replyTo!.content}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
-                  IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () => setState(() => _replyTo = null)),
+                  const Icon(Icons.reply, size: 18, color: Colors.grey),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Replying to: ${_replyTo!.content}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Cancel reply',
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () => setState(() => _replyTo = null),
+                  ),
                 ],
               ),
             ),
@@ -711,8 +928,24 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
               color: Colors.blue.withOpacity(0.1),
               child: Row(
                 children: [
-                  Expanded(child: Text('Editing: ${_messages[_editingMessageIndex!].content}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
-                  IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () { setState(() => _editingMessageIndex = null); _inputController.clear(); }),
+                  const Icon(Icons.edit, size: 18, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Editing: ${_messages[_editingMessageIndex!].content}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Cancel edit',
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () {
+                      setState(() => _editingMessageIndex = null);
+                      _inputController.clear();
+                    },
+                  ),
                 ],
               ),
             ),
@@ -722,28 +955,65 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
                 _loading
                     ? const Center(child: CircularProgressIndicator())
                     : _messages.isEmpty
-                        ? const Center(child: Text('No messages yet', style: TextStyle(color: Colors.grey)))
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(32),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.forum_outlined,
+                                      size: 72, color: Colors.grey[500]),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No messages yet',
+                                    style: TextStyle(color: Colors.grey[400]),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Say hi 👋',
+                                    style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 13),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
                         : ListView.builder(
                             controller: _scrollController,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
                             itemCount: _messages.length,
                             itemBuilder: (context, index) {
                               final msg = _messages[index];
                               final isOwn = msg.senderId == userId;
-                              final showDateDivider = index == 0 || !_sameDay(_messages[index - 1].createdAt, msg.createdAt);
+                              final showDateDivider = index == 0 ||
+                                  !_sameDay(_messages[index - 1].createdAt,
+                                      msg.createdAt);
                               return Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   if (showDateDivider)
                                     Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 8),
-                                      child: Center(child: Text(_formatDate(msg.createdAt), style: const TextStyle(fontSize: 12, color: Colors.grey))),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 8),
+                                      child: Center(
+                                        child: Text(
+                                          _formatDate(msg.createdAt),
+                                          style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey),
+                                        ),
+                                      ),
                                     ),
                                   _MessageBubble(
                                     message: msg,
                                     isOwn: isOwn,
-                                    showSender: widget.chat.type != 'direct' && widget.chat.type != 'saved' && !isOwn,
-                                    onLongPress: () => _showMessageOptions(index),
+                                    showSender: widget.chat.type != 'direct' &&
+                                        widget.chat.type != 'saved' &&
+                                        !isOwn,
+                                    onLongPress: () =>
+                                        _showMessageOptions(index),
                                     reactions: msg.reactions,
                                   ),
                                 ],
@@ -771,44 +1041,120 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
                 children: [
                   const Icon(Icons.mic, color: Colors.red),
                   const SizedBox(width: 8),
-                  Text('${_recordSeconds}s', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text('${_recordSeconds}s',
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
                   const Spacer(),
-                  IconButton(icon: const Icon(Icons.close, color: Colors.red), onPressed: _cancelRecording),
-                  IconButton(icon: const Icon(Icons.send, color: Colors.green), onPressed: _stopAndSendVoice),
+                  IconButton(
+                    tooltip: 'Cancel',
+                    icon: const Icon(Icons.close, color: Colors.red),
+                    onPressed: _cancelRecording,
+                  ),
+                  IconButton(
+                    tooltip: 'Send voice',
+                    icon: const Icon(Icons.send, color: Colors.green),
+                    onPressed: _stopAndSendVoice,
+                  ),
                 ],
               ),
             )
           else
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                children: [
-                  IconButton(icon: const Icon(Icons.timer_outlined), onPressed: _showSelfDestructPicker),
-                  IconButton(icon: const Icon(Icons.mic), onPressed: _startRecording),
-                  Expanded(
-                    child: TextField(
-                      controller: _inputController,
-                      onChanged: _onTypingChanged,
-                      decoration: InputDecoration(
-                        hintText: _editingMessageIndex != null ? 'Edit message...' : 'Type a message...',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                        filled: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_selfDestructSeconds != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.timer,
+                                size: 16, color: Colors.amber),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Self-destruct: ${_formatSelfDestruct(_selfDestructSeconds!)}',
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.amber),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _showSelfDestructPicker,
+                              child: const Text('Change'),
+                            ),
+                            TextButton(
+                              onPressed: () => setState(
+                                  () => _selfDestructSeconds = null),
+                              child: const Text('Off'),
+                            ),
+                          ],
+                        ),
                       ),
-                      onSubmitted: (_) => _sendMessage(),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          tooltip: 'Attach',
+                          icon: const Icon(Icons.add),
+                          onPressed: _showAttachMenu,
+                        ),
+                        Expanded(
+                          child: TextField(
+                            controller: _inputController,
+                            onChanged: (v) {
+                              _onTypingChanged(v);
+                              setState(() {}); // refresh send/mic toggle
+                            },
+                            minLines: 1,
+                            maxLines: 5,
+                            textInputAction: TextInputAction.newline,
+                            decoration: InputDecoration(
+                              hintText: _editingMessageIndex != null
+                                  ? 'Edit message...'
+                                  : 'Type a message...',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                              filled: true,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 10),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        if (hasText || _editingMessageIndex != null)
+                          IconButton.filled(
+                            tooltip: 'Send',
+                            onPressed: _sendMessage,
+                            icon: Icon(_editingMessageIndex != null
+                                ? Icons.check
+                                : Icons.send),
+                          )
+                        else
+                          IconButton(
+                            tooltip: 'Voice message',
+                            icon: const Icon(Icons.mic_none_outlined),
+                            onPressed: _startRecording,
+                          ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: _sendMessage,
-                    icon: Icon(_editingMessageIndex != null ? Icons.check : Icons.send),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
         ],
       ),
     );
+  }
+
+  static String _formatSelfDestruct(int seconds) {
+    if (seconds < 60) return '${seconds}s';
+    if (seconds < 3600) return '${seconds ~/ 60}m';
+    if (seconds < 86400) return '${seconds ~/ 3600}h';
+    return '${seconds ~/ 86400}d';
   }
 
   bool _sameDay(String a, String b) {
@@ -1171,6 +1517,74 @@ class _AttachmentViewState extends State<_AttachmentView> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Circular attachment option used by the mobile-first attach bottom sheet.
+class _AttachOption extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String label;
+  final bool badge;
+  final VoidCallback onTap;
+
+  const _AttachOption({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.onTap,
+    this.badge = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.18),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(icon, color: color, size: 28),
+                ),
+                if (badge)
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.surface,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(label,
+                style: Theme.of(context).textTheme.labelMedium),
+          ],
+        ),
+      ),
     );
   }
 }

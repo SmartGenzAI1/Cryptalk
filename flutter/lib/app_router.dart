@@ -5,6 +5,12 @@ import 'features/auth/auth_screen.dart';
 import 'features/auth/onboarding_screen.dart';
 import 'features/chat/chat_list_screen.dart';
 
+/// Top-level router that decides which screen to show based on the auth state.
+///
+/// Listens to [AuthService] (a [ChangeNotifier]) so it rebuilds whenever the
+/// current user changes — this is what makes the
+/// `login → onboarding → chat list` flow seamless without any explicit
+/// `Navigator.pushReplacement` calls.
 class AppRouter extends StatefulWidget {
   const AppRouter({super.key});
 
@@ -24,7 +30,9 @@ class _AppRouterState extends State<AppRouter> {
   Future<void> _checkAuth() async {
     final auth = context.read<AuthService>();
     await auth.getMe();
-    setState(() => _loading = false);
+    if (mounted) {
+      setState(() => _loading = false);
+    }
   }
 
   @override

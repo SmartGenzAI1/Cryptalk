@@ -1,9 +1,17 @@
+import 'package:flutter/foundation.dart';
 import 'api_client.dart';
 import 'models.dart';
 import 'crypto_service.dart';
 import 'socket_service.dart';
 
-class AuthService {
+/// Holds the current authenticated [AppUser] and exposes the auth lifecycle
+/// methods (login/register/onboard/logout) plus E2EE init.
+///
+/// Extends [ChangeNotifier] so the [AppRouter] (and any other
+/// `context.watch<AuthService>()` consumer) rebuilds whenever the current
+/// user changes — without this, navigating `login → onboarding → chat list`
+/// would silently break because the router never gets a rebuild signal.
+class AuthService extends ChangeNotifier {
   final _api = ApiClient();
   final _crypto = CryptoService();
 
@@ -16,6 +24,7 @@ class AuthService {
       final data = await _api.get('/api/auth/me');
       if (data['user'] != null) {
         _currentUser = AppUser.fromJson(data['user']);
+        notifyListeners();
       }
       return _currentUser;
     } catch (_) {
@@ -29,6 +38,7 @@ class AuthService {
       'password': password,
     });
     _currentUser = AppUser.fromJson(data['user']);
+    notifyListeners();
     return _currentUser!;
   }
 
@@ -38,6 +48,7 @@ class AuthService {
       'password': password,
     });
     _currentUser = AppUser.fromJson(data['user']);
+    notifyListeners();
     return _currentUser!;
   }
 
@@ -47,7 +58,14 @@ class AuthService {
       'name': name,
     });
     _currentUser = AppUser.fromJson(data['user']);
+    notifyListeners();
     return _currentUser!;
+  }
+
+  /// Refresh the cached current user from `/api/auth/me` (e.g. after a
+  /// profile update so the UI reflects the new name/avatar).
+  Future<void> refreshMe() async {
+    await getMe();
   }
 
   Future<void> logout() async {
@@ -59,6 +77,7 @@ class AuthService {
     } catch (_) {}
     await _api.post('/api/auth/logout');
     _currentUser = null;
+    notifyListeners();
   }
 
   /// Initialize end-to-end encryption for the current user.

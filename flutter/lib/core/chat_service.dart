@@ -289,10 +289,27 @@ class ChatService {
     await _api.delete('/api/account');
   }
 
-  Future<void> updateProfile({String? name, String? bio}) async {
+  /// Update the current user's profile. Any nullable field left null is
+  /// omitted from the PATCH (the backend's `UserUpdate` schema treats absent
+  /// fields as "no change"). Accepts the full set of editable fields the
+  /// backend exposes: `name`, `bio`, `avatarEmoji`, `avatarColor`,
+  /// `accentColor`, `wallpaper` (all camelCase — the backend's CamelModel
+  /// accepts both casings).
+  Future<void> updateProfile({
+    String? name,
+    String? bio,
+    String? avatarEmoji,
+    String? avatarColor,
+    String? accentColor,
+    String? wallpaper,
+  }) async {
     await _api.patch('/api/users/me', body: {
       if (name != null) 'name': name,
       if (bio != null) 'bio': bio,
+      if (avatarEmoji != null) 'avatarEmoji': avatarEmoji,
+      if (avatarColor != null) 'avatarColor': avatarColor,
+      if (accentColor != null) 'accentColor': accentColor,
+      if (wallpaper != null) 'wallpaper': wallpaper,
     });
   }
 }
