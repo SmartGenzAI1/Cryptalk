@@ -34,12 +34,30 @@ class ChatService {
     return messages;
   }
 
-  /// Send a plain text or sticker message. The [content] is always
-  /// encrypted with the local E2EE key before being persisted.
-  Future<Message> sendMessage(String chatId, String content, {String type = 'text', String? replyToId, int? expiresIn}) async {
-    final encrypted = await _crypto.encrypt(content, _crypto.publicKeyBase64);
+  /// Send a plain text or sticker message.
+  ///
+  /// E2EE policy (L1 fix):
+  ///   • `chatType == 'saved'`  — no encryption (only the owner sees these).
+  ///   • `chatType == 'direct'` — fetch the recipient's X25519 identity public
+  ///     key via `/api/keys/{recipientUserId}` and encrypt with THAT (not our
+  ///     own key, which was the L1 bug — recipients could never decrypt).
+  ///   • `chatType == 'group'` — group E2EE (per-member or shared group key)
+  ///     is complex; for now we fall back to plaintext. TODO: implement
+  ///     either fan-out encryption or a Signal-style sender-key scheme.
+  ///   • If the recipient hasn't uploaded keys yet, fall back to plaintext so
+  ///     the message at least sends (graceful degradation).
+  Future<Message> sendMessage(
+    String chatId,
+    String content, {
+    String type = 'text',
+    String? replyToId,
+    int? expiresIn,
+    String? chatType,
+    String? recipientUserId,
+  }) async {
+    final toStore = await _encryptForChat(content, chatType, recipientUserId);
     final data = await _api.post('/api/$chatId/messages', body: {
-      'content': encrypted,
+      'content': toStore,
       'type': type,
       if (replyToId != null) 'replyToId': replyToId,
       if (expiresIn != null) 'expiresIn': expiresIn,
@@ -48,6 +66,29 @@ class ChatService {
     // Decrypt own echo back so the local UI shows the plaintext.
     msg.content = await _crypto.decrypt(msg.content);
     return msg;
+  }
+
+  /// Encrypt [plaintext] for the given chat context. Returns the ciphertext
+  /// JSON string, or the plaintext unchanged when encryption should be
+  /// skipped (saved messages, groups, missing recipient keys).
+  Future<String> _encryptForChat(
+    String plaintext,
+    String? chatType,
+    String? recipientUserId,
+  ) async {
+    if (chatType == 'saved') return plaintext;
+    if (chatType == 'group') {
+      // TODO: implement group E2EE (per-member fan-out or sender-key).
+      return plaintext;
+    }
+    if (recipientUserId == null || recipientUserId.isEmpty) return plaintext;
+    final recipientPub = await _crypto.getRecipientPublicKey(recipientUserId);
+    if (recipientPub == null || recipientPub.isEmpty) {
+      // Recipient hasn't set up E2EE yet — send plaintext as a graceful
+      // fallback. The web client does the same.
+      return plaintext;
+    }
+    return _crypto.encrypt(plaintext, recipientPub);
   }
 
   /// Send an E2EE file/image/voice message via the new upload flow.
@@ -74,6 +115,8 @@ class ChatService {
     String? replyToId,
     int? duration,
     int? expiresIn,
+    String? chatType,
+    String? recipientUserId,
   }) async {
     if (fileBytes.length > kMaxAttachmentBytes) {
       throw ApiException(
@@ -87,8 +130,10 @@ class ChatService {
     final b64 = base64Encode(fileBytes);
     final dataUrl = 'data:$mime;base64,$b64';
 
-    // 1+2. Encrypt the data URL.
-    final ciphertext = await _crypto.encrypt(dataUrl, _crypto.publicKeyBase64);
+    // 1+2. Encrypt the data URL with the RECIPIENT's key (L1 fix). The
+    // chatType / recipientUserId are passed in by the caller; for saved /
+    // group / no-recipient-key cases the data URL is stored as plaintext.
+    final ciphertext = await _encryptForChat(dataUrl, chatType, recipientUserId);
 
     // 3+4. UTF-8 encode ciphertext → upload.
     final cipherBytes = Uint8List.fromList(utf8.encode(ciphertext));
@@ -113,10 +158,10 @@ class ChatService {
       return msg;
     }
 
-    // 6. Upload succeeded — encrypt the URL, send the message.
+    // 6. Upload succeeded — encrypt the URL with the recipient's key (L1 fix).
     final url = uploadRes['url']?.toString() ?? '';
     final path = uploadRes['path']?.toString();
-    final encryptedUrl = await _crypto.encrypt(url, _crypto.publicKeyBase64);
+    final encryptedUrl = await _encryptForChat(url, chatType, recipientUserId);
 
     final data = await _api.post('/api/$chatId/messages', body: {
       'content': encryptedUrl,
@@ -125,7 +170,6 @@ class ChatService {
       if (duration != null) 'duration': duration,
       if (expiresIn != null) 'expiresIn': expiresIn,
       if (path != null) 'attachmentPath': path,
-      if (path != null) 'attachment_path': path,
     });
     var msg = Message.fromJson(data['message']);
     // Decrypt own echo (URL or data URL) for local display.

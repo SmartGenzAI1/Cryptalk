@@ -22,10 +22,46 @@ class _ChatListScreenState extends State<ChatListScreen> {
   bool _loading = true;
   final _searchController = TextEditingController();
 
+  /// Subscription IDs returned by `SocketService.on*` — cancelled in
+  /// `dispose` so we remove ONLY this screen's listeners (L3 fix).
+  final List<int> _socketSubIds = [];
+
   @override
   void initState() {
     super.initState();
+    // L7 fix: register socket callbacks ONCE here, not inside `_loadChats`
+    // (which runs on every refresh and previously accumulated N copies of
+    // each callback per event).
+    _initSocket();
     _loadChats();
+  }
+
+  Future<void> _initSocket() async {
+    final auth = context.read<AuthService>();
+    final chatService = context.read<ChatService>();
+    final socket = context.read<SocketService>();
+    final user = auth.currentUser;
+    if (user == null) return;
+
+    // Make sure the cookie is loaded from secure storage before reading the
+    // session token out of it.
+    await chatService.api.init();
+    if (!mounted) return;
+    final token = chatService.api.sessionToken;
+    if (token == null) return;
+
+    // Register the listeners BEFORE connecting so they're tracked in
+    // `_socketSubIds` even if the widget disposes during the connect() call.
+    _socketSubIds.add(socket.onMessage((data) {
+      if (mounted) _loadChats();
+    }));
+    _socketSubIds.add(socket.onUserStatus((_) {
+      if (mounted) setState(() {});
+    }));
+
+    // L10/X5 fix: connect with the session token so the backend can
+    // authenticate the socket; reconnect automatically if the user changed.
+    await socket.connect(user.id, token);
   }
 
   Future<void> _loadChats() async {
@@ -39,21 +75,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
         _loading = false;
       });
 
-      final user = auth.currentUser;
-      if (user != null) {
-        final socket = context.read<SocketService>();
-        socket.connect(user.id, user.username ?? user.name ?? '');
-        socket.onMessage((data) {
-          _loadChats();
-        });
-        socket.onUserStatus((_) {
-          if (mounted)
-          setState(() {});
-        });
-      }
-
       await auth.initE2EE();
     } catch (_) {
+      if (mounted)
       setState(() => _loading = false);
     }
   }
@@ -69,6 +93,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   @override
   void dispose() {
+    // L3 fix: cancel ONLY this screen's socket subscriptions.
+    final socket = SocketService();
+    for (final id in _socketSubIds) {
+      socket.cancelSubscription(id);
+    }
+    _socketSubIds.clear();
     _searchController.dispose();
     super.dispose();
   }

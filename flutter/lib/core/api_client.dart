@@ -47,6 +47,18 @@ class ApiClient {
   void setCookie(String? cookie) => _cookie = cookie;
   String? get cookie => _cookie;
 
+  /// Extract the bare session-token value from the stored `tc_session=…`
+  /// cookie string. Returns null if no cookie is stored. Used by the socket
+  /// `identify` payload so the backend can authenticate the realtime
+  /// connection (X5 fix).
+  String? get sessionToken {
+    if (_cookie == null) return null;
+    // Cookie format: "tc_session=<value>; Path=/; HttpOnly; ..."
+    final part = _cookie!.split(';').first;
+    final eq = part.indexOf('=');
+    return eq >= 0 ? part.substring(eq + 1).trim() : null;
+  }
+
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
     if (_cookie != null) 'Cookie': _cookie!,

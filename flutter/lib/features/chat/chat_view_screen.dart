@@ -52,6 +52,34 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   List<String> _typingUsers = [];
   int? _selfDestructSeconds;
 
+  /// Subscription IDs returned by `SocketService.on*` — cancelled in
+  /// `dispose` so we remove ONLY this screen's listeners, not every screen's
+  /// (L3 fix).
+  final List<int> _socketSubIds = [];
+
+  /// Web-client sticker names (e.g. `"fox"`, `"like"`) mapped to emoji so
+  /// stickers sent from the web app render as an icon on Flutter instead of
+  /// the literal string "fox" (L8 fix). Names not in the map (e.g. an emoji
+  /// sent from another Flutter client) fall through unchanged.
+  static const Map<String, String> _stickerEmojiMap = {
+    'like': '👍',
+    'star': '⭐',
+    'gift': '🎁',
+    'birthday-cake': '🎂',
+    'rocket': '🚀',
+    'trophy': '🏆',
+    'crown': '👑',
+    'diamond': '💎',
+    'rainbow': '🌈',
+    'sun': '☀️',
+    'moon': '🌙',
+    'cloud': '☁️',
+    'flower': '🌸',
+    'mountain': '⛰️',
+    'volcano': '🌋',
+    'island': '🏝️',
+  };
+
   static const _stickers = ['👍', '❤️', '🔥', '😂', '🎉', '👏', '🙏', '👋', '⭐', '🚀'];
   static const _reactions = ['👍', '❤️', '🔥', '😂', '😮', '🎉'];
   static const _selfDestructOptions = [10, 60, 3600, 86400, 604800];
@@ -125,6 +153,8 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         });
       }
     } catch (e) { debugPrint('Error: $e'); } finally {
+      // L15 fix: guard setState after the async getMessages() call.
+      if (mounted)
       setState(() => _loadingMore = false);
     }
   }
@@ -144,28 +174,38 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
 
   void _setupSocketListeners() {
     final socket = context.read<SocketService>();
-    socket.onMessage((data) {
+    _socketSubIds.add(socket.onMessage((data) {
       if (data['chatId'] == widget.chat.id && data['message'] != null) {
+        // L5 fix: guard setState — a message arriving during a navigation
+        // transition would otherwise crash on a disposed State.
+        if (!mounted) return;
         final msg = Message.fromJson(data['message']);
         setState(() => _messages.add(msg));
         _scrollToBottom();
       }
-    });
-    socket.onTyping((data) {
-      if (data['chatId'] == widget.chat.id && data['isTyping'] == true) {
+    }));
+    _socketSubIds.add(socket.onTyping((data) {
+      if (data['chatId'] != widget.chat.id) return;
+      if (!mounted) return;
+      if (data['isTyping'] == true) {
         final username = data['username'] ?? 'Someone';
         setState(() {
           if (!_typingUsers.contains(username)) _typingUsers.add(username);
         });
+        // L4 fix: capture `mounted` inside the delayed callback so a
+        // setState-after-dispose crash can't happen if the user navigates
+        // away within the 3-second window.
         Future.delayed(const Duration(seconds: 3), () {
+          if (!mounted) return;
           setState(() => _typingUsers.remove(username));
         });
-      } else if (data['chatId'] == widget.chat.id) {
+      } else {
         setState(() => _typingUsers.remove(data['username']));
       }
-    });
-    socket.onMessageUpdate((data) {
+    }));
+    _socketSubIds.add(socket.onMessageUpdate((data) {
       if (data['chatId'] == widget.chat.id && data['message'] != null) {
+        if (!mounted) return;
         final msg = Message.fromJson(data['message']);
         setState(() {
           final idx = _messages.indexWhere((m) => m.id == msg.id);
@@ -174,7 +214,19 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
           }
         });
       }
-    });
+    }));
+  }
+
+  /// For direct chats, return the other member's userId (used to fetch their
+  /// E2EE public key). Returns null for saved/group chats.
+  String? _recipientUserId() {
+    if (widget.chat.type != 'direct') return null;
+    final auth = context.read<AuthService>();
+    final me = auth.currentUser?.id;
+    final other = widget.chat.members
+        .where((m) => m.user.id != me)
+        .firstOrNull;
+    return other?.user.id;
   }
 
   void _scrollToBottom() {
@@ -210,7 +262,11 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         text,
         replyToId: _replyTo?.id,
         expiresIn: _selfDestructSeconds,
+        chatType: widget.chat.type,
+        recipientUserId: _recipientUserId(),
       );
+      // L6 fix: guard setState after the await.
+      if (!mounted) return;
       setState(() {
         _messages.add(msg);
         _replyTo = null;
@@ -301,11 +357,17 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       return;
     }
     await _record.start();
+    if (!mounted) return;
     setState(() {
       _isRecording = true;
       _recordSeconds = 0;
     });
     _recordTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      // L5 fix: the periodic timer can fire after dispose — guard setState.
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
       setState(() => _recordSeconds++);
       if (_recordSeconds >= 60) _stopAndSendVoice();
     });
@@ -339,6 +401,8 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         type: 'voice',
         contentType: 'audio/m4a',
         duration: _recordSeconds,
+        chatType: widget.chat.type,
+        recipientUserId: _recipientUserId(),
       );
       if (mounted)
       setState(() => _messages.add(msg));
@@ -365,7 +429,13 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     try {
       final chatService = context.read<ChatService>();
       final socket = context.read<SocketService>();
-      final msg = await chatService.sendMessage(widget.chat.id, emoji, type: 'sticker');
+      final msg = await chatService.sendMessage(
+        widget.chat.id,
+        emoji,
+        type: 'sticker',
+        chatType: widget.chat.type,
+        recipientUserId: _recipientUserId(),
+      );
       if (mounted)
       setState(() => _messages.add(msg));
       socket.sendMessage(widget.chat.id, _messageToJson(msg));
@@ -410,6 +480,8 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         _basename(picker.path),
         type: 'image',
         contentType: 'image/jpeg',
+        chatType: widget.chat.type,
+        recipientUserId: _recipientUserId(),
       );
       if (mounted)
       setState(() => _messages.add(msg));
@@ -550,7 +622,6 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   }
 
   @override
-  @override
   void dispose() {
     _inputController.dispose();
     _scrollController.removeListener(_onScroll);
@@ -559,7 +630,14 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     _recordTimer?.cancel();
     _audioPlayer.dispose();
     _record.dispose();
-    context.read<SocketService>().clearCallbacks();
+    // L3 fix: cancel ONLY this screen's socket subscriptions — not every
+    // screen's (which is what the old `clearCallbacks()` call did, wiping the
+    // chat list's listeners too).
+    final socket = SocketService();
+    for (final id in _socketSubIds) {
+      socket.cancelSubscription(id);
+    }
+    _socketSubIds.clear();
     super.dispose();
   }
 
@@ -831,7 +909,12 @@ class _MessageBubble extends StatelessWidget {
       return _AttachmentView(message: message, isOwn: isOwn);
     }
     if (t == 'sticker') {
-      return Text(message.content, style: const TextStyle(fontSize: 48));
+      // L8 fix: stickers sent from the web app carry a *name* (e.g. "fox",
+      // "like", "rocket") rather than an emoji. Map known names to emoji;
+      // anything else (an emoji sent from another Flutter client, or an
+      // unknown name) falls through and renders as-is.
+      final emoji = _stickerEmojiMap[message.content] ?? message.content;
+      return Text(emoji, style: const TextStyle(fontSize: 48));
     }
     return Text(message.content, style: TextStyle(color: isOwn ? Colors.white : null, fontSize: 15));
   }
