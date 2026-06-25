@@ -34,7 +34,7 @@ jobs:
           path: flutter/build/app/outputs/flutter-apk/app-release.apk
 
       - name: Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: flutter/build/app/outputs/flutter-apk/app-release.apk
