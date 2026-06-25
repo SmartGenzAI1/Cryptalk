@@ -143,12 +143,29 @@ async def set_username(req: UsernameOnboardingRequest, request: Request, db: Asy
 @router.post("/login")
 async def login_with_email(req: EmailLoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
     email = _validate_email(req.email)
+
+    # Brute-force protection: check if this account is locked before even
+    # hitting the DB.  Returns 429 with Retry-After so the client can back off.
+    from app.core.brute_force import is_locked, record_failed_attempt, clear_failures
+    locked, retry_after = is_locked(email)
+    if locked:
+        response.status_code = 429
+        response.headers["Retry-After"] = str(retry_after)
+        return {"error": "account_locked", "message": "Too many failed attempts. Try again later.", "retry_after": retry_after}
+
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(req.password, user.password_hash or "x" * 64):
-        raise AuthError("Invalid credentials")
+        # Record the failure — if this pushes past the threshold, the next
+        # request will be locked out.
+        record_failed_attempt(email)
+        # Constant-time-ish: don't reveal whether the email exists vs the
+        # password was wrong (same message either way).
+        raise AuthError("Invalid email or password")
 
+    # Success — clear the failure counter.
+    clear_failures(email)
     user.is_online = True
     user.last_seen = now_ms()
     user.updated_at = now_ms()
@@ -162,12 +179,23 @@ async def login_legacy(req: LegacyLoginRequest, response: Response, db: AsyncSes
     (alex, sam, priya, marco) that have no email.  Hidden from OpenAPI docs so
     it doesn't show up as an attack surface; email-based login is the primary path.
     """
-    result = await db.execute(select(User).where(User.username == req.username.lower()))
+    username = req.username.lower().strip()
+    # Brute-force protection keyed on the username (same mechanism).
+    from app.core.brute_force import is_locked, record_failed_attempt, clear_failures
+    locked, retry_after = is_locked(username)
+    if locked:
+        response.status_code = 429
+        response.headers["Retry-After"] = str(retry_after)
+        return {"error": "account_locked", "message": "Too many failed attempts. Try again later.", "retry_after": retry_after}
+
+    result = await db.execute(select(User).where(User.username == username))
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(req.password, user.password_hash or "x" * 64):
-        raise AuthError("Invalid credentials")
+        record_failed_attempt(username)
+        raise AuthError("Invalid username or password")
 
+    clear_failures(username)
     user.is_online = True
     user.last_seen = now_ms()
 

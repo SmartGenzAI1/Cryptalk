@@ -132,6 +132,48 @@ async def limit_request_body(request: Request, call_next):
 app.add_exception_handler(DomainError, domain_error_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
+# Graceful 404/405 handlers — return JSON instead of FastAPI's default HTML
+# so clients always get a parseable error body.
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse as _JSONResponse
+
+
+@app.exception_handler(404)
+async def not_found_handler(request: Request, exc):
+    return _JSONResponse(status_code=404, content={"error": "not_found", "message": "Resource not found"})
+
+
+@app.exception_handler(405)
+async def method_not_allowed_handler(request: Request, exc):
+    return _JSONResponse(status_code=405, content={"error": "method_not_allowed", "message": "Method not allowed for this endpoint"})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    # Don't leak internal field names — just say "validation error" with a
+    # minimal detail.  The full Pydantic error list can expose schema internals.
+    return _JSONResponse(
+        status_code=422,
+        content={"error": "validation_error", "message": "Invalid request data"},
+    )
+
+
+# Security headers middleware — set on every response.
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Only set HSTS in production (HTTPS). In dev (HTTP) it would break
+    # localhost access.
+    if settings.is_postgres:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    # Prevent MIME-sniffing on downloads.
+    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+    return response
+
 app.include_router(api_router)
 
 
