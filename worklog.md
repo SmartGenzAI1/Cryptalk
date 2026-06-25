@@ -680,3 +680,199 @@ Stage Summary:
 - Flutter: auth flow fixed (ChangeNotifier), onboarding redesigned, 4 stacked dialogs → dedicated screens, mobile-first input bar, avatar rendering fixed.
 - Deps: 11 Dependabot PRs resolved + closed, 3 major bumps intentionally skipped.
 - 3 commits pushed: f145d5c (security), c221d73 (flutter UX), b8bfe5c (deps + contributing).
+
+---
+
+## Task 17 — Clean verbose AI-boilerplate comments in Flutter (Dart) code
+
+**Scope:** Walked `/home/z/my-project/flutter/lib/` recursively and cleaned every
+`.dart` file's comments. No code changes — comments only.
+
+**Files cleaned (17):**
+- `lib/main.dart` (no comments to clean)
+- `lib/app_router.dart`
+- `lib/core/api_client.dart`
+- `lib/core/api_config.dart` (no comments to clean)
+- `lib/core/auth_service.dart`
+- `lib/core/chat_service.dart`
+- `lib/core/crypto_service.dart`
+- `lib/core/models.dart`
+- `lib/core/socket_service.dart`
+- `lib/core/supabase_service.dart` (no comments to clean)
+- `lib/core/ui/avatar.dart`
+- `lib/features/auth/auth_screen.dart`
+- `lib/features/auth/onboarding_screen.dart`
+- `lib/features/chat/chat_list_screen.dart`
+- `lib/features/chat/chat_view_screen.dart`
+- `lib/features/chat/new_chat_screen.dart`
+- `lib/features/connections/connections_screen.dart`
+- `lib/features/settings/settings_screen.dart`
+
+**What was done:**
+- Converted all multi-line `///` docstrings to short `//` comments or removed.
+- Removed all audit-tracking tags (`L1`, `L2`, `L3`, `L4`, `L5`, `L6`, `L7`,
+  `L8`, `L9`, `L10`, `L15`, `X5`) — confirmed via ripgrep: 0 remaining.
+- Cut every multi-line comment block to ≤2 lines, mostly 1 line.
+- Casual lowercase tone throughout, no periods at end of sentences.
+- Kept "why" comments that genuinely aid understanding (mounted checks,
+  snapshot-to-list-to-avoid-ConcurrentModificationError, decrypt-returns-input-as-is,
+  cancel-only-this-screen's-subs, capture-mounted-in-delayed-callback, etc.).
+- Deleted "what" comments that restated the code.
+- Removed AI-formal phrasing: "This class provides...", "The following...",
+  "Note that...", "It is important to...", "In order to...", etc.
+
+**Examples:**
+- `/// Hard client-side cap matching the server's 25MB per-file limit ...`
+  → `// 25mb client cap, matches server`
+- `/// Send a plain text or sticker message. E2EE policy (L1 fix): ...`
+  → `// send text/sticker. direct chats are e2ee, saved/group are plaintext for now.`
+- `// Decrypt every message body. CryptoService.decrypt gracefully returns ...`
+  → `// decrypt returns input as-is for non-ciphertext, so legacy msgs still work`
+
+**Verification:**
+- `flutter` / `dart` not on PATH in this sandbox — manual review only.
+- Brace / paren / bracket balance verified with a Python state-machine that
+  strips strings + line comments before counting: all 18 files balanced
+  (`OK` for `{}`, `()`, `[]`).
+- ripgrep confirms 0 remaining `^\s*///` lines and 0 audit-tag references.
+- No imports, code logic, or formatting touched — comment-only edits.
+
+**Caveats:**
+- Could not run `flutter analyze` (no Flutter SDK installed in sandbox).
+  Structural balance + targeted ripgrep on the specific patterns modified
+  give high confidence the code still compiles, but a final CI analyze is
+  recommended once Flutter is available.
+- The CryptoService cross-client note (flutter↔web e2ee doesn't yet work
+  due to cipher mismatch) was preserved in a compressed form because it
+  documents a real outstanding limitation, not audit noise.
+- TODO comment in `_encryptForChat` (group e2ee fan-out / sender-key) was
+  kept — it's a genuine future-work marker, not boilerplate.
+
+---
+
+## Task 15 — Clean backend comments (anti-AI boilerplate pass)
+
+**Scope:** Walk `/home/z/my-project/backend/app/` recursively and clean every
+`.py` file plus `backend/tests/`. Comment-only edits — no code, imports, or
+formatting touched. Goal: strip verbose AI-flavored comments down to minimal,
+casual "why" notes; remove audit tags (B1/B5/B8/B9/B10/B13/B14/B18/X5/etc.);
+convert multi-paragraph module/function docstrings to 1-2 line `#` comments.
+
+**Files cleaned (20 total):**
+- `app/main.py`
+- `app/core/{storage,brute_force,exceptions,rate_limit,config,cache,security}.py`
+- `app/api/v1/{chats,e2ee,auth,uploads,chat_management,social,users,messages}.py`
+- `app/services/{deps,auth_service,serializers,user_service,message_service,chat_service}.py`
+- `app/realtime/{handlers,connection_manager}.py`
+- `app/{models,repositories,schemas}/__init__.py`
+- `tests/test_api.py` (single `auth_token` docstring → `#` comment)
+
+`app/{__init__,core/__init__,realtime/__init__,api/__init__,api/v1/__init__,services/__init__,tests/__init__}.py`
+were already empty — no changes. `tests/test_security.py` had no verbose
+comments to clean.
+
+**Style applied:**
+- Module docstrings → 1-2 line `#` comments (lowercase, casual).
+- Function docstrings deleted where the name was clear; converted to short
+  `#` comments where the "why" mattered (race-condition notes, path-traversal
+  defense, cookie security flags, eager-load rationale, N+1 fixes).
+- All audit tags removed (B1/B5/B8/B9/B10/B13/B14/B18/X5/etc.).
+- Multi-line explanations trimmed to 1-3 lines max.
+- Kept "why" notes that genuinely help: httponly/samesite/secure cookie flags,
+  path-traversal defense, race-condition re-read pattern, eager-load
+  MissingGreenlet rationale, N+1 → batch-fetch notes, scrypt-must-match-node
+  note, ILIKE wildcard escape, socket impersonation-hole fix.
+- ASCII box-divider section headers (`# ─── X ───`) replaced with plain
+  `# section name`.
+
+**Verification:**
+- `SESSION_SECRET=test DB_PATH=/tmp/clean-test.db python3 -c "from app.main import app; print('imports OK')"` → `imports OK`
+- `SESSION_SECRET=test DB_PATH=/tmp/clean-test.db python3 -m pytest tests/ -q` → `36 passed in 2.50s`
+- ripgrep confirms 0 remaining `"""` docstrings and 0 audit-tag references
+  (B1/B2/B3/B4/B5/B6/B8/B9/B10/B13/B14/B18/F1/L1/X5) across `backend/`.
+
+**Caveats:**
+- None. All 36 tests pass and the app imports cleanly. Comment-only edits —
+  no logic, imports, or formatting touched.
+
+---
+
+## Task 16 — Frontend comment cleanup (Cryptalk)
+
+**Agent:** Z.ai Code (comment-cleanup agent)
+**Task ID:** 16
+**Scope:** Walk `/home/z/my-project/frontend/src/` and clean AI-boilerplate comments in
+all `.ts`/`.tsx` files except `components/ui/*` (shadcn/ui library, untouched).
+Comments only — no code logic, imports, or formatting touched.
+
+**Patterns removed:**
+- Multi-line `/** */` JSDoc blocks → 1-line `//` comments or deleted.
+- Audit tracking tags: `F1`, `F2`, `F3`, `F4`, `F5`, `F6`, `F7`, `F9`, `F12`, `F13`, `X5`, `B2`.
+- ASCII-art section dividers (`// ─── Types ───`) → short lowercase markers.
+- AI-sounding phrasings (`This component provides…`, `Note that…`, `In order to…`, etc.).
+- Numbered step walkthroughs that just restate code (e.g. `// 1. Generate ephemeral keypair`).
+- Obvious comments (`// voice playback`, `// grouped by day`).
+- "Why" comments kept and shortened (stale-closure, httponly cookie, React 19 pattern,
+  debounce, eviction-on-failure, 25MB backend limit, etc.).
+
+**Files cleaned (24):**
+
+| Path | Notes |
+|------|-------|
+| `lib/api.ts` | F5 buildUrl block, apiUploadFile JSDoc, multipart-boundary note |
+| `lib/e2ee.ts` | All function JSDoc; numbered init steps; legacy-plaintext notes |
+| `lib/crypto.ts` | Section dividers, keypair step numbers, multi-line JSDoc on key-gen / HKDF / verify / safety-number |
+| `lib/attachments.ts` | 25-line flow preamble compressed to 9-line note |
+| `lib/icons.ts` | Top-of-file preamble; resolver JSDoc; section dividers |
+| `lib/types.ts` | Palette/accent/wallpaper section comments lowercased; icons re-export note trimmed |
+| `lib/key-store.ts` | Function JSDoc trimmed; section divider removed |
+| `lib/message-cache.ts` | Function JSDoc trimmed; obvious "delete old"/"add new"/"clear all" deleted |
+| `lib/format.ts` | Top-of-file comment lowercased |
+| `hooks/use-socket.ts` | X5 socket-auth block, F4 dup-listener audit tag, narration comments trimmed |
+| `hooks/use-toast.ts` | Multi-line "side effects" comment compressed to one line |
+| `stores/chat-store.ts` | F6 presence-Set comments compressed; section markers kept (long interface) |
+| `components/chat/message-item.tsx` | F1 starred-state, attachment-resolution JSDoc, memo comparator, function JSDoc trimmed |
+| `components/chat/message-input.tsx` | F3+F9 mic-cleanup, E2EE step numbers, dev-fallback / URL-encryption-failure / 413-507 notes |
+| `components/chat/chat-list.tsx` | Search-debounce, prefetch F12, openChat step comments, F13 silent-swallow trimmed |
+| `components/chat/chat-window.tsx` | F7 in-chat-search debounce comment compressed |
+| `components/chat/message-list.tsx` | MessageErrorFallback JSDoc, CSS windowing, F2 per-message boundary JSX comment trimmed |
+| `components/chat/new-chat-dialog.tsx` | Mount-fresh note lowercased; `// first 24 for picker` lowercased |
+| `components/chat/profile-dialog.tsx` | Mount-fresh note lowercased |
+| `components/chat/forward-dialog.tsx` | Mount-fresh note lowercased |
+| `components/chat/accent-applier.tsx` | Function description lowercased |
+| `components/chat/connections-panel.tsx` | TDZ-hoist and async-iife notes trimmed |
+| `components/chat/chat-info-panel.tsx` | Signal-style safety-number note kept short; media comment shortened |
+| `components/chat/chat-avatar.tsx` | `eager` prop doc compressed |
+| `components/error-boundary.tsx` | `fallback?` field JSDoc and class-level JSDoc trimmed |
+
+**Files not in `components/ui/` but skipped:** `lib/actions.ts`, `lib/auth.ts`,
+`lib/utils.ts`, `lib/animated-stickers.ts`, `hooks/use-mobile.ts`,
+`components/theme-provider.tsx`, `components/chat/chat-app.tsx`,
+`components/chat/auth-screen.tsx`, `components/chat/sidebar.tsx`,
+`components/chat/mobile-nav.tsx`, `components/chat/settings-panel.tsx`,
+`components/chat/animated-sticker.tsx`, `app/layout.tsx`, `app/page.tsx` —
+had no comments worth cleaning.
+
+**Lint result:**
+
+`cd /home/z/my-project/frontend && bun run lint` → **2 errors, both pre-existing**:
+
+```
+src/components/ui/carousel.tsx:98:5   react-hooks/set-state-in-effect  (shadcn/ui — out of scope)
+src/hooks/use-mobile.ts:14:5           react-hooks/set-state-in-effect  (pre-existing baseline)
+```
+
+No new errors. Verified by grepping for `F1|F2|...|F13|X5|B2`, `/**` JSDoc blocks,
+and `──` ASCII-art dividers in `src/` — all three return zero matches outside
+`components/ui/*`.
+
+**Caveats:**
+- Did not touch `components/ui/*` (shadcn/ui library).
+- Did not change any code — only comments.
+- Kept short section markers (`// types`, `// auth`, etc.) in long files — they
+  help navigation without restating code.
+- Kept JSX section markers like `{/* Header */}` — short, helpful for JSX trees.
+- Kept genuinely useful "why" comments even when short (httponly cookie, React 19
+  sync-during-render, debounced server calls, eviction-on-failure, 25MB backend
+  limit, etc.).
+- `hooks/use-mobile.ts` left entirely alone (pre-existing lint error, no comments).

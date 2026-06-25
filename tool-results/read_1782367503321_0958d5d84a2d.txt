@@ -1,0 +1,899 @@
+    46→                    MaterialPageRoute(
+    47→                        builder: (_) => const ProfileEditScreen()),
+    48→                  );
+    49→                  if (mounted) await auth.refreshMe();
+    50→                },
+    51→              ),
+    52→              ListTile(
+    53→                leading: const Icon(Icons.people_outline),
+    54→                title: const Text('Connections'),
+    55→                subtitle: const Text('Friends, requests, find people'),
+    56→                trailing: const Icon(Icons.chevron_right),
+    57→                onTap: () => Navigator.push(
+    58→                  context,
+    59→                  MaterialPageRoute(
+    60→                      builder: (_) => const ConnectionsScreen()),
+    61→                ),
+    62→              ),
+    63→              ListTile(
+    64→                leading: const Icon(Icons.block_outlined),
+    65→                title: const Text('Blocked Users'),
+    66→                trailing: const Icon(Icons.chevron_right),
+    67→                onTap: () => Navigator.push(
+    68→                  context,
+    69→                  MaterialPageRoute(
+    70→                      builder: (_) => const BlockedUsersScreen()),
+    71→                ),
+    72→              ),
+    73→            ],
+    74→          ),
+    75→          _SettingsSection(
+    76→            title: 'Search',
+    77→            children: [
+    78→              ListTile(
+    79→                leading: const Icon(Icons.search),
+    80→                title: const Text('Search Messages'),
+    81→                subtitle: const Text('Find across all chats'),
+    82→                trailing: const Icon(Icons.chevron_right),
+    83→                onTap: () => Navigator.push(
+    84→                  context,
+    85→                  MaterialPageRoute(
+    86→                      builder: (_) => const CrossChatSearchScreen()),
+    87→                ),
+    88→              ),
+    89→            ],
+    90→          ),
+    91→          _SettingsSection(
+    92→            title: 'Support',
+    93→            children: [
+    94→              ListTile(
+    95→                leading:
+    96→                    const Icon(Icons.report_outlined, color: Colors.orange),
+    97→                title: const Text('Report a Problem'),
+    98→                trailing: const Icon(Icons.chevron_right),
+    99→                onTap: () => Navigator.push(
+   100→                  context,
+   101→                  MaterialPageRoute(builder: (_) => const ReportScreen()),
+   102→                ),
+   103→              ),
+   104→            ],
+   105→          ),
+   106→          _SettingsSection(
+   107→            title: 'Sign out',
+   108→            children: [
+   109→              ListTile(
+   110→                leading: const Icon(Icons.logout, color: Colors.red),
+   111→                title:
+   112→                    const Text('Sign Out', style: TextStyle(color: Colors.red)),
+   113→                onTap: () => _confirmSignOut(context, auth),
+   114→              ),
+   115→              ListTile(
+   116→                leading: const Icon(Icons.delete_forever, color: Colors.red),
+   117→                title: const Text('Delete Account',
+   118→                    style: TextStyle(color: Colors.red)),
+   119→                onTap: () => _confirmDeleteAccount(context, auth),
+   120→              ),
+   121→            ],
+   122→          ),
+   123→          const Padding(
+   124→            padding: EdgeInsets.symmetric(vertical: 24),
+   125→            child: Center(
+   126→              child: Text('Cryptalk v1.0.0',
+   127→                  style: TextStyle(color: Colors.grey)),
+   128→            ),
+   129→          ),
+   130→        ],
+   131→      ),
+   132→    );
+   133→  }
+   134→
+   135→  Future<void> _confirmSignOut(
+   136→      BuildContext context, AuthService auth) async {
+   137→    final confirmed = await showDialog<bool>(
+   138→      context: context,
+   139→      builder: (ctx) => AlertDialog(
+   140→        title: const Text('Sign out?'),
+   141→        content: const Text('You will need to sign back in to use Cryptalk.'),
+   142→        actions: [
+   143→          TextButton(
+   144→            onPressed: () => Navigator.pop(ctx, false),
+   145→            child: const Text('Cancel'),
+   146→          ),
+   147→          FilledButton(
+   148→            onPressed: () => Navigator.pop(ctx, true),
+   149→            child: const Text('Sign out'),
+   150→          ),
+   151→        ],
+   152→      ),
+   153→    );
+   154→    if (confirmed == true) {
+   155→      await auth.logout();
+   156→    }
+   157→  }
+   158→
+   159→  Future<void> _confirmDeleteAccount(
+   160→      BuildContext context, AuthService auth) async {
+   161→    final confirmed = await showDialog<bool>(
+   162→      context: context,
+   163→      builder: (ctx) => AlertDialog(
+   164→        title: const Text('Delete account?'),
+   165→        content: const Text(
+   166→            'This permanently deletes all your data. This cannot be undone.'),
+   167→        actions: [
+   168→          TextButton(
+   169→            onPressed: () => Navigator.pop(ctx, false),
+   170→            child: const Text('Cancel'),
+   171→          ),
+   172→          FilledButton(
+   173→            style: FilledButton.styleFrom(
+   174→              backgroundColor: Colors.red,
+   175→            ),
+   176→            onPressed: () => Navigator.pop(ctx, true),
+   177→            child: const Text('Delete'),
+   178→          ),
+   179→        ],
+   180→      ),
+   181→    );
+   182→    if (confirmed != true) return;
+   183→    try {
+   184→      await context.read<ChatService>().deleteAccount();
+   185→      await auth.logout();
+   186→    } catch (_) {}
+   187→  }
+   188→}
+   189→
+   190→/// Profile card at the top of the settings list — large avatar, name, @username.
+   191→class _ProfileHeader extends StatelessWidget {
+   192→  final AppUser user;
+   193→  const _ProfileHeader({required this.user});
+   194→
+   195→  @override
+   196→  Widget build(BuildContext context) {
+   197→    return Padding(
+   198→      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+   199→      child: Row(
+   200→        children: [
+   201→          AvatarIcon(
+   202→            iconKey: user.avatarEmoji,
+   203→            colorName: user.avatarColor,
+   204→            size: 64,
+   205→          ),
+   206→          const SizedBox(width: 16),
+   207→          Expanded(
+   208→            child: Column(
+   209→              crossAxisAlignment: CrossAxisAlignment.start,
+   210→              children: [
+   211→                Text(
+   212→                  user.name ?? 'Unknown',
+   213→                  style: Theme.of(context)
+   214→                      .textTheme
+   215→                      .titleMedium
+   216→                      ?.copyWith(fontWeight: FontWeight.bold),
+   217→                  maxLines: 1,
+   218→                  overflow: TextOverflow.ellipsis,
+   219→                ),
+   220→                const SizedBox(height: 2),
+   221→                Text(
+   222→                  '@${user.username ?? ''}',
+   223→                  style: TextStyle(color: Colors.grey[400]),
+   224→                  maxLines: 1,
+   225→                  overflow: TextOverflow.ellipsis,
+   226→                ),
+   227→                if ((user.email ?? '').isNotEmpty) ...[
+   228→                  const SizedBox(height: 2),
+   229→                  Text(
+   230→                    user.email!,
+   231→                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
+   232→                    maxLines: 1,
+   233→                    overflow: TextOverflow.ellipsis,
+   234→                  ),
+   235→                ],
+   236→              ],
+   237→            ),
+   238→          ),
+   239→        ],
+   240→      ),
+   241→    );
+   242→  }
+   243→}
+   244→
+   245→/// A labelled group of ListTiles. Material 3 doesn't ship a settings-group
+   246→/// widget, so this is a small helper: title + card-shaped container.
+   247→class _SettingsSection extends StatelessWidget {
+   248→  final String title;
+   249→  final List<Widget> children;
+   250→  const _SettingsSection({required this.title, required this.children});
+   251→
+   252→  @override
+   253→  Widget build(BuildContext context) {
+   254→    return Column(
+   255→      crossAxisAlignment: CrossAxisAlignment.start,
+   256→      children: [
+   257→        Padding(
+   258→          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+   259→          child: Text(
+   260→            title.toUpperCase(),
+   261→            style: TextStyle(
+   262→              color: Colors.grey[500],
+   263→              fontSize: 12,
+   264→              fontWeight: FontWeight.w600,
+   265→              letterSpacing: 0.5,
+   266→            ),
+   267→          ),
+   268→        ),
+   269→        Container(
+   270→          margin: const EdgeInsets.symmetric(horizontal: 12),
+   271→          decoration: BoxDecoration(
+   272→            color: Theme.of(context).colorScheme.surfaceContainerLow,
+   273→            borderRadius: BorderRadius.circular(12),
+   274→          ),
+   275→          child: Column(
+   276→            children: [
+   277→              for (int i = 0; i < children.length; i++) ...[
+   278→                children[i],
+   279→                if (i < children.length - 1)
+   280→                  const Divider(height: 1, indent: 16, endIndent: 0),
+   281→              ],
+   282→            ],
+   283→          ),
+   284→        ),
+   285→      ],
+   286→    );
+   287→  }
+   288→}
+   289→
+   290→// ─── Edit Profile ────────────────────────────────────────────────────────
+   291→
+   292→class ProfileEditScreen extends StatefulWidget {
+   293→  const ProfileEditScreen({super.key});
+   294→
+   295→  @override
+   296→  State<ProfileEditScreen> createState() => _ProfileEditScreenState();
+   297→}
+   298→
+   299→class _ProfileEditScreenState extends State<ProfileEditScreen> {
+   300→  final _nameController = TextEditingController();
+   301→  final _bioController = TextEditingController();
+   302→  final _formKey = GlobalKey<FormState>();
+   303→  bool _saving = false;
+   304→  String _avatarEmoji = 'fox';
+   305→  String _avatarColor = 'emerald';
+   306→
+   307→  static const List<String> _avatarEmojiKeys = [
+   308→    'fox', 'cat', 'dog', 'panda', 'lion', 'unicorn',
+   309→    'rabbit', 'owl', 'bear', 'frog', 'turtle', 'butterfly',
+   310→    'dolphin', 'dragon', 'hedgehog', 'parrot',
+   311→  ];
+   312→
+   313→  static const List<String> _avatarColorKeys = [
+   314→    'emerald', 'violet', 'rose', 'amber',
+   315→    'cyan', 'lime', 'purple', 'teal',
+   316→  ];
+   317→
+   318→  @override
+   319→  void initState() {
+   320→    super.initState();
+   321→    final user = context.read<AuthService>().currentUser;
+   322→    _nameController.text = user?.name ?? '';
+   323→    _bioController.text = user?.bio ?? '';
+   324→    _avatarEmoji =
+   325→        (user?.avatarEmoji.isNotEmpty ?? false) ? user!.avatarEmoji : 'fox';
+   326→    _avatarColor = (user?.avatarColor.isNotEmpty ?? false)
+   327→        ? user!.avatarColor
+   328→        : 'emerald';
+   329→  }
+   330→
+   331→  @override
+   332→  void dispose() {
+   333→    _nameController.dispose();
+   334→    _bioController.dispose();
+   335→    super.dispose();
+   336→  }
+   337→
+   338→  Future<void> _save() async {
+   339→    final form = _formKey.currentState;
+   340→    if (form == null || !form.validate()) return;
+   341→    if (mounted) setState(() => _saving = true);
+   342→    try {
+   343→      await context.read<ChatService>().updateProfile(
+   344→            name: _nameController.text.trim(),
+   345→            bio: _bioController.text.trim(),
+   346→            avatarEmoji: _avatarEmoji,
+   347→            avatarColor: _avatarColor,
+   348→          );
+   349→      // Refresh the cached user so the settings list and chat list show the
+   350→      // new avatar/name immediately.
+   351→      await context.read<AuthService>().refreshMe();
+   352→      if (mounted) Navigator.pop(context);
+   353→    } catch (e) {
+   354→      if (mounted) {
+   355→        ScaffoldMessenger.of(context).showSnackBar(
+   356→          SnackBar(
+   357→            content:
+   358→                Text('Failed: ${e.toString().replaceFirst('Exception: ', '')}'),
+   359→            behavior: SnackBarBehavior.floating,
+   360→          ),
+   361→        );
+   362→      }
+   363→    } finally {
+   364→      if (mounted) setState(() => _saving = false);
+   365→    }
+   366→  }
+   367→
+   368→  void _openAvatarPicker() {
+   369→    showModalBottomSheet<void>(
+   370→      context: context,
+   371→      isScrollControlled: true,
+   372→      showDragHandle: true,
+   373→      builder: (sheetCtx) => StatefulBuilder(
+   374→        builder: (sheetCtx, setSheetState) {
+   375→          return SafeArea(
+   376→            child: Padding(
+   377→              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+   378→              child: Column(
+   379→                mainAxisSize: MainAxisSize.min,
+   380→                crossAxisAlignment: CrossAxisAlignment.start,
+   381→                children: [
+   382→                  Text(
+   383→                    'Pick your avatar',
+   384→                    style: Theme.of(context)
+   385→                        .textTheme
+   386→                        .titleLarge
+   387→                        ?.copyWith(fontWeight: FontWeight.bold),
+   388→                  ),
+   389→                  const SizedBox(height: 12),
+   390→                  Center(
+   391→                    child: AvatarIcon(
+   392→                      iconKey: _avatarEmoji,
+   393→                      colorName: _avatarColor,
+   394→                      size: 88,
+   395→                    ),
+   396→                  ),
+   397→                  const SizedBox(height: 16),
+   398→                  Text('Emoji',
+   399→                      style: Theme.of(context)
+   400→                          .textTheme
+   401→                          .titleSmall
+   402→                          ?.copyWith(fontWeight: FontWeight.w600)),
+   403→                  const SizedBox(height: 8),
+   404→                  GridView.builder(
+   405→                    shrinkWrap: true,
+   406→                    physics: const NeverScrollableScrollPhysics(),
+   407→                    gridDelegate:
+   408→                        const SliverGridDelegateWithFixedCrossAxisCount(
+   409→                      crossAxisCount: 8,
+   410→                      childAspectRatio: 1,
+   411→                    ),
+   412→                    itemCount: _avatarEmojiKeys.length,
+   413→                    itemBuilder: (ctx, i) {
+   414→                      final key = _avatarEmojiKeys[i];
+   415→                      final selected = key == _avatarEmoji;
+   416→                      return InkWell(
+   417→                        borderRadius: BorderRadius.circular(8),
+   418→                        onTap: () =>
+   419→                            setSheetState(() => _avatarEmoji = key),
+   420→                        child: Container(
+   421→                          decoration: BoxDecoration(
+   422→                            color: selected
+   423→                                ? AvatarIcon.colorFor(_avatarColor)
+   424→                                    .withOpacity(0.18)
+   425→                                : Colors.transparent,
+   426→                            borderRadius: BorderRadius.circular(8),
+   427→                            border: selected
+   428→                                ? Border.all(
+   429→                                    color: AvatarIcon.colorFor(_avatarColor),
+   430→                                    width: 2,
+   431→                                  )
+   432→                                : null,
+   433→                          ),
+   434→                          alignment: Alignment.center,
+   435→                          child: Text(
+   436→                            AvatarIcon.resolveEmoji(key),
+   437→                            style: const TextStyle(fontSize: 22),
+   438→                          ),
+   439→                        ),
+   440→                      );
+   441→                    },
+   442→                  ),
+   443→                  const SizedBox(height: 16),
+   444→                  Text('Color',
+   445→                      style: Theme.of(context)
+   446→                          .textTheme
+   447→                          .titleSmall
+   448→                          ?.copyWith(fontWeight: FontWeight.w600)),
+   449→                  const SizedBox(height: 8),
+   450→                  Wrap(
+   451→                    spacing: 12,
+   452→                    runSpacing: 12,
+   453→                    children: _avatarColorKeys.map((key) {
+   454→                      final selected = key == _avatarColor;
+   455→                      return GestureDetector(
+   456→                        onTap: () =>
+   457→                            setSheetState(() => _avatarColor = key),
+   458→                        child: Container(
+   459→                          width: 40,
+   460→                          height: 40,
+   461→                          decoration: BoxDecoration(
+   462→                            color: AvatarIcon.colorFor(key),
+   463→                            shape: BoxShape.circle,
+   464→                            border: selected
+   465→                                ? Border.all(
+   466→                                    color: Theme.of(context)
+   467→                                        .colorScheme
+   468→                                        .onSurface,
+   469→                                    width: 3,
+   470→                                  )
+   471→                                : null,
+   472→                          ),
+   473→                        ),
+   474→                      );
+   475→                    }).toList(),
+   476→                  ),
+   477→                  const SizedBox(height: 16),
+   478→                  FilledButton(
+   479→                    onPressed: () => Navigator.pop(sheetCtx),
+   480→                    style: FilledButton.styleFrom(
+   481→                      minimumSize: const Size.fromHeight(48),
+   482→                    ),
+   483→                    child: const Text('Done'),
+   484→                  ),
+   485→                ],
+   486→              ),
+   487→            ),
+   488→          );
+   489→        },
+   490→      ),
+   491→    );
+   492→  }
+   493→
+   494→  @override
+   495→  Widget build(BuildContext context) {
+   496→    return Scaffold(
+   497→      appBar: AppBar(title: const Text('Edit Profile')),
+   498→      body: SafeArea(
+   499→        child: SingleChildScrollView(
+   500→          padding: const EdgeInsets.all(16),
+   501→          child: Form(
+   502→            key: _formKey,
+   503→            child: Column(
+   504→              crossAxisAlignment: CrossAxisAlignment.stretch,
+   505→              children: [
+   506→                Center(
+   507→                  child: GestureDetector(
+   508→                    onTap: _openAvatarPicker,
+   509→                    child: Container(
+   510→                      decoration: BoxDecoration(
+   511→                        shape: BoxShape.circle,
+   512→                        border: Border.all(
+   513→                          color: Theme.of(context)
+   514→                              .colorScheme
+   515→                              .outlineVariant
+   516→                              .withOpacity(0.5),
+   517→                          width: 2,
+   518→                        ),
+   519→                      ),
+   520→                      padding: const EdgeInsets.all(4),
+   521→                      child: AvatarIcon(
+   522→                        iconKey: _avatarEmoji,
+   523→                        colorName: _avatarColor,
+   524→                        size: 96,
+   525→                      ),
+   526→                    ),
+   527→                  ),
+   528→                ),
+   529→                Center(
+   530→                  child: TextButton.icon(
+   531→                    onPressed: _openAvatarPicker,
+   532→                    icon: const Icon(Icons.edit_outlined, size: 16),
+   533→                    label: const Text('Change avatar'),
+   534→                  ),
+   535→                ),
+   536→                const SizedBox(height: 8),
+   537→                TextFormField(
+   538→                  controller: _nameController,
+   539→                  decoration: const InputDecoration(
+   540→                    labelText: 'Display Name',
+   541→                    border: OutlineInputBorder(),
+   542→                    prefixIcon: Icon(Icons.person_outline),
+   543→                  ),
+   544→                  textCapitalization: TextCapitalization.words,
+   545→                  validator: (v) {
+   546→                    final t = (v ?? '').trim();
+   547→                    if (t.isEmpty) return 'Display name is required';
+   548→                    if (t.length > 50) return 'At most 50 characters';
+   549→                    return null;
+   550→                  },
+   551→                ),
+   552→                const SizedBox(height: 16),
+   553→                TextFormField(
+   554→                  controller: _bioController,
+   555→                  decoration: const InputDecoration(
+   556→                    labelText: 'Bio',
+   557→                    border: OutlineInputBorder(),
+   558→                    prefixIcon: Icon(Icons.notes),
+   559→                    helperText: 'A short description shown on your profile.',
+   560→                  ),
+   561→                  maxLines: 3,
+   562→                  maxLength: 160,
+   563→                ),
+   564→                const SizedBox(height: 24),
+   565→                FilledButton(
+   566→                  onPressed: _saving ? null : _save,
+   567→                  style: FilledButton.styleFrom(
+   568→                    minimumSize: const Size.fromHeight(52),
+   569→                  ),
+   570→                  child: _saving
+   571→                      ? const SizedBox(
+   572→                          height: 22,
+   573→                          width: 22,
+   574→                          child: CircularProgressIndicator(strokeWidth: 2),
+   575→                        )
+   576→                      : const Text('Save'),
+   577→                ),
+   578→              ],
+   579→            ),
+   580→          ),
+   581→        ),
+   582→      ),
+   583→    );
+   584→  }
+   585→}
+   586→
+   587→// ─── Blocked Users Screen ────────────────────────────────────────────────
+   588→
+   589→class BlockedUsersScreen extends StatefulWidget {
+   590→  const BlockedUsersScreen({super.key});
+   591→
+   592→  @override
+   593→  State<BlockedUsersScreen> createState() => _BlockedUsersScreenState();
+   594→}
+   595→
+   596→class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
+   597→  List<AppUser> _blocked = [];
+   598→  bool _loading = true;
+   599→  String? _error;
+   600→
+   601→  @override
+   602→  void initState() {
+   603→    super.initState();
+   604→    _load();
+   605→  }
+   606→
+   607→  Future<void> _load() async {
+   608→    try {
+   609→      final blocked = await context.read<ChatService>().getBlockedUsers();
+   610→      if (mounted) {
+   611→        setState(() {
+   612→          _blocked = blocked;
+   613→          _loading = false;
+   614→        });
+   615→      }
+   616→    } catch (e) {
+   617→      if (mounted) {
+   618→        setState(() {
+   619→          _error = e.toString().replaceFirst('Exception: ', '');
+   620→          _loading = false;
+   621→        });
+   622→      }
+   623→    }
+   624→  }
+   625→
+   626→  Future<void> _unblock(AppUser user) async {
+   627→    try {
+   628→      await context.read<ChatService>().unblockUser(user.id);
+   629→      if (mounted) {
+   630→        setState(() => _blocked.removeWhere((u) => u.id == user.id));
+   631→        ScaffoldMessenger.of(context).showSnackBar(
+   632→          SnackBar(
+   633→            content: Text('Unblocked @${user.username ?? user.id}'),
+   634→            behavior: SnackBarBehavior.floating,
+   635→          ),
+   636→        );
+   637→      }
+   638→    } catch (_) {}
+   639→  }
+   640→
+   641→  @override
+   642→  Widget build(BuildContext context) {
+   643→    Widget body;
+   644→    if (_loading) {
+   645→      body = const Center(child: CircularProgressIndicator());
+   646→    } else if (_error != null) {
+   647→      body = Center(
+   648→        child: Padding(
+   649→          padding: const EdgeInsets.all(32),
+   650→          child: Column(
+   651→            mainAxisSize: MainAxisSize.min,
+   652→            children: [
+   653→              Icon(Icons.cloud_off, size: 72, color: Colors.red[300]),
+   654→              const SizedBox(height: 16),
+   655→              Text('Could not load blocked users'),
+   656→              const SizedBox(height: 16),
+   657→              FilledButton.tonalIcon(
+   658→                onPressed: _load,
+   659→                icon: const Icon(Icons.refresh),
+   660→                label: const Text('Retry'),
+   661→              ),
+   662→            ],
+   663→          ),
+   664→        ),
+   665→      );
+   666→    } else if (_blocked.isEmpty) {
+   667→      body = Center(
+   668→        child: Padding(
+   669→          padding: const EdgeInsets.all(32),
+   670→          child: Column(
+   671→            mainAxisSize: MainAxisSize.min,
+   672→            children: [
+   673→              Icon(Icons.check_circle_outline,
+   674→                  size: 72, color: Colors.grey[500]),
+   675→              const SizedBox(height: 16),
+   676→              Text(
+   677→                'No blocked users',
+   678→                style: TextStyle(color: Colors.grey[400]),
+   679→              ),
+   680→            ],
+   681→          ),
+   682→        ),
+   683→      );
+   684→    } else {
+   685→      body = ListView.separated(
+   686→        itemCount: _blocked.length,
+   687→        separatorBuilder: (_, __) => const Divider(height: 1, indent: 76),
+   688→        itemBuilder: (context, index) {
+   689→          final u = _blocked[index];
+   690→          return ListTile(
+   691→            contentPadding:
+   692→                const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+   693→            leading: AvatarIcon(
+   694→              iconKey: u.avatarEmoji,
+   695→              colorName: u.avatarColor,
+   696→              size: 48,
+   697→            ),
+   698→            title: Text(
+   699→              u.name ?? 'Unknown',
+   700→              style: const TextStyle(fontWeight: FontWeight.w600),
+   701→              maxLines: 1,
+   702→              overflow: TextOverflow.ellipsis,
+   703→            ),
+   704→            subtitle: Text(
+   705→              '@${u.username ?? ''}',
+   706→              maxLines: 1,
+   707→              overflow: TextOverflow.ellipsis,
+   708→            ),
+   709→            trailing: OutlinedButton(
+   710→              onPressed: () => _unblock(u),
+   711→              child: const Text('Unblock'),
+   712→            ),
+   713→          );
+   714→        },
+   715→      );
+   716→    }
+   717→    return Scaffold(
+   718→      appBar: AppBar(title: const Text('Blocked Users')),
+   719→      body: body,
+   720→    );
+   721→  }
+   722→}
+   723→
+   724→// ─── Cross-Chat Search Screen ────────────────────────────────────────────
+   725→
+   726→class CrossChatSearchScreen extends StatefulWidget {
+   727→  const CrossChatSearchScreen({super.key});
+   728→
+   729→  @override
+   730→  State<CrossChatSearchScreen> createState() => _CrossChatSearchScreenState();
+   731→}
+   732→
+   733→class _CrossChatSearchScreenState extends State<CrossChatSearchScreen> {
+   734→  final _controller = TextEditingController();
+   735→  List<Map<String, dynamic>> _results = [];
+   736→  bool _searching = false;
+   737→  bool _searched = false;
+   738→
+   739→  @override
+   740→  void dispose() {
+   741→    _controller.dispose();
+   742→    super.dispose();
+   743→  }
+   744→
+   745→  Future<void> _search(String q) async {
+   746→    final query = q.trim();
+   747→    if (query.isEmpty) {
+   748→      if (mounted) {
+   749→        setState(() {
+   750→          _results = [];
+   751→          _searched = false;
+   752→        });
+   753→      }
+   754→      return;
+   755→    }
+   756→    if (mounted) setState(() => _searching = true);
+   757→    try {
+   758→      final results = await context.read<ChatService>().crossChatSearch(query);
+   759→      if (mounted) {
+   760→        setState(() {
+   761→          _results = results;
+   762→          _searched = true;
+   763→        });
+   764→      }
+   765→    } catch (_) {
+   766→      if (mounted) setState(() => _results = []);
+   767→    } finally {
+   768→      if (mounted) setState(() => _searching = false);
+   769→    }
+   770→  }
+   771→
+   772→  @override
+   773→  Widget build(BuildContext context) {
+   774→    return Scaffold(
+   775→      appBar: AppBar(title: const Text('Search Messages')),
+   776→      body: Column(
+   777→        children: [
+   778→          Padding(
+   779→            padding: const EdgeInsets.all(12),
+   780→            child: TextField(
+   781→              controller: _controller,
+   782→              onChanged: _search,
+   783→              textInputAction: TextInputAction.search,
+   784→              decoration: InputDecoration(
+   785→                hintText: 'Search across all chats...',
+   786→                prefixIcon: const Icon(Icons.search),
+   787→                suffixIcon: _controller.text.isEmpty
+   788→                    ? null
+   789→                    : IconButton(
+   790→                        tooltip: 'Clear',
+   791→                        icon: const Icon(Icons.clear),
+   792→                        onPressed: () {
+   793→                          _controller.clear();
+   794→                          _search('');
+   795→                        },
+   796→                      ),
+   797→                border: OutlineInputBorder(
+   798→                  borderRadius: BorderRadius.circular(12),
+   799→                ),
+   800→                filled: true,
+   801→              ),
+   802→            ),
+   803→          ),
+   804→          Expanded(
+   805→            child: _searching
+   806→                ? const Center(child: CircularProgressIndicator())
+   807→                : _results.isEmpty
+   808→                    ? Center(
+   809→                        child: Padding(
+   810→                          padding: const EdgeInsets.all(32),
+   811→                          child: Text(
+   812→                            _searched ? 'No results' : 'Type to search',
+   813→                            style: TextStyle(color: Colors.grey[400]),
+   814→                          ),
+   815→                        ),
+   816→                      )
+   817→                    : ListView.separated(
+   818→                        itemCount: _results.length,
+   819→                        separatorBuilder: (_, __) =>
+   820→                            const Divider(height: 1, indent: 16),
+   821→                        itemBuilder: (context, index) {
+   822→                          final r = _results[index];
+   823→                          return ListTile(
+   824→                            title: Text(
+   825→                              (r['chatTitle'] ?? '(unknown)').toString(),
+   826→                              style:
+   827→                                  const TextStyle(fontWeight: FontWeight.w600),
+   828→                            ),
+   829→                            subtitle: Text(
+   830→                              (r['content'] ?? '').toString(),
+   831→                              maxLines: 2,
+   832→                              overflow: TextOverflow.ellipsis,
+   833→                            ),
+   834→                          );
+   835→                        },
+   836→                      ),
+   837→          ),
+   838→        ],
+   839→      ),
+   840→    );
+   841→  }
+   842→}
+   843→
+   844→// ─── Report a Problem Screen ─────────────────────────────────────────────
+   845→
+   846→class ReportScreen extends StatefulWidget {
+   847→  const ReportScreen({super.key});
+   848→
+   849→  @override
+   850→  State<ReportScreen> createState() => _ReportScreenState();
+   851→}
+   852→
+   853→class _ReportScreenState extends State<ReportScreen> {
+   854→  final _controller = TextEditingController();
+   855→  bool _sending = false;
+   856→
+   857→  @override
+   858→  void dispose() {
+   859→    _controller.dispose();
+   860→    super.dispose();
+   861→  }
+   862→
+   863→  Future<void> _submit() async {
+   864→    final text = _controller.text.trim();
+   865→    if (text.isEmpty) return;
+   866→    if (mounted) setState(() => _sending = true);
+   867→    try {
+   868→      await context.read<ChatService>().api.post('/api/reports', {
+   869→        'reason': text,
+   870→      });
+   871→      if (mounted) {
+   872→        ScaffoldMessenger.of(context).showSnackBar(
+   873→          const SnackBar(
+   874→            content: Text('Report submitted. Thank you!'),
+   875→            behavior: SnackBarBehavior.floating,
+   876→          ),
+   877→        );
+   878→        Navigator.pop(context);
+   879→      }
+   880→    } catch (e) {
+   881→      if (mounted) {
+   882→        ScaffoldMessenger.of(context).showSnackBar(
+   883→          SnackBar(
+   884→            content: Text(
+   885→                'Failed: ${e.toString().replaceFirst('Exception: ', '')}'),
+   886→            behavior: SnackBarBehavior.floating,
+   887→          ),
+   888→        );
+   889→      }
+   890→    } finally {
+   891→      if (mounted) setState(() => _sending = false);
+   892→    }
+   893→  }
+   894→
+   895→  @override
+   896→  Widget build(BuildContext context) {
+   897→    return Scaffold(
+   898→      appBar: AppBar(title: const Text('Report a Problem')),
+   899→      body: SafeArea(
+   900→        child: Padding(
+   901→          padding: const EdgeInsets.all(16),
+   902→          child: Column(
+   903→            crossAxisAlignment: CrossAxisAlignment.stretch,
+   904→            children: [
+   905→              Text(
+   906→                'Describe the issue you encountered. The more detail, the better.',
+   907→                style: Theme.of(context)
+   908→                    .textTheme
+   909→                    .bodyMedium
+   910→                    ?.copyWith(color: Colors.grey[400]),
+   911→              ),
+   912→              const SizedBox(height: 16),
+   913→              TextField(
+   914→                controller: _controller,
+   915→                decoration: const InputDecoration(
+   916→                  border: OutlineInputBorder(),
+   917→                  hintText: 'What happened?',
+   918→                  alignLabelWithHint: true,
+   919→                ),
+   920→                maxLines: 6,
+   921→                maxLength: 1000,
+   922→              ),
+   923→              const SizedBox(height: 16),
+   924→              FilledButton(
+   925→                onPressed: _sending ? null : _submit,
+   926→                style: FilledButton.styleFrom(
+   927→                  minimumSize: const Size.fromHeight(52),
+   928→                ),
+   929→                child: _sending
+   930→                    ? const SizedBox(
+   931→                        height: 22,
+   932→                        width: 22,
+   933→                        child: CircularProgressIndicator(strokeWidth: 2),
+   934→                      )
+   935→                    : const Text('Submit'),
+   936→              ),
+   937→            ],
+   938→          ),
+   939→        ),
+   940→      ),
+   941→    );
+   942→  }
+   943→}
+   944→
