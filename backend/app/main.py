@@ -75,6 +75,10 @@ async def lifespan(app: FastAPI):
     sync_engine.dispose()
     logger.info("Database tables + indexes ensured")
     yield
+    # B9: close the shared Supabase HTTP client so we don't leak connections
+    # on shutdown (was per-call before — now pooled).
+    from app.core.storage import StorageService
+    await StorageService.close()
     logger.info("Shutting down...")
 
 
@@ -113,11 +117,16 @@ app.add_middleware(
 @app.middleware("http")
 async def limit_request_body(request: Request, call_next):
     cl = request.headers.get("content-length")
-    if cl and int(cl) > 40 * 1024 * 1024:
-        # Uploads enforce their own per-file cap inside the handler (25 MB),
-        # so let them through the global guard.
-        if not request.url.path.startswith("/api/uploads"):
-            return JSONResponse(status_code=413, content={"error": "too_large", "message": "Request body exceeds 40MB limit"})
+    if cl:
+        try:
+            cl_int = int(cl)
+        except (ValueError, TypeError):
+            return JSONResponse(status_code=400, content={"error": "bad_content_length"})
+        if cl_int > 40 * 1024 * 1024:
+            # Uploads enforce their own per-file cap inside the handler (25 MB),
+            # so let them through the global guard.
+            if not request.url.path.startswith("/api/uploads"):
+                return JSONResponse(status_code=413, content={"error": "too_large", "message": "Request body exceeds 40MB limit"})
     return await call_next(request)
 
 app.add_exception_handler(DomainError, domain_error_handler)

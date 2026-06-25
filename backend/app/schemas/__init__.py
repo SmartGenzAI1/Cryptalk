@@ -24,20 +24,8 @@ class CamelModel(BaseModel):
 
 
 # ─── Auth ──────────────────────────────────────────────────────────────
-
-
-class LoginRequest(CamelModel):
-    username: str = Field(..., min_length=1)
-    password: str = Field(..., min_length=1)
-
-
-class RegisterRequest(CamelModel):
-    username: str = Field(..., min_length=3)
-    name: str = Field(..., min_length=1)
-    password: str = Field(..., min_length=4)
-
-
-# ─── User ──────────────────────────────────────────────────────────────
+# (The legacy username-based LoginRequest/RegisterRequest schemas were removed —
+# the email-based flow in api/v1/auth.py defines its own request models inline.)
 
 
 class UserUpdate(CamelModel):

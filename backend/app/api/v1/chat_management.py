@@ -232,13 +232,17 @@ async def cross_chat_search(q: str = Query(..., min_length=1), request: Request 
 
     from app.models import Message
     from sqlalchemy import or_
+    # B14: escape LIKE wildcards in the user query so a search for "%" or "_"
+    # doesn't match every row.  We escape with backslash and tell ilike to
+    # treat backslash as the escape char.
+    escaped_q = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     results = await db.execute(
         select(Message, Chat)
         .join(Chat, Message.chat_id == Chat.id)
         .where(
             Message.chat_id.in_(chat_ids),
             Message.deleted_at.is_(None),
-            Message.content.ilike(f"%{q}%"),
+            Message.content.ilike(f"%{escaped_q}%", escape="\\"),
         )
         .order_by(Message.created_at.desc())
         .limit(30)

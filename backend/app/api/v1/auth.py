@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.exceptions import AuthError, ConflictError, ValidationError
 from app.core.security import (
@@ -46,12 +47,18 @@ class LegacyLoginRequest(BaseModel):
     username: str
     password: str
 
+
 def _set_cookie(response: Response, user_id: str) -> None:
     token = create_session_token(user_id)
+    # B3: set `secure` in production (HTTPS) so the cookie can't be intercepted
+    # over plain HTTP.  In dev (HTTP localhost) we leave it off so login works.
+    # `httponly` blocks JS access (XSS theft); `samesite=lax` blocks CSRF on
+    # top-level navigations from other origins.
     response.set_cookie(
         key="tc_session",
         value=token,
         httponly=True,
+        secure=settings.is_postgres,  # True in prod (Postgres/Render), False in dev (SQLite)
         samesite="lax",
         max_age=2592000,
         path="/",
@@ -149,8 +156,12 @@ async def login_with_email(req: EmailLoginRequest, response: Response, db: Async
     _set_cookie(response, user.id)
     return {"user": serialize_user(user)}
 
-@router.post("/login-legacy")
+@router.post("/login-legacy", include_in_schema=False)
 async def login_legacy(req: LegacyLoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
+    """Legacy username/password login — kept only for the seeded demo accounts
+    (alex, sam, priya, marco) that have no email.  Hidden from OpenAPI docs so
+    it doesn't show up as an attack surface; email-based login is the primary path.
+    """
     result = await db.execute(select(User).where(User.username == req.username.lower()))
     user = result.scalar_one_or_none()
 

@@ -57,13 +57,12 @@ async def list_connections(request: Request, db: AsyncSession = Depends(get_db))
     for r in received.scalars().all():
         connected_ids.add(r.from_user_id)
 
-    users = []
-    for cid in connected_ids:
-        result = await db.execute(select(User).where(User.id == cid))
-        u = result.scalar_one_or_none()
-        if u:
-            users.append(serialize_user(u))
-    return {"connections": users}
+    # B8: batch-fetch all connected users in ONE query (was N queries).
+    if not connected_ids:
+        return {"connections": []}
+    users_result = await db.execute(select(User).where(User.id.in_(connected_ids)))
+    users_by_id = {u.id: u for u in users_result.scalars().all()}
+    return {"connections": [serialize_user(users_by_id[cid]) for cid in connected_ids if cid in users_by_id]}
 
 
 @router.get("/requests")
@@ -75,13 +74,20 @@ async def list_pending_requests(request: Request, db: AsyncSession = Depends(get
             ConnectionRequest.status == "pending",
         )
     )
-    requests = []
-    for r in result.scalars().all():
-        user_result = await db.execute(select(User).where(User.id == r.from_user_id))
-        u = user_result.scalar_one_or_none()
-        if u:
-            requests.append({"id": r.id, "from": serialize_user(u), "createdAt": r.created_at})
-    return {"requests": requests}
+    rows = result.scalars().all()
+    # B8: batch-fetch all requesting users in ONE query (was N queries).
+    if not rows:
+        return {"requests": []}
+    from_ids = [r.from_user_id for r in rows]
+    users_result = await db.execute(select(User).where(User.id.in_(from_ids)))
+    users_by_id = {u.id: u for u in users_result.scalars().all()}
+    return {
+        "requests": [
+            {"id": r.id, "from": serialize_user(users_by_id[r.from_user_id]), "createdAt": r.created_at}
+            for r in rows
+            if r.from_user_id in users_by_id
+        ]
+    }
 
 
 @router.post("/connect")
@@ -202,13 +208,14 @@ async def unblock_user(req: BlockRequest, request: Request, db: AsyncSession = D
 async def list_blocked(request: Request, db: AsyncSession = Depends(get_db)):
     uid = get_current_user_id(request)
     result = await db.execute(select(UserBlock).where(UserBlock.blocker_id == uid))
-    blocked_users = []
-    for b in result.scalars().all():
-        u_result = await db.execute(select(User).where(User.id == b.blocked_id))
-        u = u_result.scalar_one_or_none()
-        if u:
-            blocked_users.append(serialize_user(u))
-    return {"blocked": blocked_users}
+    blocks = result.scalars().all()
+    # B8: batch-fetch all blocked users in ONE query (was N queries).
+    if not blocks:
+        return {"blocked": []}
+    blocked_ids = [b.blocked_id for b in blocks]
+    users_result = await db.execute(select(User).where(User.id.in_(blocked_ids)))
+    users_by_id = {u.id: u for u in users_result.scalars().all()}
+    return {"blocked": [serialize_user(users_by_id[bid]) for bid in blocked_ids if bid in users_by_id]}
 
 
 @router.get("/is-blocked/{user_id}")

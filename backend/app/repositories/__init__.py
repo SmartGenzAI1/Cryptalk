@@ -236,18 +236,20 @@ class MessageRepository:
     # used to issue ~400 queries (200 messages × update+refetch); these bring
     # it down to ~3 + one final batch fetch.
 
-    async def list_delivery_state(self, chat_id: str, limit: int = 200) -> List[Message]:
+    async def list_delivery_state(self, chat_id: str, limit: int = 200, offset: int = 0) -> List[Message]:
         """Fetch only the columns needed to compute delivery status.
 
         No eager loading — callers (``mark_delivered``) only read scalar
         fields: ``id``, ``sender_id``, ``delivered_to``, ``type``,
-        ``content``, ``attachment_path``.
+        ``content``, ``attachment_path``.  Supports ``offset`` so the caller
+        can paginate through very long undelivered backlogs (B13).
         """
         stmt = (
             select(Message)
             .where(Message.chat_id == chat_id, Message.deleted_at.is_(None))
             .order_by(Message.created_at.desc())
             .limit(limit)
+            .offset(offset)
             .execution_options(populate_existing=True)
         )
         result = await self.db.execute(stmt)

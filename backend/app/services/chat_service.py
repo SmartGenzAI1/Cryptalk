@@ -152,7 +152,3 @@ class ChatService:
             "muted": bool(member.muted),
             "pinnedMessageId": member.pinned_message_id,
         }
-
-    async def _last_message(self, chat_id: str):
-        msgs = await self.messages.list_for_chat(chat_id, limit=1)
-        return msgs[0] if msgs else None

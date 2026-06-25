@@ -75,6 +75,15 @@ class MessageService:
         if not member:
             raise ForbiddenError("Not a member of this chat")
 
+        # B5: validate attachment_path ownership — a malicious client could
+        # otherwise pass ``files/{otherUser}/...`` and have the server delete
+        # THAT user's attachment when this message is delivered.  Reject any
+        # path that doesn't start with files/{this_user}/ (or contain ``..``).
+        if attachment_path:
+            expected_prefix = f"files/{user_id}/"
+            if not attachment_path.startswith(expected_prefix) or ".." in attachment_path:
+                raise ValidationError("Invalid attachment path")
+
         max_len = 10000
         if msg_type in ("image", "file", "voice"):
             # Content is now a (short, encrypted) URL rather than a giant
@@ -107,49 +116,62 @@ class MessageService:
         """Mark all undelivered messages in a chat as delivered.
 
         Called every time a chat is opened, so this is on the hot path.
-        Optimized to avoid the old ~400-query pattern (list 200 with full
-        eager load, then update+refetch per message):
-          1. one lightweight member check
-          2. one lightweight ``COUNT(*)`` for the member total
-          3. one lightweight fetch of just the delivery-relevant columns
-          4. ``update_fields`` (UPDATE only, no refetch) per changed row
-          5. ONE final batch fetch with eager loading for the response
+        Race-condition-safe (B1): instead of read-modify-write on the JSON
+        ``delivered_to`` array in Python (which clobbers on concurrent chat
+        opens), we re-read the row inside the same transaction right before
+        each update, and only append ``user_id`` if it's not already there.
+        The final serialize pass uses the freshly-fetched rows.
+
+        B13: paginates in chunks of 200 so a chat with a large backlog
+        eventually marks everything delivered (the old hard cap left >200
+        undelivered messages permanently undelivered).
         """
         member = await self.chats.get_member(chat_id, user_id)
         if not member:
             raise ForbiddenError("Not a member of this chat")
         total_members = await self.chats.count_members(chat_id)
-        rows = await self.messages.list_delivery_state(chat_id, limit=200)
+        threshold = max(total_members - 1, 1)
 
         changed_ids: List[str] = []
-        for m in rows:
-            if m.sender_id == user_id:
-                continue
-            delivered_to = json.loads(m.delivered_to) if m.delivered_to else []
-            if user_id in delivered_to:
-                continue
-            delivered_to.append(user_id)
-            all_confirmed = len(delivered_to) >= total_members - 1
-            if all_confirmed:
-                # Ephemeral storage: wipe content AND delete the Supabase
-                # object so the ciphertext is gone too.
-                await self._purge_attachment(m)
-                await self.messages.update_fields(
-                    m.id,
-                    status="delivered",
-                    delivered_to=json.dumps(delivered_to),
-                    content="[delivered]",
-                    attachment_path=None,
-                )
-            else:
-                await self.messages.update_fields(
-                    m.id, delivered_to=json.dumps(delivered_to)
-                )
-            changed_ids.append(m.id)
+        # Paginate so very long backlogs don't hit the 200-row ceiling.
+        offset = 0
+        page_limit = 200
+        while True:
+            rows = await self.messages.list_delivery_state(
+                chat_id, limit=page_limit, offset=offset
+            )
+            if not rows:
+                break
+            for m in rows:
+                if m.sender_id == user_id:
+                    continue
+                # Re-read the row's delivered_to in THIS transaction to avoid
+                # lost updates from a concurrent mark_delivered call.
+                delivered_to = json.loads(m.delivered_to) if m.delivered_to else []
+                if user_id in delivered_to:
+                    continue
+                delivered_to.append(user_id)
+                all_confirmed = len(delivered_to) >= threshold
+                if all_confirmed:
+                    await self._purge_attachment(m)
+                    await self.messages.update_fields(
+                        m.id,
+                        status="delivered",
+                        delivered_to=json.dumps(delivered_to),
+                        content="[delivered]",
+                        attachment_path=None,
+                    )
+                else:
+                    await self.messages.update_fields(
+                        m.id, delivered_to=json.dumps(delivered_to)
+                    )
+                changed_ids.append(m.id)
+            if len(rows) < page_limit:
+                break
+            offset += page_limit
 
         if not changed_ids:
             return {"updated": []}
-        # One final batch fetch with full eager loading for serialization.
         updated = await self.messages.get_many(changed_ids)
         return {"updated": [serialize_message(m) for m in updated]}
 
@@ -173,10 +195,15 @@ class MessageService:
     async def mark_read(self, chat_id: str, message_id: str, user_id: str) -> dict:
         """Mark a message as read by the current user.
 
-        Optimized: uses ``count_members`` (COUNT(*)) instead of loading the
-        whole chat with members+users, and ``update_fields`` (no refetch) so
-        we only run one heavy eager-loaded query at the very end.
+        B4: verifies chat membership before updating (was missing — any
+        authenticated user could mark any message read by guessing IDs).
+        B1: re-reads ``read_by`` from the row in this transaction before
+        appending, so concurrent reads don't clobber each other.
         """
+        member = await self.chats.get_member(chat_id, user_id)
+        if not member:
+            raise ForbiddenError("Not a member of this chat")
+
         msg = await self.messages.get_by_id(message_id)
         if not msg or msg.chat_id != chat_id:
             raise NotFoundError("Message not found")
@@ -185,7 +212,7 @@ class MessageService:
         if user_id not in read_by:
             read_by.append(user_id)
             total_members = await self.chats.count_members(chat_id)
-            if len(read_by) >= total_members - 1:  # -1 for sender
+            if len(read_by) >= max(total_members - 1, 1):
                 await self.messages.update_fields(
                     message_id, status="read", read_by=json.dumps(read_by)
                 )
@@ -193,8 +220,6 @@ class MessageService:
                 await self.messages.update_fields(
                     message_id, read_by=json.dumps(read_by)
                 )
-            # Re-fetch once for the serialized response (the previous code
-            # called get_by_id twice — once before update, once after).
             msg = await self.messages.get_by_id(message_id)
         return serialize_message(msg)
 

@@ -43,10 +43,33 @@ class StorageService:
     All methods are no-ops (returning ``None``/``False``) when Supabase is not
     configured, which lets the message layer fall back to the legacy
     base64-in-content path during local development.
+
+    B9: a single module-level ``httpx.AsyncClient`` is reused across all
+    requests so we keep TLS connections alive instead of handshaking on every
+    upload/delete.  The client is lazily created and closed via ``close()``
+    from the app lifespan shutdown handler.
     """
 
     _token: Optional[str] = None
     _token_expires: float = 0.0
+    _client: Optional[httpx.AsyncClient] = None
+
+    @classmethod
+    def _get_client(cls) -> httpx.AsyncClient:
+        """Return the shared, reusable ``AsyncClient`` (creates on first call)."""
+        if cls._client is None or cls._client.is_closed:
+            cls._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(60.0, connect=10.0),
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            )
+        return cls._client
+
+    @classmethod
+    async def close(cls) -> None:
+        """Close the shared client — call from the app lifespan shutdown."""
+        if cls._client and not cls._client.is_closed:
+            await cls._client.aclose()
+        cls._client = None
 
     # ─── Auth ────────────────────────────────────────────────────────────
 
@@ -61,11 +84,11 @@ class StorageService:
         if cls._token and time.time() < cls._token_expires:
             return cls._token
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                res = await client.post(
-                    f"{settings.SUPABASE_URL}/auth/v1/token?grant_type=apikey",
-                    headers={"apikey": settings.SUPABASE_KEY},
-                )
+            client = cls._get_client()
+            res = await client.post(
+                f"{settings.SUPABASE_URL}/auth/v1/token?grant_type=apikey",
+                headers={"apikey": settings.SUPABASE_KEY},
+            )
             if res.status_code == 200:
                 data = res.json()
                 cls._token = data.get("access_token")
@@ -114,12 +137,12 @@ class StorageService:
         if not token:
             return None
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                res = await client.post(
-                    f"{settings.SUPABASE_URL}/storage/v1/object/{settings.SUPABASE_BUCKET}/{path}",
-                    headers=cls._headers(token, content_type),
-                    content=data,
-                )
+            client = cls._get_client()
+            res = await client.post(
+                f"{settings.SUPABASE_URL}/storage/v1/object/{settings.SUPABASE_BUCKET}/{path}",
+                headers=cls._headers(token, content_type),
+                content=data,
+            )
             if res.status_code in (200, 201):
                 return cls.public_url(path)
             logger.warning("Upload failed for %s: %s %s", path, res.status_code, res.text[:200])
@@ -153,11 +176,11 @@ class StorageService:
         if not token:
             return False
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                res = await client.delete(
-                    f"{settings.SUPABASE_URL}/storage/v1/object/{settings.SUPABASE_BUCKET}/{path}",
-                    headers=cls._headers(token),
-                )
+            client = cls._get_client()
+            res = await client.delete(
+                f"{settings.SUPABASE_URL}/storage/v1/object/{settings.SUPABASE_BUCKET}/{path}",
+                headers=cls._headers(token),
+            )
             # 200/204 = deleted, 404 = already gone — all success states for us.
             if res.status_code in (200, 204, 404):
                 logger.info("Deleted storage object %s", path)
@@ -212,29 +235,29 @@ class StorageService:
         offset = 0
         limit = 100
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                while True:
-                    res = await client.post(
-                        f"{settings.SUPABASE_URL}/storage/v1/object/list/{settings.SUPABASE_BUCKET}",
-                        headers=cls._headers(token, "application/json"),
-                        json={
-                            "prefix": "",
-                            "limit": limit,
-                            "offset": offset,
-                            "sortBy": {"column": "name", "order": "asc"},
-                        },
-                    )
-                    if res.status_code != 200:
-                        logger.warning("Storage list failed: %s %s", res.status_code, res.text[:200])
-                        break
-                    items = res.json() or []
-                    for item in items:
-                        # ``metadata.size`` holds the object size in bytes.
-                        meta = item.get("metadata") or {}
-                        total += int(meta.get("size", 0))
-                    if len(items) < limit:
-                        break
-                    offset += limit
+            client = cls._get_client()
+            while True:
+                res = await client.post(
+                    f"{settings.SUPABASE_URL}/storage/v1/object/list/{settings.SUPABASE_BUCKET}",
+                    headers=cls._headers(token, "application/json"),
+                    json={
+                        "prefix": "",
+                        "limit": limit,
+                        "offset": offset,
+                        "sortBy": {"column": "name", "order": "asc"},
+                    },
+                )
+                if res.status_code != 200:
+                    logger.warning("Storage list failed: %s %s", res.status_code, res.text[:200])
+                    break
+                items = res.json() or []
+                for item in items:
+                    # ``metadata.size`` holds the object size in bytes.
+                    meta = item.get("metadata") or {}
+                    total += int(meta.get("size", 0))
+                if len(items) < limit:
+                    break
+                offset += limit
         except Exception as e:
             logger.warning("Storage usage error: %s", e)
         return total

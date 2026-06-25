@@ -186,9 +186,12 @@ async def delete_attachment(
     """
     if not path:
         return JSONResponse(status_code=400, content={"error": "missing_path"})
-    # Owner check: path must start with files/{userId}/
+    # B5+B6: strict ownership + path-traversal defense.  The path must:
+    #   1. start with files/{user_id}/  (owner check)
+    #   2. contain NO ".." segments     (path traversal inside the bucket)
+    #   3. contain NO null bytes          (string-termination tricks)
     prefix = f"files/{user_id}/"
-    if not path.startswith(prefix):
+    if not path.startswith(prefix) or ".." in path or "\x00" in path:
         return JSONResponse(
             status_code=403,
             content={"error": "forbidden", "message": "You can only delete your own files"},
