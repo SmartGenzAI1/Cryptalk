@@ -118,3 +118,45 @@ Be respectful, inclusive, and constructive. Harassment of any kind will not be t
 ---
 
 Thank you for contributing to Cryptalk! 🚀
+
+## 🏷️ Good First Issues
+
+Issues labeled `good first issue` are specifically curated for new contributors. They're self-contained, well-scoped, and don't require deep knowledge of the codebase.
+
+### Current good first issues to create:
+
+1. **Add message search highlighting** — when searching in-chat, highlight the matched text in results (frontend only, `message-item.tsx`)
+2. **Add typing duration indicator** — show how long ago someone was typing (frontend, `chat-window.tsx`)
+3. **Add message copy action** — long-press / context menu "Copy" for text messages (frontend + Flutter)
+4. **Add online-last-seen tooltip** — hover over avatar to see "last seen 5 min ago" (frontend, `chat-avatar.tsx`)
+5. **Add keyboard shortcuts** — Ctrl+K for search, Esc to close dialogs (frontend)
+6. **Add dark/light theme persistence** — remember the user's choice in localStorage (frontend, already using next-themes — just verify)
+7. **Add message delete confirmation** — confirm before delete-for-everyone (frontend + Flutter)
+8. **Add unread message divider** — "New Messages" line above first unread (frontend, `message-list.tsx`)
+
+## 🔒 Security
+
+Found a vulnerability? **DO NOT open a public issue.** See [SECURITY.md](SECURITY.md) for responsible disclosure.
+
+### Security measures already in place:
+- End-to-end encryption (X25519 + ChaCha20-Poly1305)
+- Zero-knowledge server (only stores ciphertext + public keys)
+- Ephemeral storage (file content wiped after delivery)
+- Brute-force protection (5 failed logins → 15-min lockout)
+- Per-user rate limiting (IP + user identity)
+- Cookie security (httponly, secure in prod, samesite=lax)
+- Socket auth at connection time (cookie-based, no self-declared userId)
+- Input sanitization (XSS, SQL injection, path traversal)
+- Security headers (X-Frame-Options, X-Content-Type-Options, HSTS, Referrer-Policy)
+- Path traversal protection on file uploads
+- Ownership validation on attachment paths
+
+### Security review checklist for contributors:
+- [ ] No hardcoded secrets or tokens
+- [ ] No stack traces leaked in error responses
+- [ ] All user input sanitized
+- [ ] No SQL injection vectors (use SQLAlchemy parametrized queries)
+- [ ] No XSS vectors (use `sanitize_text()` for all user content)
+- [ ] No CSRF vectors (cookie samesite=lax, no state-changing GET)
+- [ ] Rate limiting on all auth endpoints
+- [ ] No sensitive data in logs
