@@ -104,17 +104,26 @@ See [`supabase/README.md`](../supabase/README.md) for schema setup.
 ### Other
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | /api/search?q= | Cross-chat search |
+| GET | /api/search?q= | Cross-chat search (LIKE wildcards escaped) |
 | POST | /api/reports | Report user/content |
 | DELETE | /api/account | Delete account |
 | POST | /api/keys/upload | Upload E2EE public keys |
 | GET | /api/keys/{userId} | Get user's public keys |
+| POST | /api/uploads | Upload E2EE file (multipart, 25MB max) |
+| GET | /api/uploads/quota | Storage usage + quota |
+| DELETE | /api/uploads?path= | Delete file (owner-checked) |
 
 ## Security
 
-- scrypt password hashing
-- HMAC-SHA256 session tokens
-- Rate limiting (10 logins/min, 120 API/min)
-- Input sanitization (HTML escaping, length limits)
-- Ephemeral storage (content wiped after delivery)
-- SQLAlchemy parameterized queries
+- scrypt password hashing (N=16384, r=8, p=1)
+- HMAC-SHA256 session cookies (httponly, secure in prod, samesite=lax)
+- Per-user + per-IP rate limiting (10 logins/min, 120 API/min)
+- Brute-force lockout (5 failed logins → 15-min lock)
+- Socket auth at connection time (cookie-verified, no self-declared userId)
+- Input sanitization (HTML escaping, control chars, length limits)
+- Path traversal protection on uploads (`..`, null bytes rejected)
+- Attachment ownership validation (path must match sender's user ID)
+- Security headers (X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy)
+- Ephemeral storage (content + Supabase blob wiped after delivery)
+- SQLAlchemy parameterized queries (no raw SQL)
+- 25MB per-file cap, 950MB total storage quota

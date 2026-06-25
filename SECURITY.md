@@ -24,15 +24,21 @@ We take security seriously. If you discover a vulnerability in Cryptalk, please 
 
 ## 🛡️ Security Features
 
-Cryptalk implements the following security measures:
-
 - **Password hashing**: scrypt (N=16384, r=8, p=1)
-- **Session tokens**: HMAC-SHA256 signed cookies (HTTP-only)
-- **Rate limiting**: sliding-window per-IP (10 logins/min, 120 API/min)
-- **Input validation**: Pydantic schemas + regex validation on all inputs
-- **Content sanitization**: control char stripping, length limits
+- **Session tokens**: HMAC-SHA256 signed cookies (HTTP-only, Secure in prod, SameSite=Lax)
+- **Rate limiting**: per-user + per-IP sliding window (10 logins/min, 120 API/min)
+- **Brute-force lockout**: 5 failed logins → 15-min account lockout (429 + Retry-After)
+- **Socket auth**: cookie-verified at WebSocket connection time (no self-declared userId)
+- **Input validation**: Pydantic schemas + regex on all inputs
+- **Content sanitization**: HTML escaping, control char stripping, length limits
 - **SQL injection prevention**: SQLAlchemy parameterized queries throughout
+- **Path traversal protection**: rejects `..` and null bytes in upload paths
+- **Attachment ownership**: validates `attachment_path` belongs to the sender
+- **Security headers**: X-Frame-Options DENY, X-Content-Type-Options nosniff, HSTS, Referrer-Policy
 - **Timing attack prevention**: constant-time password comparison
+- **E2EE**: X25519 + ChaCha20-Poly1305 (zero-knowledge server, private keys never leave device)
+- **Ephemeral storage**: message content + Supabase file blobs wiped after delivery
+- **File quotas**: 25MB per file, 950MB total (Supabase free-tier safe)
 
 ## 📋 Supported Versions
 

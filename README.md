@@ -22,7 +22,7 @@
 - **Real-time messaging** — instant delivery via WebSockets (Socket.IO)
 - **Email authentication** — no phone number required
 - **Voice messages** — real recording with Web Audio API, encrypted before send
-- **File sharing** — images, documents up to 40MB, encrypted, ephemeral storage
+- **File sharing** — images, docs, voice up to 25MB, E2EE ciphertext stored in Supabase, auto-deleted on delivery
 - **Message reactions, replies, edit, delete for everyone**
 - **Self-destructing messages** — set expiration timer (10s to 1 week)
 - **Delivery states** — ✓ sent, ✓✓ delivered, ✓✓ read (blue)
@@ -63,7 +63,7 @@
 │  • UI components      │     │  • Clean architecture     │
 │  • Zustand store      │     │  • API → Service → Repo   │
 │  • E2EE client-side   │     │  • Socket.IO realtime     │
-│  • Lottie stickers    │     │  • Rate limiting          │
+│  • Lottie stickers    │     │  • Brute-force lockout    │
 └──────────────────────┘     └───────────┬──────────────┘
                                          │
                               ┌──────────┴──────────┐
@@ -78,21 +78,22 @@
 
 ```
 backend/app/
-├── main.py              # ASGI app
-├── core/                # config, database, security, exceptions, rate limiting
+├── main.py              # ASGI app + middleware + security headers
+├── core/                # config, database, security, rate limiting, brute force, cache, storage
 ├── models/              # SQLAlchemy ORM entities
-├── schemas/             # Pydantic request/response DTOs
-├── repositories/        # Data access layer
+├── schemas/             # Pydantic DTOs (camelCase + snake_case)
+├── repositories/        # Data access layer (batch queries, no N+1)
 ├── services/            # Business logic + DI
 ├── api/v1/              # HTTP controllers
-│   ├── auth.py          #   email auth + onboarding
+│   ├── auth.py          #   email auth + onboarding + brute-force lockout
 │   ├── chats.py         #   chat CRUD + settings
 │   ├── chat_management.py # leave, delete, kick, invite, search, reports
-│   ├── messages.py      #   messages + reactions + delivery
+│   ├── messages.py      #   messages + reactions + delivery + auto-purge
 │   ├── social.py        #   connections, blocks, nicknames
 │   ├── e2ee.py          #   public key distribution
+│   ├── uploads.py       #   E2EE file upload + quota + storage
 │   └── users.py         #   profile + search
-└── realtime/            # Socket.IO connection manager
+└── realtime/            # Socket.IO (cookie-auth at connect time)
 ```
 
 ### Frontend — Feature-Modular (Next.js)
@@ -166,15 +167,19 @@ See [`supabase/README.md`](supabase/README.md) for detailed setup.
 | Feature | Implementation |
 |---|---|
 | Password hashing | scrypt (N=16384, r=8, p=1) |
-| Session tokens | HMAC-SHA256 signed cookies (HTTP-only) |
-| Rate limiting | 10 logins/min, 5 registrations/min, 120 API calls/min |
+| Session tokens | HMAC-SHA256 signed cookies (HTTP-only, Secure, SameSite=Lax) |
+| Rate limiting | Per-user + per-IP (10 logins/min, 120 API/min) |
+| Brute-force lockout | 5 failed logins → 15-min account lock |
+| Socket auth | Cookie-verified at connection time (no self-declared userId) |
 | Input validation | Pydantic + regex on all inputs |
 | Content sanitization | HTML escaping, control char stripping, length limits |
 | E2EE | X25519 + ChaCha20-Poly1305 (zero-knowledge server) |
-| Ephemeral storage | Message content wiped after delivery confirmation |
+| Ephemeral storage | Content + Supabase blob wiped after delivery |
 | SQL injection | SQLAlchemy parameterized queries |
+| Path traversal | Rejected on upload paths (`..`, null bytes) |
+| Security headers | X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy |
 | Row Level Security | Supabase RLS policies on all tables |
-| File sharing | Encrypted before upload, 40MB limit, wiped after delivery |
+| File sharing | 25MB/file, 950MB total quota, E2EE ciphertext, auto-deleted |
 
 ## Project Structure
 
