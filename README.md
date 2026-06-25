@@ -156,11 +156,36 @@ See [`supabase/README.md`](supabase/README.md) for detailed setup.
 
 ## Deployment
 
-| Component | Platform | Config |
-|---|---|---|
-| Backend | Render | `render.yaml` — set `DATABASE_URL`, `SESSION_SECRET`, `CORS_ORIGINS` |
-| Frontend | Vercel | `vercel.json` — set `NEXT_PUBLIC_BACKEND_URL` |
-| Flutter APK | GitHub Actions | Push a `v*` tag to trigger the build workflow |
+### Backend → Render
+
+1. Push this repo to GitHub
+2. Go to [render.com](https://render.com) → New → Blueprint
+3. Select this repo — Render reads `render.yaml` automatically
+4. Set the secret env vars when prompted:
+   - `SESSION_SECRET` — `openssl rand -hex 32`
+   - `DATABASE_URL` — your Supabase Postgres connection string
+   - `CORS_ORIGINS` — your Vercel frontend URL (e.g. `https://cryptalk.vercel.app`)
+   - `REDIS_URL` — optional, Upstash Redis for multi-instance Socket.IO
+   - `SUPABASE_URL` / `SUPABASE_KEY` — for file storage
+5. Deploy — Render runs `pip install -r requirements.txt` in `backend/` and starts `uvicorn` on `$PORT`
+
+### Frontend → Vercel
+
+1. Go to [vercel.com](https://vercel.com) → New Project → import this repo
+2. **Set Root Directory to `frontend`** (critical — this is a monorepo)
+3. Vercel auto-detects Next.js and reads `frontend/vercel.json`
+4. Set env vars in Vercel dashboard → Settings → Environment Variables:
+   - `NEXT_PUBLIC_BACKEND_URL` — your Render backend URL (e.g. `https://cryptalk-backend.onrender.com`)
+5. Deploy — Vercel runs `bun install` + `next build` automatically
+
+### Flutter APK → GitHub Actions
+
+Push a `v*` tag to trigger the build workflow:
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+The APK is uploaded as a GitHub Release artifact.
 
 ## Security
 

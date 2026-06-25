@@ -2,15 +2,25 @@ services:
   - type: web
     name: cryptalk-backend
     runtime: python
+    rootDir: backend
     plan: free
+    region: oregon
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:asgi_app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.0"
       - key: SESSION_SECRET
         sync: false
       - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGINS
         sync: false
-      - key: PYTHON_VERSION
-        value: "3.12.0"
+      - key: REDIS_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
