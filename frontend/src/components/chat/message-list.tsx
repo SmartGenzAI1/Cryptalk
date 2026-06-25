@@ -8,11 +8,7 @@ import { formatDateSeparator, sameDay } from '@/lib/format'
 import { ArrowDown } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
-/**
- * Fallback for a single message whose render threw — keeps the chat list
- * alive when one message has a malformed payload (F2). Rendered inside the
- * same wrapper div so the unread-divider above it still works.
- */
+// fallback when one message's render throws
 function MessageErrorFallback() {
   return (
     <div className="my-1 px-3 py-2 max-w-[80%] rounded-2xl bg-muted/40 border border-dashed border-muted-foreground/30 text-xs text-muted-foreground italic">
@@ -37,7 +33,7 @@ export function MessageList() {
   const removeMessage = useChatStore((s) => s.removeMessage)
   const lastReadAt = chatListItem?.lastReadAt ? new Date(chatListItem.lastReadAt).getTime() : 0
 
-  // Message expiration — remove expired messages from the UI every second
+  // remove expired messages every second
   const hasExpiring = messages.some(m => m.expiresIn)
   useEffect(() => {
     if (!hasExpiring) return
@@ -68,7 +64,7 @@ export function MessageList() {
     lastCountRef.current = messages.length
   }, [messages.length])
 
-  // track scroll position for FAB
+  // scroll position for the scroll-to-bottom FAB
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
@@ -143,10 +139,7 @@ export function MessageList() {
                     return (
                       <div
                         key={m.id}
-                        // CSS windowing: browser skips rendering/layout/paint for off-screen
-                        // messages. `contain-intrinsic-size` reserves space so the scroll
-                        // height stays stable (auto-scroll-to-bottom keeps working).
-                        // Wrapper around both the optional divider and the bubble.
+                        // CSS windowing for off-screen messages; intrinsic-size keeps scroll height stable
                         style={{
                           contentVisibility: 'auto',
                           containIntrinsicSize: 'auto 96px',
@@ -159,8 +152,7 @@ export function MessageList() {
                             <div className="flex-1 h-px bg-primary/30" />
                           </div>
                         )}
-                      {/* F2: per-message error boundary so one malformed message
-                          payload only takes itself out, not the whole chat. */}
+                      {/* per-message error boundary so one bad message only takes itself out */}
                       <ErrorBoundary fallback={<MessageErrorFallback />}>
                         <MessageItem
                           message={m}
@@ -217,7 +209,7 @@ export function MessageList() {
   )
 }
 
-// Loading skeleton shown while messages are being fetched
+// loading skeleton shown while messages are being fetched
 function MessageSkeleton() {
   return (
     <div className="space-y-3 py-4">

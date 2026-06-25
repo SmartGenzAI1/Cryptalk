@@ -11,12 +11,8 @@ export function getSocket(): Socket | null {
   return socket
 }
 
-// X5: socket auth is now handled at CONNECTION TIME, not via an `identify`
-// event. The browser automatically sends the `tc_session` cookie with
-// `withCredentials: true`, and the backend's `connect` handler verifies it.
-// This works because the cookie is httponly (JS can't read it) but the
-// browser CAN send it as part of the WebSocket handshake.
-
+// socket auth happens at connect time via the tc_session cookie (httponly so
+// JS can't read it, but the browser sends it with withCredentials)
 export function useSocket() {
   const currentUser = useChatStore((s) => s.currentUser)
   const addMessage = useChatStore((s) => s.addMessage)
@@ -43,9 +39,7 @@ export function useSocket() {
       : `/?XTransformPort=${process.env.NEXT_PUBLIC_BACKEND_PORT || '8001'}`
     socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
-      // X5: send the tc_session cookie automatically so the backend can
-      // authenticate the socket at connect time (the cookie is httponly so
-      // we can't read it in JS — but the browser CAN send it here).
+      // cookie is httponly so we can't read it in JS — browser sends it automatically here
       withCredentials: true,
       forceNew: true,
       reconnection: true,
@@ -56,17 +50,14 @@ export function useSocket() {
 
     socket.on('connect', () => {
       setConnected(true)
-      // No `identify` emit needed — auth happened at connection time via
-      // the cookie header. The backend's `connect` handler verified the
-      // token and registered the userId in the connection manager.
+      // no identify emit — auth happened at connect via the cookie
     })
 
     socket.on('disconnect', () => {
       setConnected(false)
     })
 
-    // X5: if the backend rejects the connection (e.g. expired/invalid cookie),
-    // it emits `auth-error`. Force re-login so the user gets a fresh cookie.
+    // backend rejected cookie: force re-login so user gets a fresh cookie
     socket.on('auth-error', (data: { message?: string } | undefined) => {
       console.warn('[socket] auth-error:', data?.message || 'unauthorized')
       try {
@@ -91,7 +82,7 @@ export function useSocket() {
     })
 
     socket.on('message', async (data: { chatId: string; message: MessageWithSender }) => {
-      // E2EE: decrypt incoming message before adding to store
+      // decrypt incoming E2EE message before adding to store
       try {
         const { decryptMessageForChat } = await import('@/lib/e2ee')
         const store = useChatStore.getState()
@@ -105,7 +96,7 @@ export function useSocket() {
           )
         }
       } catch {
-        // E2EE not ready or decryption failed — show ciphertext
+        // e2ee not ready or decryption failed — show ciphertext
       }
       addMessage(data.chatId, data.message)
     })
@@ -119,14 +110,13 @@ export function useSocket() {
     })
 
     socket.on('message-status', (data: { chatId: string; messageId: string; status: string; message?: MessageWithSender }) => {
-      // Update message delivery/read status in real-time
       if (data.message) {
         updateMessage(data.chatId, data.message)
       }
     })
 
     socket.on('recording', (data: { chatId: string; userId: string; username: string; isRecording: boolean }) => {
-      // Voice recording indicator — reuse typing display
+      // reuse typing display as the voice-recording indicator
       if (data.isRecording) {
         addTyping(data.chatId, { userId: data.userId, username: data.username })
       } else {
@@ -135,7 +125,7 @@ export function useSocket() {
     })
 
     socket.on('reaction', (data: { chatId: string; messageId: string; emoji: string; userId: string; added: boolean }) => {
-      // handled in component via store refresh; trigger a lightweight update
+      // handled in component via store refresh; lightweight update here
       updateReactionInStore(data.chatId, data.messageId, data.emoji, data.userId, data.added)
     })
 
@@ -145,13 +135,11 @@ export function useSocket() {
     })
 
     socket.on('chat-updated', (data: { chat: any }) => {
-      // upsert chat list item; if active chat, refresh
       upsertChat({
         ...data.chat,
         lastReadAt: data.chat.lastReadAt || new Date().toISOString(),
         lastMessage: data.chat.lastMessage || null,
       })
-      // if it's the active chat, also refresh activeChat
       const state = useChatStore.getState()
       const prev = state.activeChat
       if (prev && prev.id === data.chat.id) {
@@ -162,10 +150,6 @@ export function useSocket() {
         } as any)
       }
     })
-
-    // F4: the duplicate `socket.on('disconnect', ...)` registration that used
-    // to live here has been removed — the single registration above (next to
-    // `connect`) is the source of truth.
 
     return () => {
       if (socket) {
@@ -186,7 +170,7 @@ export function useSocket() {
   }, [activeChatId, currentUser])
 }
 
-// helper to mutate reactions in store (kept simple)
+// mutate reactions in store (kept simple)
 function updateReactionInStore(chatId: string, messageId: string, emoji: string, userId: string, added: boolean) {
   const store = useChatStore.getState()
   const msgs = store.messages[chatId]

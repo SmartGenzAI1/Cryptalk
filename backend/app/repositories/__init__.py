@@ -1,9 +1,5 @@
-"""Repository layer — single source of truth for database access.
-
-Each repository encapsulates all SQLAlchemy queries for one domain
-entity.  The service layer depends on these interfaces, never on the
-ORM directly, which keeps business logic testable and database-agnostic.
-"""
+# repository layer — single source of truth for db access.
+# services depend on these, never on the ORM directly.
 
 import secrets
 from typing import Any, Dict, List, Optional
@@ -17,11 +13,11 @@ from app.models import Chat, ChatMember, Message, Reaction, StarredMessage, User
 
 
 def _id() -> str:
-    """Generate a random 24-char hex ID (matches Prisma's cuid length)."""
+    # 24-char hex id (matches prisma's cuid length)
     return secrets.token_hex(12)
 
 
-# ─── User repository ───────────────────────────────────────────────────
+# user repository
 
 
 class UserRepository:
@@ -65,7 +61,7 @@ class UserRepository:
         return await self.get_by_id(user_id)
 
 
-# ─── Chat repository ───────────────────────────────────────────────────
+# chat repository
 
 
 class ChatRepository:
@@ -89,7 +85,7 @@ class ChatRepository:
         return result.scalar_one_or_none()
 
     async def get_user_chats(self, user_id: str) -> List[tuple]:
-        """Return ``(member, chat)`` pairs for all chats the user belongs to."""
+        # returns (member, chat) pairs for all chats the user belongs to
         result = await self.db.execute(
             select(ChatMember, Chat)
             .join(Chat, ChatMember.chat_id == Chat.id)
@@ -99,7 +95,7 @@ class ChatRepository:
         return list(result.all())
 
     async def find_direct_chat(self, user_a: str, user_b: str) -> Optional[Chat]:
-        """Find an existing 1:1 chat between two users."""
+        # find existing 1:1 chat between two users
         sub_a = select(ChatMember.chat_id).where(ChatMember.user_id == user_a)
         sub_b = select(ChatMember.chat_id).where(ChatMember.user_id == user_b)
         result = await self.db.execute(
@@ -125,7 +121,7 @@ class ChatRepository:
         return member
 
     async def touch(self, chat_id: str) -> None:
-        """Update ``updated_at`` to bump the chat in list ordering."""
+        # bump updated_at for chat-list ordering
         await self.db.execute(
             update(Chat).where(Chat.id == chat_id).values(updated_at=now_ms())
         )
@@ -138,18 +134,14 @@ class ChatRepository:
         await self.db.flush()
 
     async def count_members(self, chat_id: str) -> int:
-        """Lightweight ``COUNT(*)`` — avoids loading all member+user rows.
-
-        Used by ``MessageService.mark_delivered`` / ``mark_read`` which only
-        need the member count to decide if a message has been seen by all.
-        """
+        # lightweight COUNT(*) — avoids loading member+user rows
         result = await self.db.execute(
             select(func.count(ChatMember.id)).where(ChatMember.chat_id == chat_id)
         )
         return result.scalar() or 0
 
 
-# ─── Message repository ────────────────────────────────────────────────
+# message repository
 
 
 class MessageRepository:
@@ -162,9 +154,8 @@ class MessageRepository:
             .options(
                 selectinload(Message.sender),
                 selectinload(Message.reactions).selectinload(Reaction.user),
-                # reply_to + reply_to.sender must be eager-loaded because the
-                # serializer touches them and async SQLAlchemy cannot lazy-load
-                # (would raise MissingGreenlet). Matches list_for_chat's options.
+                # reply_to + reply_to.sender must be eager-loaded — the serializer
+                # touches them and async sqlalchemy can't lazy-load (MissingGreenlet)
                 selectinload(Message.reply_to).selectinload(Message.sender),
             )
             .where(Message.id == message_id)
@@ -200,7 +191,7 @@ class MessageRepository:
         msg = Message(id=_id(), created_at=now_ms(), **kwargs)
         self.db.add(msg)
         await self.db.flush()
-        # Eager-load relationships for the response
+        # eager-load relationships for the response
         return await self.get_by_id(msg.id)
 
     async def update(self, message_id: str, **kwargs) -> Optional[Message]:
@@ -229,21 +220,14 @@ class MessageRepository:
         )
         return result.scalar() or 0
 
-    # ─── Performance-optimized methods ──────────────────────────────────
-    # These fetch only the columns needed for delivery/read-status updates,
-    # skipping the eager-loaded sender/reactions/reply_to relationships that
-    # the full ``get_by_id`` / ``list_for_chat`` pull in.  A single chat-open
-    # used to issue ~400 queries (200 messages × update+refetch); these bring
-    # it down to ~3 + one final batch fetch.
+    # performance-optimized methods — fetch only the columns needed for
+    # delivery/read-status updates, skipping the eager-loaded relationships.
+    # a chat-open used to issue ~400 queries; these bring it down to ~3 + a
+    # final batch fetch.
 
     async def list_delivery_state(self, chat_id: str, limit: int = 200, offset: int = 0) -> List[Message]:
-        """Fetch only the columns needed to compute delivery status.
-
-        No eager loading — callers (``mark_delivered``) only read scalar
-        fields: ``id``, ``sender_id``, ``delivered_to``, ``type``,
-        ``content``, ``attachment_path``.  Supports ``offset`` so the caller
-        can paginate through very long undelivered backlogs (B13).
-        """
+        # fetch only columns needed to compute delivery status. no eager loading —
+        # callers only read scalar fields. supports offset for pagination.
         stmt = (
             select(Message)
             .where(Message.chat_id == chat_id, Message.deleted_at.is_(None))
@@ -256,24 +240,16 @@ class MessageRepository:
         return list(result.scalars().all())
 
     async def update_fields(self, message_id: str, **kwargs) -> None:
-        """``UPDATE`` without re-fetching — use when you don't need the row back.
-
-        The regular ``update`` does UPDATE + flush + ``get_by_id`` (which
-        eager-loads 4 relationships).  For batch operations where you'll
-        re-fetch changed rows in one final query, this avoids N redundant
-        eager loads.
-        """
+        # UPDATE without re-fetching — use when you don't need the row back.
+        # the regular update does flush + get_by_id (eager-loads 4 relationships)
+        # which is wasteful for batch ops where we re-fetch in one final query.
         await self.db.execute(
             update(Message).where(Message.id == message_id).values(**kwargs)
         )
         await self.db.flush()
 
     async def get_many(self, message_ids: List[str]) -> List[Message]:
-        """Fetch multiple messages by ID in ONE query with full eager loading.
-
-        Used to serialize the final result of a batch update without
-        re-running per-row ``get_by_id``.
-        """
+        # fetch multiple messages by ID in one query with full eager loading
         if not message_ids:
             return []
         stmt = (
@@ -290,7 +266,7 @@ class MessageRepository:
         return list(result.scalars().all())
 
     async def get_many_by_ids(self, message_ids: List[str]) -> List[Message]:
-        """Fetch messages by ID for the starred-list path (excludes deleted)."""
+        # like get_many but excludes deleted (for the starred-list path)
         if not message_ids:
             return []
         stmt = (
@@ -307,14 +283,12 @@ class MessageRepository:
         return list(result.scalars().all())
 
     async def last_messages_for_chats(self, chat_ids: List[str]) -> dict:
-        """Batch-fetch the latest non-deleted message per chat in ONE query.
-
-        Replaces the old N+1 loop in ``ChatService.list_for_user`` that ran
-        ``list_for_chat(limit=1)`` per chat.  Returns ``{chat_id: Message}``.
-        """
+        # batch-fetch the latest non-deleted message per chat in one query.
+        # replaces the old N+1 loop that ran list_for_chat(limit=1) per chat.
+        # returns {chat_id: Message}
         if not chat_ids:
             return {}
-        # Subquery: max createdAt per chat (among non-deleted messages).
+        # subquery: max createdAt per chat (among non-deleted messages)
         latest_subq = (
             select(
                 Message.chat_id.label("cid"),
@@ -337,7 +311,7 @@ class MessageRepository:
         return {m.chat_id: m for m in result.scalars().all()}
 
 
-# ─── Reaction repository ───────────────────────────────────────────────
+# reaction repository
 
 
 class ReactionRepository:
@@ -368,7 +342,7 @@ class ReactionRepository:
         await self.db.flush()
 
 
-# ─── Starred message repository ────────────────────────────────────────
+# starred message repository
 
 
 class StarredMessageRepository:

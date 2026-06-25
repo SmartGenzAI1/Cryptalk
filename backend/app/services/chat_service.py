@@ -32,8 +32,7 @@ class ChatService:
 
         chat_ids = [chat.id for _, chat in valid]
 
-        # ONE batch query for the latest message per chat — replaces the old
-        # N+1 loop that called list_for_chat(limit=1) per chat.
+        # one batch query for the latest message per chat (replaces old N+1 loop)
         last_msgs = await self.messages.last_messages_for_chats(chat_ids)
 
         result = []
@@ -82,7 +81,7 @@ class ChatService:
             raise ValidationError("A member is required for direct chats")
         other_id = member_ids[0]
 
-        # Reuse existing 1:1 chat if one exists
+        # reuse existing 1:1 chat if one exists
         existing = await self.chats.find_direct_chat(user_id, other_id)
         if existing:
             member = await self.chats.get_member(existing.id, user_id)
@@ -91,7 +90,7 @@ class ChatService:
         chat = await self.chats.create(type="direct", title="Direct", created_by=user_id)
         await self.chats.add_member(chat.id, user_id, role="owner")
         await self.chats.add_member(chat.id, other_id, role="member")
-        # Reload with members eager-loaded
+        # reload with members eager-loaded
         chat = await self.chats.get_by_id(chat.id)
         member = await self.chats.get_member(chat.id, user_id)
         return serialize_chat(chat, member)

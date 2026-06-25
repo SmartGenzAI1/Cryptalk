@@ -4,7 +4,6 @@ import sodium from 'libsodium-wrappers'
 
 let initialized = false
 
-/** Ensure libsodium is loaded before any crypto operation. */
 async function ensureReady() {
   if (!initialized) {
     await sodium.ready
@@ -12,38 +11,28 @@ async function ensureReady() {
   }
 }
 
-// ─── Types ──────────────────────────────────────────────────────────────
+// types
 
 export interface IdentityKeyPair {
-  /** Ed25519 signing keypair — used to sign pre-keys and verify identity */
   signing: { publicKey: Uint8Array; privateKey: Uint8Array }
-  /** X25519 encryption keypair — used for ECDH key agreement */
   encryption: { publicKey: Uint8Array; privateKey: Uint8Array }
 }
 
 export interface PreKeyBundle {
-  /** User ID this bundle belongs to */
   userId: string
-  /** X25519 identity public key (for ECDH) */
   identityPublicKey: string // base64
-  /** Ed25519 identity public key (for signature verification) */
   signingPublicKey: string // base64
-  /** X25519 signed pre-key public key */
   signedPreKeyPublic: string // base64
-  /** Ed25519 signature over the signed pre-key */
   signedPreKeySignature: string // base64
 }
 
 export interface EncryptedPayload {
-  /** Base64-encoded ciphertext */
   ciphertext: string
-  /** Base64-encoded nonce (24 bytes) */
   nonce: string
-  /** Base64-encoded ephemeral X25519 public key (sender's one-time key) */
   ephemeralPublicKey: string
 }
 
-// ─── Encoding helpers ──────────────────────────────────────────────────
+// encoding helpers
 
 export function toBase64(bytes: Uint8Array): string {
   return sodium.to_base64(bytes, sodium.base64_variants.ORIGINAL)
@@ -61,18 +50,14 @@ export function fromUTF8(bytes: Uint8Array): string {
   return sodium.to_string(bytes)
 }
 
-// ─── Key Generation ─────────────────────────────────────────────────────
+// key generation
 
 export async function generateIdentityKeyPair(): Promise<IdentityKeyPair> {
   await ensureReady()
 
-  // Ed25519 signing keypair (for signatures)
   const signingKeyPair = sodium.crypto_sign_keypair()
 
-  // X25519 encryption keypair (for ECDH) — independent keypair
-  // (Signal derives X25519 from Ed25519, but libsodium-wrappers' conversion
-  // functions expect specific key formats. Using an independent X25519
-  // keypair is simpler and equally secure.)
+  // independent X25519 keypair (simpler than deriving from Ed25519)
   const encryptionKeyPair = sodium.crypto_box_keypair()
 
   return {
@@ -87,14 +72,10 @@ export async function generateIdentityKeyPair(): Promise<IdentityKeyPair> {
   }
 }
 
-/**
- * Generate a signed pre-key (rotated periodically).
- * Used for the X3DH key agreement.
- */
+// rotated periodically, used for X3DH
 export async function generateSignedPreKey(identitySigning: { publicKey: Uint8Array; privateKey: Uint8Array }) {
   await ensureReady()
   const preKey = sodium.crypto_box_keypair()
-  // Sign the pre-key public key with the identity signing key
   const signature = sodium.crypto_sign(preKey.publicKey, identitySigning.privateKey)
   return {
     keyPair: preKey,
@@ -102,7 +83,7 @@ export async function generateSignedPreKey(identitySigning: { publicKey: Uint8Ar
   }
 }
 
-// ─── Key Agreement (ECDH) ──────────────────────────────────────────────
+// key agreement (ECDH)
 
 async function deriveSharedSecret(
   myPrivateKey: Uint8Array,
@@ -112,22 +93,17 @@ async function deriveSharedSecret(
   return sodium.crypto_scalarmult(myPrivateKey, theirPublicKey)
 }
 
-/**
- * Derive a symmetric encryption key from a shared secret using HKDF-SHA256.
- * This provides key separation and domain separation.
- */
+// HKDF-SHA256 for key separation + domain separation
 async function deriveEncryptionKey(sharedSecret: Uint8Array, context: string = 'cryptalk-message'): Promise<Uint8Array> {
   await ensureReady()
-  // HKDF extract + expand using SHA-256
   const salt = sodium.from_string('cryptalk-salt-v1')
   const prk = sodium.crypto_auth(sharedSecret, salt) // extract
-  // Expand to 32 bytes (256-bit key)
   const info = sodium.from_string(context)
-  const okm = sodium.crypto_generichash(32, info, prk) // expand
+  const okm = sodium.crypto_generichash(32, info, prk) // expand to 32 bytes
   return okm
 }
 
-// ─── Encryption / Decryption ───────────────────────────────────────────
+// encryption / decryption
 
 export async function encryptMessage(
   plaintext: string,
@@ -138,21 +114,16 @@ export async function encryptMessage(
 
   const recipientPublicKey = fromBase64(recipientPublicKeyBase64)
 
-  // 1. Generate ephemeral keypair
   const ephemeralKeyPair = sodium.crypto_box_keypair()
-
-  // 2. ECDH → shared secret
   const sharedSecret = await deriveSharedSecret(ephemeralKeyPair.privateKey, recipientPublicKey)
-
-  // 3. HKDF → encryption key
   const encryptionKey = await deriveEncryptionKey(sharedSecret)
 
-  // 4. Encrypt with crypto_secretbox (XSalsa20-Poly1305 — authenticated encryption)
+  // XSalsa20-Poly1305 (authenticated)
   const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES)
   const plaintextBytes = toUTF8(plaintext)
   const ciphertext = sodium.crypto_secretbox_easy(plaintextBytes, nonce, encryptionKey)
 
-  // 5. Zero out sensitive data
+  // zero sensitive data
   ephemeralKeyPair.privateKey.fill(0)
   sharedSecret.fill(0)
   encryptionKey.fill(0)
@@ -172,13 +143,9 @@ export async function decryptMessage(
 
   const ephemeralPublicKey = fromBase64(payload.ephemeralPublicKey)
 
-  // 1. ECDH → shared secret
   const sharedSecret = await deriveSharedSecret(myPrivateKey, ephemeralPublicKey)
-
-  // 2. HKDF → encryption key
   const encryptionKey = await deriveEncryptionKey(sharedSecret)
 
-  // 3. Decrypt
   const nonce = fromBase64(payload.nonce)
   const ciphertext = fromBase64(payload.ciphertext)
 
@@ -186,32 +153,28 @@ export async function decryptMessage(
     const plaintextBytes = sodium.crypto_secretbox_open_easy(ciphertext, nonce, encryptionKey)
     const plaintext = fromUTF8(plaintextBytes)
 
-    // Zero out sensitive data
     sharedSecret.fill(0)
     encryptionKey.fill(0)
 
     return plaintext
   } catch (e) {
-    // Zero out on failure too
+    // zero on failure too
     sharedSecret.fill(0)
     encryptionKey.fill(0)
     throw new Error('Decryption failed — message may have been tampered with')
   }
 }
 
-// ─── Group Encryption ───────────────────────────────────────────────────
+// group encryption
 
 export async function deriveGroupKey(chatId: string, privateKey: Uint8Array): Promise<Uint8Array> {
   await ensureReady()
   const salt = sodium.from_string('cryptalk-group-v1')
   const keyMaterial = toUTF8(chatId)
-  // BLAKE2b (libsodium's generichash) to derive a deterministic key
+  // BLAKE2b (generichash) for a deterministic key
   return sodium.crypto_generichash(32, keyMaterial, privateKey)
 }
 
-/**
- * Encrypt a message for a group chat using the shared group key.
- */
 export async function encryptGroupMessage(
   plaintext: string,
   groupKey: Uint8Array
@@ -225,9 +188,6 @@ export async function encryptGroupMessage(
   }
 }
 
-/**
- * Decrypt a group message using the shared group key.
- */
 export async function decryptGroupMessage(
   ciphertext: string,
   nonce: string,
@@ -242,12 +202,9 @@ export async function decryptGroupMessage(
   return fromUTF8(plaintextBytes)
 }
 
-// ─── Identity Verification ──────────────────────────────────────────────
+// identity verification
 
-/**
- * Verify a pre-key signature to ensure the pre-key genuinely belongs
- * to the claimed identity (prevents MITM attacks).
- */
+// verify pre-key signature to prevent MITM
 export async function verifyPreKeySignature(
   signedPreKeyPublic: string,
   signature: string,
@@ -266,14 +223,10 @@ export async function verifyPreKeySignature(
   }
 }
 
-/**
- * Generate a safety number (fingerprint) for identity verification.
- * Two users can compare this out-of-band to verify no MITM attack.
- */
+// safety number for out-of-band identity verification (signal-style)
 export async function generateSafetyNumber(publicKeyBase64: string): Promise<string> {
   await ensureReady()
   const hash = sodium.crypto_generichash(30, fromBase64(publicKeyBase64))
-  // Format as groups of 5 digits (like Signal's safety numbers)
   const num = BigInt('0x' + sodium.to_hex(hash).slice(0, 15))
   return num.toString().padStart(12, '0').replace(/(\d{3})/g, '$1 ').trim()
 }

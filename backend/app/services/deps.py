@@ -1,9 +1,4 @@
-"""Dependency injection — wire repositories and services to FastAPI deps.
-
-This module is the composition root: it knows how to construct a
-service with all its dependencies.  Endpoints depend on these factory
-functions rather than constructing services themselves.
-"""
+# dependency injection — wire repositories and services to fastapi deps
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,8 +17,7 @@ from app.services.message_service import MessageService
 from app.services.user_service import UserService
 
 
-# ─── Repository factories ──────────────────────────────────────────────
-
+# repository factories
 
 def get_user_repo(db: AsyncSession = Depends(get_db)) -> UserRepository:
     return UserRepository(db)
@@ -45,8 +39,7 @@ def get_star_repo(db: AsyncSession = Depends(get_db)) -> StarredMessageRepositor
     return StarredMessageRepository(db)
 
 
-# ─── Service factories ─────────────────────────────────────────────────
-
+# service factories
 
 def get_auth_service(
     user_repo: UserRepository = Depends(get_user_repo),

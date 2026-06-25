@@ -29,25 +29,21 @@ class Settings(BaseSettings):
     SOCKETIO_PING_TIMEOUT: int = 60
     SOCKETIO_PING_INTERVAL: int = 25
 
-    # Redis (Upstash) — for Socket.IO scaling + rate limiting
-    # Format: redis://default:password@host:port
+    # redis (upstash) — socket.io scaling + rate limiting
     REDIS_URL: str = os.environ.get("REDIS_URL", "")
 
-    # Sentry
+    # sentry
     SENTRY_DSN: str = os.environ.get("SENTRY_DSN", "")
 
-    # Supabase (for storage)
+    # supabase (for storage)
     SUPABASE_URL: str = os.environ.get("SUPABASE_URL", "")
     SUPABASE_KEY: str = os.environ.get("SUPABASE_KEY", "")
     SUPABASE_BUCKET: str = os.environ.get("SUPABASE_BUCKET", "cryptalk")
 
-    # File storage limits — sized for Supabase free tier (1 GB total).
-    # Per-file cap keeps any single upload reasonable (matches Telegram's free tier).
+    # file storage limits — sized for supabase free tier (1 GB total)
     MAX_FILE_SIZE_BYTES: int = int(os.environ.get("MAX_FILE_SIZE_BYTES", 25 * 1024 * 1024))
-    # Total storage budget we enforce server-side (leaves headroom under 1 GB).
     STORAGE_QUOTA_BYTES: int = int(os.environ.get("STORAGE_QUOTA_BYTES", 950 * 1024 * 1024))
-    # Files older than this (with no live message) are considered orphaned and
-    # eligible for cleanup. 24 h gives recipients plenty of time to come online.
+    # files older than this (with no live message) are orphaned
     FILE_RETENTION_HOURS: int = int(os.environ.get("FILE_RETENTION_HOURS", 24))
 
     AVATAR_COLORS: List[str] = [

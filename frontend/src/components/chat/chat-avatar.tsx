@@ -14,8 +14,7 @@ interface ChatAvatarProps {
   className?: string
   ring?: boolean
   userId?: string
-  // When true, loads the avatar image eagerly (no lazy-loading). Use for the
-  // first few visible chat-list avatars so they appear instantly on first paint.
+  // eager load first few avatars for instant first paint
   eager?: boolean
 }
 

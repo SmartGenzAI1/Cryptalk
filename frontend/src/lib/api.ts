@@ -2,17 +2,11 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || ''
 const BACKEND_PORT = process.env.NEXT_PUBLIC_BACKEND_PORT || process.env.BACKEND_PORT || '8001'
 
 function buildUrl(path: string): string {
-  // F5: when `BACKEND_URL` is set (CORS / direct backend) we hit the API
-  // server directly — no gateway, no `XTransformPort` query param needed.
-  // The previous code always appended a dangling `?`/`&`, producing URLs
-  // like `https://api/chats?` or `https://api/x?y=1&`. Just concat the path
-  // verbatim — the caller is responsible for any query string.
+  // direct backend mode: no gateway, no XTransformPort
   if (BACKEND_URL) {
     return `${BACKEND_URL}${path}`
   }
-  // Gateway path: Caddy needs `XTransformPort` to know which backend port
-  // to forward to. Append it to whatever query string (if any) the caller
-  // already supplied.
+  // gateway path: caddy needs XTransformPort to route
   const sep = path.includes('?') ? '&' : '?'
   return `${path}${sep}XTransformPort=${BACKEND_PORT}`
 }
@@ -87,15 +81,8 @@ export interface UploadResult {
   message?: string
 }
 
-/**
- * Upload a binary blob to the backend as multipart/form-data with field name `file`.
- * The browser sets the Content-Type + multipart boundary automatically — do NOT
- * set Content-Type manually or the boundary will be missing.
- *
- * On 413 / 507 the server returns `{ error, message | limit | quota }`. We throw
- * an Error whose `.message` contains the human-readable server message so the
- * caller can show it in a toast.
- */
+// upload blob as multipart; browser sets the boundary (don't set content-type)
+// throws server message on 413/507 so caller can toast it
 export async function apiUploadFile(
   path: string,
   file: Blob,
@@ -103,7 +90,7 @@ export async function apiUploadFile(
 ): Promise<UploadResult> {
   const formData = new FormData()
   const fileName = opts?.fileName || `upload-${Date.now()}`
-  // If the caller supplied a contentType, wrap the blob so FormData emits it.
+  // wrap blob so FormData emits the caller's contentType
   const blob =
     opts?.contentType && !(file instanceof File)
       ? new Blob([file], { type: opts.contentType })
@@ -114,13 +101,12 @@ export async function apiUploadFile(
     method: 'POST',
     body: formData,
     credentials: 'include',
-    // Intentionally omit 'Content-Type' — the browser must set the multipart boundary.
+    // don't set content-type; browser sets the multipart boundary
   })
 
   const data = await res.json().catch(() => ({} as UploadResult))
 
   if (!res.ok) {
-    // 413 file_too_large, 507 quota_exceeded, etc.
     const serverMsg =
       (data as any).message ||
       (data as any).error ||

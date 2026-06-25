@@ -24,34 +24,24 @@ import {
 import { apiGet, apiPost } from './api'
 
 export interface E2EEStatus {
-  /** Does this device have identity keys? */
   hasLocalKeys: boolean
-  /* server key status */
   hasServerKeys: boolean
-  /** Is E2EE fully active for this user? */
   isE2EEEnabled: boolean
 }
 
-/**
- * Initialize E2EE for the current user.
- * Called on app load — generates keys if needed and syncs with server.
- */
+// generate keys if needed and sync with server (called on app load)
 export async function initE2EE(userId: string): Promise<E2EEStatus> {
-  // 1. Check for local identity keys
   let identityKey = await loadIdentityKey()
   let hasLocal = identityKey !== null
 
-  // 2. If no local keys, generate them
   if (!identityKey) {
     identityKey = await generateIdentityKeyPair()
     await saveIdentityKey(identityKey)
     hasLocal = true
   }
 
-  // 3. Check server key status
   const serverStatus = await apiGet<{ has_keys: boolean }>('/api/keys/status/me').catch(() => ({ has_keys: false }))
 
-  // 4. If server doesn't have our keys, upload them
   let keysUploaded = serverStatus.has_keys
   if (!keysUploaded && identityKey) {
     try {
@@ -75,10 +65,7 @@ export async function initE2EE(userId: string): Promise<E2EEStatus> {
   }
 }
 
-/**
- * Encrypt a message for a direct (1:1) chat.
- * Fetches the recipient's public key from the server and encrypts.
- */
+// fetch recipient's pubkey and encrypt
 export async function encryptDirectMessage(
   plaintext: string,
   recipientUserId: string
@@ -86,7 +73,6 @@ export async function encryptDirectMessage(
   const identityKey = await loadIdentityKey()
   if (!identityKey) throw new Error('No identity key — run initE2EE first')
 
-  // Fetch recipient's public keys
   const recipientKeys = await apiGet<{ identity_public_key: string | null }>(
     `/api/keys/${recipientUserId}`
   )
@@ -94,46 +80,37 @@ export async function encryptDirectMessage(
     throw new Error('Recipient has not set up E2EE yet')
   }
 
-  // Encrypt
   const payload = await encryptMessage(
     plaintext,
     recipientKeys.identity_public_key,
     identityKey.encryption.privateKey
   )
 
-  // Return as JSON string — stored in message.content
+  // stored as JSON string in message.content
   return JSON.stringify(payload)
 }
 
-/**
- * Decrypt a direct message.
- * Uses the local private key — the server cannot do this.
- */
+// local private key only — server can't decrypt
 export async function decryptDirectMessage(
   encryptedContent: string
 ): Promise<string> {
   const identityKey = await loadIdentityKey()
   if (!identityKey) throw new Error('No identity key — cannot decrypt')
 
-  // Handle legacy plaintext messages (before E2EE was enabled)
+  // legacy plaintext fallback (pre-E2EE messages)
   try {
     const payload = JSON.parse(encryptedContent) as EncryptedPayload
     if (!payload.ciphertext || !payload.nonce || !payload.ephemeralPublicKey) {
-      // Not an encrypted payload — return as-is (legacy message)
       return encryptedContent
     }
     return await decryptMessage(payload, identityKey.encryption.privateKey)
   } catch (e: any) {
     if (e.message?.includes('Decryption failed')) throw e
-    // JSON parse failed — it's a legacy plaintext message
     return encryptedContent
   }
 }
 
-/**
- * Encrypt a message for a group chat.
- * Uses a per-chat shared key derived from the chat ID.
- */
+// per-chat shared key derived from chat id
 export async function encryptGroupMessageForChat(
   plaintext: string,
   chatId: string
@@ -141,7 +118,6 @@ export async function encryptGroupMessageForChat(
   const identityKey = await loadIdentityKey()
   if (!identityKey) throw new Error('No identity key — run initE2EE first')
 
-  // Get or derive the group key
   let groupKey = await loadGroupKey(chatId)
   if (!groupKey) {
     groupKey = await deriveGroupKey(chatId, identityKey.encryption.privateKey)
@@ -152,9 +128,6 @@ export async function encryptGroupMessageForChat(
   return JSON.stringify({ ...payload, type: 'group' })
 }
 
-/**
- * Decrypt a group message.
- */
 export async function decryptGroupMessageForChat(
   encryptedContent: string,
   chatId: string
@@ -181,29 +154,24 @@ export async function decryptGroupMessageForChat(
   }
 }
 
-/**
- * Encrypt a message — automatically detects direct vs group chat.
- */
+// dispatch on chat type
 export async function encryptMessageForChat(
   plaintext: string,
   chatId: string,
   chatType: string,
   recipientUserId?: string
 ): Promise<string> {
-  // Saved messages and channels don't need E2EE (only you can see them)
+  // saved messages are local-only, skip e2ee
   if (chatType === 'saved') return plaintext
 
   if (chatType === 'direct' && recipientUserId) {
     return encryptDirectMessage(plaintext, recipientUserId)
   }
 
-  // Group / channel: use group encryption
   return encryptGroupMessageForChat(plaintext, chatId)
 }
 
-/**
- * Decrypt a message — automatically detects direct vs group.
- */
+// dispatch on chat type
 export async function decryptMessageForChat(
   encryptedContent: string,
   chatId: string,
@@ -218,9 +186,6 @@ export async function decryptMessageForChat(
   return decryptGroupMessageForChat(encryptedContent, chatId)
 }
 
-/**
- * Check if a message appears to be encrypted.
- */
 export function isEncrypted(content: string): boolean {
   try {
     const parsed = JSON.parse(content)
@@ -230,10 +195,7 @@ export function isEncrypted(content: string): boolean {
   }
 }
 
-/**
- * Clear all E2EE keys (on logout or account deletion).
- * This makes all past messages permanently undecryptable.
- */
+// wipes all local keys — past messages become permanently undecryptable
 export async function destroyAllKeys(): Promise<void> {
   await clearAllKeys()
 }

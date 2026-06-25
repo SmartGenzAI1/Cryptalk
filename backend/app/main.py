@@ -1,4 +1,4 @@
-"""Cryptalk backend."""
+# cryptalk backend
 
 import logging
 from contextlib import asynccontextmanager
@@ -46,27 +46,21 @@ async def lifespan(app: FastAPI):
         sync_url = f"sqlite:///{settings.DB_PATH}"
     sync_engine = create_engine(sync_url, echo=False)
     Base.metadata.create_all(sync_engine)
-    # Ensure hot-path indexes exist (idempotent — CREATE INDEX IF NOT EXISTS).
-    # These cover the queries that run on every chat-open / chat-list / search.
+    # hot-path indexes (idempotent)
     with sync_engine.connect() as conn:
         from sqlalchemy import text
-        # Message.chatId + createdAt desc — powers list_for_chat (the main
-        # message-history query) and last_messages_for_chats (chat list).
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_message_chat_created "
             "ON \"Message\" (\"chatId\", \"createdAt\" DESC)"
         ))
-        # Message.senderId — powers "messages from user X" lookups.
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_message_sender "
             "ON \"Message\" (\"senderId\")"
         ))
-        # StarredMessage.userId — powers list_starred.
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_starred_user "
             "ON \"StarredMessage\" (\"userId\", \"createdAt\" DESC)"
         ))
-        # ChatMember.userId — powers get_user_chats (the chat list).
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_chatmember_user "
             "ON \"ChatMember\" (\"userId\")"
@@ -75,8 +69,7 @@ async def lifespan(app: FastAPI):
     sync_engine.dispose()
     logger.info("Database tables + indexes ensured")
     yield
-    # B9: close the shared Supabase HTTP client so we don't leak connections
-    # on shutdown (was per-call before — now pooled).
+    # close pooled supabase http client on shutdown
     from app.core.storage import StorageService
     await StorageService.close()
     logger.info("Shutting down...")
@@ -90,9 +83,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# GZip compression — message lists with base64 content can be large; gzip
-# typically cuts response size ~70-80% which matters a lot on mobile.  Only
-# compresses responses ≥ 500 bytes (smaller ones aren't worth the CPU).
+# gzip base64 message lists — big wins on mobile
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 app.add_middleware(
@@ -123,8 +114,7 @@ async def limit_request_body(request: Request, call_next):
         except (ValueError, TypeError):
             return JSONResponse(status_code=400, content={"error": "bad_content_length"})
         if cl_int > 40 * 1024 * 1024:
-            # Uploads enforce their own per-file cap inside the handler (25 MB),
-            # so let them through the global guard.
+            # uploads enforce their own cap inside the handler
             if not request.url.path.startswith("/api/uploads"):
                 return JSONResponse(status_code=413, content={"error": "too_large", "message": "Request body exceeds 40MB limit"})
     return await call_next(request)
@@ -132,8 +122,7 @@ async def limit_request_body(request: Request, call_next):
 app.add_exception_handler(DomainError, domain_error_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
-# Graceful 404/405 handlers — return JSON instead of FastAPI's default HTML
-# so clients always get a parseable error body.
+# json 404/405 instead of fastapi's default html
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse as _JSONResponse
 
@@ -150,15 +139,13 @@ async def method_not_allowed_handler(request: Request, exc):
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
-    # Don't leak internal field names — just say "validation error" with a
-    # minimal detail.  The full Pydantic error list can expose schema internals.
+    # don't leak pydantic schema internals
     return _JSONResponse(
         status_code=422,
         content={"error": "validation_error", "message": "Invalid request data"},
     )
 
 
-# Security headers middleware — set on every response.
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -166,11 +153,9 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    # Only set HSTS in production (HTTPS). In dev (HTTP) it would break
-    # localhost access.
+    # hsts only in prod (https)
     if settings.is_postgres:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    # Prevent MIME-sniffing on downloads.
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
     return response
 

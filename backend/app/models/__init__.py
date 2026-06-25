@@ -1,4 +1,4 @@
-"""ORM models."""
+# ORM models
 
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -53,8 +53,7 @@ class Chat(Base):
     creator = relationship("User", back_populates="created_chats", foreign_keys=[created_by])
 
 class ChatMember(Base):
-    """Membership join table — also stores per-user chat preferences."""
-
+    # membership join table — also stores per-user chat preferences
     __tablename__ = "ChatMember"
 
     id = Column(String, primary_key=True)
@@ -71,8 +70,6 @@ class ChatMember(Base):
     user = relationship("User", back_populates="memberships")
 
 class Message(Base):
-    """A chat message — text, sticker, voice, image, or system notice."""
-
     __tablename__ = "Message"
 
     id = Column(String, primary_key=True)
@@ -85,15 +82,13 @@ class Message(Base):
     created_at = Column("createdAt", Integer, index=True)
     deleted_at = Column("deletedAt", Integer, nullable=True)
     duration = Column(Integer, nullable=True)  # voice message seconds
-    # Message expiration (seconds; null = no expiration / self-destruct off)
-    expires_in = Column("expiresIn", Integer, nullable=True)
+    expires_in = Column("expiresIn", Integer, nullable=True)  # seconds; null = no expiration
     status = Column("status", String, default="sent")
     read_by = Column("readBy", Text, nullable=True)
     delivered_to = Column("deliveredTo", Text, nullable=True)
-    # Plaintext path to an encrypted blob in Supabase Storage (e.g.
-    # "files/{userId}/{randId}/{file}").  The server needs this to delete the
-    # object once the message is delivered or deleted-for-everyone.  The file
-    # itself is always E2EE ciphertext — the server cannot read it.
+    # path to ciphertext blob in supabase storage ("files/{userId}/{randId}/{file}").
+    # server needs this to delete the object when the message is delivered or
+    # deleted-for-everyone. file itself is always e2ee ciphertext.
     attachment_path = Column("attachmentPath", String, nullable=True, index=True)
 
     chat = relationship("Chat", back_populates="messages")
@@ -102,8 +97,6 @@ class Message(Base):
     reactions = relationship("Reaction", back_populates="message", cascade="all, delete-orphan")
 
 class Reaction(Base):
-    """An emoji reaction on a message."""
-
     __tablename__ = "Reaction"
 
     id = Column(String, primary_key=True)

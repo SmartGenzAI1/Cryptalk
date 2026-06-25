@@ -168,9 +168,8 @@ class Message {
   final bool starred;
   final AppUser sender;
   final List<Reaction> reactions;
-  /// Supabase Storage path returned by `POST /api/uploads` (or null when
-  /// the upload fell back to base64-content mode, or after the server has
-  /// purged the attachment on delivery).
+  // supabase storage path from /api/uploads (null on dev fallback or after
+  // server wipes the attachment on delivery)
   final String? attachmentPath;
 
   Message({

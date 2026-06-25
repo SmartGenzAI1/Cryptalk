@@ -53,15 +53,14 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   List<String> _typingUsers = [];
   int? _selfDestructSeconds;
 
-  /// Subscription IDs returned by `SocketService.on*` — cancelled in
-  /// `dispose` so we remove ONLY this screen's listeners, not every screen's
-  /// (L3 fix).
+  // socket sub ids — cancelled in dispose so we only remove this screen's
+  // listeners
   final List<int> _socketSubIds = [];
 
-  /// Web-client sticker names (e.g. `"fox"`, `"like"`) mapped to emoji so
-  /// stickers sent from the web app render as an icon on Flutter instead of
-  /// the literal string "fox" (L8 fix). Names not in the map (e.g. an emoji
-  /// sent from another Flutter client) fall through unchanged.
+  // web-client sticker names ('fox', 'like', ...) → emoji. stickers sent
+  // from web render as an icon here instead of the literal string 'fox'.
+  // names not in the map (e.g. an emoji from another flutter client) fall
+  // through unchanged.
   static const Map<String, String> _stickerEmojiMap = {
     'like': '👍',
     'star': '⭐',
@@ -154,7 +153,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         });
       }
     } catch (e) { debugPrint('Error: $e'); } finally {
-      // L15 fix: guard setState after the async getMessages() call.
+      // guard setState after the async getMessages call
       if (mounted)
       setState(() => _loadingMore = false);
     }
@@ -177,8 +176,8 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     final socket = context.read<SocketService>();
     _socketSubIds.add(socket.onMessage((data) {
       if (data['chatId'] == widget.chat.id && data['message'] != null) {
-        // L5 fix: guard setState — a message arriving during a navigation
-        // transition would otherwise crash on a disposed State.
+        // mounted check — message arriving during a navigation transition
+        // would crash on a disposed State
         if (!mounted) return;
         final msg = Message.fromJson(data['message']);
         setState(() => _messages.add(msg));
@@ -193,9 +192,8 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         setState(() {
           if (!_typingUsers.contains(username)) _typingUsers.add(username);
         });
-        // L4 fix: capture `mounted` inside the delayed callback so a
-        // setState-after-dispose crash can't happen if the user navigates
-        // away within the 3-second window.
+        // capture mounted in the delayed callback so setState-after-dispose
+        // can't happen if the user navigates away within the 3s window
         Future.delayed(const Duration(seconds: 3), () {
           if (!mounted) return;
           setState(() => _typingUsers.remove(username));
@@ -218,8 +216,8 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     }));
   }
 
-  /// For direct chats, return the other member's userId (used to fetch their
-  /// E2EE public key). Returns null for saved/group chats.
+  // for direct chats: the other member's userId (to fetch their e2ee pub
+  // key). null for saved/group chats.
   String? _recipientUserId() {
     if (widget.chat.type != 'direct') return null;
     final auth = context.read<AuthService>();
@@ -266,7 +264,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         chatType: widget.chat.type,
         recipientUserId: _recipientUserId(),
       );
-      // L6 fix: guard setState after the await.
+      // mounted check after await
       if (!mounted) return;
       setState(() {
         _messages.add(msg);
@@ -364,7 +362,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       _recordSeconds = 0;
     });
     _recordTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      // L5 fix: the periodic timer can fire after dispose — guard setState.
+      // periodic timer can fire after dispose — guard setState
       if (!mounted) {
         t.cancel();
         return;
@@ -680,10 +678,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     );
   }
 
-  /// Mobile-first attachment menu — opens a bottom sheet with the available
-  /// attachment options (photo, sticker, self-destruct timer). Replaces the
-  /// old design that put two icon buttons on the AppBar AND duplicated the
-  /// timer button in the input row.
+  // attachment menu (photo, sticker, self-destruct timer).
   void _showAttachMenu() {
     showModalBottomSheet<void>(
       context: context,
@@ -745,8 +740,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     );
   }
 
-  /// Resolve what to show as the AppBar title for the current chat — for
-  /// direct chats, the other member's display name; otherwise the chat title.
+  // appbar title: for direct chats, the other member's name; else chat title
   String _resolveTitle() {
     final chat = widget.chat;
     if (chat.type == 'saved') return 'Saved Messages';
@@ -794,9 +788,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     _recordTimer?.cancel();
     _audioPlayer.dispose();
     _record.dispose();
-    // L3 fix: cancel ONLY this screen's socket subscriptions — not every
-    // screen's (which is what the old `clearCallbacks()` call did, wiping the
-    // chat list's listeners too).
+    // cancel ONLY this screen's socket subs, not every screen's
     final socket = SocketService();
     for (final id in _socketSubIds) {
       socket.cancelSubscription(id);
@@ -1248,17 +1240,15 @@ class _MessageBubble extends StatelessWidget {
 
   Widget _buildContent() {
     final t = message.type;
-    // E2EE attachments (image / file / voice): content is either a decrypted
-    // URL, a decrypted data URL (dev fallback), or the "[delivered]" sentinel
-    // — handled by `_AttachmentView` with fetch+decrypt+cache.
+    // e2ee attachments: content is a decrypted url, data url (dev fallback),
+    // or '[delivered]' sentinel — _AttachmentView handles fetch+decrypt+cache
     if (t == 'image' || t == 'file' || t == 'voice') {
       return _AttachmentView(message: message, isOwn: isOwn);
     }
     if (t == 'sticker') {
-      // L8 fix: stickers sent from the web app carry a *name* (e.g. "fox",
-      // "like", "rocket") rather than an emoji. Map known names to emoji;
-      // anything else (an emoji sent from another Flutter client, or an
-      // unknown name) falls through and renders as-is.
+      // stickers from web carry a name ('fox', 'like', 'rocket') not an emoji.
+      // map known names to emoji; anything else (emoji from another flutter
+      // client, or unknown name) renders as-is
       final emoji = _stickerEmojiMap[message.content] ?? message.content;
       return Text(emoji, style: const TextStyle(fontSize: 48));
     }
@@ -1275,16 +1265,11 @@ class _MessageBubble extends StatelessWidget {
   }
 }
 
-/// Renders an E2EE file/image/voice attachment. Resolves the message
-/// `content` (a decrypted URL, data URL, or "[delivered]" sentinel) into a
-/// renderable data URL by:
-///   1. Returning the cached value if we've already resolved this message id.
-///   2. Returning immediately if `content` is already a `data:` URL (dev
-///      fallback path — content embedded directly).
-///   3. Showing the muted "no longer available" placeholder if `content` is
-///      `"[delivered]"` (server wiped the blob after delivery).
-///   4. Otherwise fetching the URL → UTF-8 decode → `CryptoService.decrypt`
-///      → original data URL, then caching it for next time.
+// renders an e2ee file/image/voice attachment. resolves message.content
+// (decrypted url, data url, or '[delivered]' sentinel) to a renderable data
+// url: cached value if already resolved; data: url returned as-is (dev
+// fallback); '[delivered]' → muted placeholder; otherwise fetch → utf-8 decode
+// → decrypt → original data url, then cache.
 class _AttachmentView extends StatefulWidget {
   final Message message;
   final bool isOwn;
@@ -1296,9 +1281,8 @@ class _AttachmentView extends StatefulWidget {
 }
 
 class _AttachmentViewState extends State<_AttachmentView> {
-  /// Per-message-id cache: resolved data URL string, or one of the
-  /// sentinels `"[delivered]"` / `"[error]"`. Survives widget rebuilds so
-  /// scrolling doesn't refetch.
+  // per-message-id cache: resolved data url or '[delivered]'/'[error]' sentinel.
+  // survives rebuilds so scrolling doesn't refetch
   static final Map<String, String> _cache = {};
 
   static const _kDelivered = '[delivered]';
@@ -1327,7 +1311,7 @@ class _AttachmentViewState extends State<_AttachmentView> {
       return;
     }
 
-    // Server wipes content to "[delivered]" once everyone has received it.
+    // server wipes content to '[delivered]' once everyone has received it
     if (content == _kDelivered || content.isEmpty) {
       _cache[msg.id] = _kDelivered;
       if (mounted) {
@@ -1339,7 +1323,7 @@ class _AttachmentViewState extends State<_AttachmentView> {
       return;
     }
 
-    // Dev fallback: content is already the decrypted data URL.
+    // dev fallback: content is already the decrypted data url
     if (content.startsWith('data:')) {
       _cache[msg.id] = content;
       if (mounted) {
@@ -1351,8 +1335,8 @@ class _AttachmentViewState extends State<_AttachmentView> {
       return;
     }
 
-    // Production: content is a (decrypted) Supabase URL → fetch the
-    // ciphertext bytes → UTF-8 decode → decrypt → original data URL.
+    // prod: content is a (decrypted) supabase url → fetch ciphertext bytes →
+    // utf-8 decode → decrypt → original data url
     if (content.startsWith('http://') || content.startsWith('https://')) {
       try {
         final res = await http.get(Uri.parse(content)).timeout(const Duration(seconds: 30));
@@ -1387,7 +1371,7 @@ class _AttachmentViewState extends State<_AttachmentView> {
       return;
     }
 
-    // Unknown format — fall back to displaying the raw content.
+    // unknown format — fall back to displaying the raw content
     _cache[msg.id] = content;
     if (mounted) {
       setState(() {
@@ -1441,9 +1425,9 @@ class _AttachmentViewState extends State<_AttachmentView> {
     }
 
     if (msg.type == 'image') {
-      // `_resolved` is either a data: URL (the common case after decryption)
-      // or a plain http(s) URL. Decode data URLs to bytes for Image.memory
-      // since Image.network doesn't speak the `data:` scheme.
+      // _resolved is either a data: url (common after decrypt) or a plain
+      // http(s) url. decode data urls to bytes for Image.memory since
+      // Image.network doesn't speak the data: scheme
       if (data.startsWith('data:')) {
         try {
           final commaIdx = data.indexOf(',');
@@ -1500,7 +1484,7 @@ class _AttachmentViewState extends State<_AttachmentView> {
       );
     }
 
-    // Generic file attachment.
+    // generic file attachment
     final name = msg.attachmentPath?.split('/').last ?? 'file';
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1521,7 +1505,7 @@ class _AttachmentViewState extends State<_AttachmentView> {
   }
 }
 
-/// Circular attachment option used by the mobile-first attach bottom sheet.
+// circular attach option used by the attach bottom sheet
 class _AttachOption extends StatelessWidget {
   final IconData icon;
   final Color color;

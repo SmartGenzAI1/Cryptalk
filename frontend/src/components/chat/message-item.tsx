@@ -64,11 +64,7 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
   const removeMessage = useChatStore((s) => s.removeMessage)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(message.content)
-  // F1: initialize from the server value so previously-starred messages show
-  // the star indicator on mount (was always `false`). We use the React 19
-  // "adjust state during render" pattern (not a useEffect) to sync when
-  // `message.starred` changes from elsewhere — avoids the lint rule against
-  // calling setState synchronously inside an effect.
+  // sync starred state from server without useEffect (React 19 pattern)
   const [starred, setStarred] = useState(() => !!message.starred)
   const [prevStarred, setPrevStarred] = useState(message.starred)
   if (message.starred !== prevStarred) {
@@ -78,15 +74,11 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
   const [showHoverBar, setShowHoverBar] = useState(false)
   const [showQuickReact, setShowQuickReact] = useState(false)
   const [forwardOpen, setForwardOpen] = useState(false)
-  // voice playback
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
   const playTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Attachment resolution state — for image / file / voice messages the
-  // `content` field may be an encrypted URL (Supabase path), an encrypted
-  // data URL (dev fallback), or the literal "[delivered]" placeholder after
-  // the server wipes content post-delivery. We resolve it asynchronously.
+  // content may be an encrypted URL, encrypted data URL, or "[delivered]" placeholder
   const [attachment, setAttachment] = useState<{
     status: 'loading' | 'ready' | 'delivered' | 'error'
     dataUrl: string | null
@@ -99,10 +91,7 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
   const isImage = message.type === 'image'
   const isFile = message.type === 'file'
 
-  // Resolve attachment content for image / file / voice messages.
-  // Deps are intentionally limited to message.id + message.content (stable
-  // across re-renders of the memoized component) plus the chat type which
-  // is needed for E2EE decryption.
+  // deps limited to message.id + content + chatType (stable across re-renders)
   const chatType = activeChat?.type || 'direct'
   useEffect(() => {
     if (!isImage && !isFile && !isVoice) return
@@ -114,15 +103,14 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
         if (!cancelled) setAttachment({ status: 'error', dataUrl: null })
         return
       }
-      // Fast-path: server wiped content after delivery confirmation
+      // server wiped content after delivery confirmation
       if (raw === '[delivered]') {
         if (!cancelled) setAttachment({ status: 'delivered', dataUrl: null })
         return
       }
       try {
         let resolved = raw
-        // If content isn't already a URL or data URL, it's an encrypted
-        // ciphertext JSON string — decrypt it first.
+        // decrypt ciphertext first if it's not already a URL/data URL
         if (
           !resolved.startsWith('http://') &&
           !resolved.startsWith('https://') &&
@@ -139,15 +127,13 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
           return
         }
         if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
-          // Supabase-stored attachment — fetch ciphertext bytes & decrypt
+          // supabase-stored — fetch ciphertext bytes and decrypt
           const dataUrl = await fetchAndDecryptAttachment(resolved, message.chatId, chatType)
           if (!cancelled) setAttachment({ status: 'ready', dataUrl })
         } else if (resolved.startsWith('data:')) {
-          // Dev fallback — content is already the decrypted data URL
+          // dev fallback — content is already the decrypted data URL
           if (!cancelled) setAttachment({ status: 'ready', dataUrl: resolved })
         } else {
-          // Legacy plaintext (no E2EE) — treat as data URL if it looks like one,
-          // otherwise mark as error.
           if (!cancelled) setAttachment({ status: 'ready', dataUrl: resolved })
         }
       } catch {
@@ -159,7 +145,7 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
     return () => { cancelled = true }
   }, [message.id, message.content, message.chatId, chatType, isImage, isFile, isVoice])
 
-  // reaction grouped by emoji
+  // reactions grouped by emoji
   const reactionGroups = message.reactions.reduce<Record<string, { count: number; mine: boolean }>>((acc, r) => {
     if (!acc[r.emoji]) acc[r.emoji] = { count: 0, mine: false }
     acc[r.emoji].count++
@@ -177,7 +163,7 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
         userId: currentUser?.id,
         added: data.added,
       })
-      // locally refresh this message reactions
+      // locally refresh this message's reactions
       const refreshed = await apiGet<{ messages: any[] }>(`/api/${message.chatId}/messages?limit=200`)
       if (refreshed.messages) {
         const m = refreshed.messages.find((x: any) => x.id === message.id)
@@ -625,16 +611,10 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
 }
 
 export const MessageItem = memo(MessageItemImpl, (prev, next) => {
-  // Custom comparator: skip re-render when nothing visual changed.
-  // Compares message identity + the small set of fields that affect the
-  // rendered output. Avoids re-rendering the whole list when an unrelated
-  // store slice (e.g. typing indicators, online users) changes.
-  //
-  // Reactions and sender are compared by reference — the Zustand store always
-  // allocates new arrays/objects on updates (see updateMessage /
-  // updateReactionInStore), so a reference change reliably signals a real
-  // content change. This avoids the length-only pitfall (e.g. swap 👍 for ❤️
-  // keeps length identical but visually differs).
+  // skip re-render when nothing visual changed.
+  // collections compared by reference — zustand always allocs new on update,
+  // so a ref change reliably signals a real content change (avoids the
+  // length-only pitfall where e.g. swap 👍 for ❤️ keeps length identical).
   const pm = prev.message
   const nm = next.message
   return (
@@ -658,7 +638,7 @@ export const MessageItem = memo(MessageItemImpl, (prev, next) => {
   )
 })
 
-// Voice message bubble with waveform + play button
+// voice message bubble with waveform + play button
 function VoiceBubble({
   duration,
   playing,
@@ -723,7 +703,7 @@ function VoiceBubble({
   )
 }
 
-// Delivery status ticks: ✓ sent, ✓✓ delivered, ✓✓ read (blue)
+// delivery ticks: ✓ sent, ✓✓ delivered, ✓✓ read (blue)
 function DeliveryTicks({ status }: { status: string }) {
   if (status === 'read') {
     return <CheckCheck className="h-3 w-3 text-sky-400" />
@@ -731,11 +711,9 @@ function DeliveryTicks({ status }: { status: string }) {
   if (status === 'delivered') {
     return <CheckCheck className="h-3 w-3" />
   }
-  // sent (single check)
   return <Check className="h-3 w-3" />
 }
 
-// Attachment loading spinner (shown while fetching + decrypting from Supabase)
 function AttachmentLoading({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 py-3 px-4 min-w-[180px]">
@@ -745,7 +723,7 @@ function AttachmentLoading({ label }: { label: string }) {
   )
 }
 
-// Placeholder for attachments that have been wiped (post-delivery) or failed to load
+// placeholder for wiped/failed attachments
 function AttachmentPlaceholder({ text, isError = false }: { text: string; isError?: boolean }) {
   return (
     <div className="flex items-center gap-2 py-2.5 px-3 min-w-[200px] max-w-[280px]">

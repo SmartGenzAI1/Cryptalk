@@ -1,10 +1,4 @@
-"""Service layer — business logic that orchestrates repositories.
-
-Services are the only place that enforces business rules (e.g. "a user
-cannot mute a chat they don't belong to").  Each service receives its
-repositories via constructor injection, making them trivially testable
-with mocked data access.
-"""
+# service layer — business logic that orchestrates repositories
 
 import secrets
 
@@ -28,8 +22,6 @@ from app.services.serializers import serialize_user
 
 
 class AuthService:
-    """Handles authentication, session management, and account creation."""
-
     def __init__(self, user_repo: UserRepository, chat_repo: ChatRepository):
         self.user_repo = user_repo
         self.chat_repo = chat_repo
@@ -51,7 +43,7 @@ class AuthService:
             is_online=True,
         )
 
-        # Provision a "Saved Messages" chat for the new user
+        # provision a Saved Messages chat for the new user
         saved = await self.chat_repo.create(
             type="saved",
             title="Saved Messages",
@@ -61,7 +53,7 @@ class AuthService:
         )
         await self.chat_repo.add_member(saved.id, user.id, role="owner")
 
-        # Auto-join the welcome channel if it exists
+        # auto-join the welcome channel if it exists
         welcome = await self.chat_repo.get_by_id("welcome-channel")
         if welcome:
             existing = await self.chat_repo.get_member(welcome.id, user.id)
@@ -74,7 +66,7 @@ class AuthService:
     async def login(self, username: str, password: str, response: Response) -> dict:
         username = validate_username(username)
         user = await self.user_repo.get_by_username(username)
-        # Use constant-time comparison to prevent timing attacks even on invalid users
+        # constant-time comparison even on invalid users
         if not user or not verify_password(password, user.password_hash or "x" * 64):
             raise AuthError("Invalid credentials")
 

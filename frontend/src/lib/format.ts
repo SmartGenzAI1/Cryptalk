@@ -1,4 +1,4 @@
-// Time formatting helpers for the chat UI
+// time formatting helpers for the chat UI
 
 export function formatTime(iso: string): string {
   const d = new Date(iso)

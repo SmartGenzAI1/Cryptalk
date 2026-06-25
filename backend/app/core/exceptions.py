@@ -1,12 +1,11 @@
-"""Exception hierarchy + handlers."""
+# exception hierarchy + handlers
 
 from typing import Any, Dict, Optional
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-# ─── Domain exceptions ──────────────────────────────────────────────────
-
+# domain exceptions
 class DomainError(Exception):
 
     status_code: int = 400
@@ -37,8 +36,7 @@ class ValidationError(DomainError):
     status_code = 422
     error_code = "validation_error"
 
-# ─── Exception handlers ────────────────────────────────────────────────
-
+# exception handlers
 async def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
 
     return JSONResponse(

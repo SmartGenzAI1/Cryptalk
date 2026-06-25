@@ -70,17 +70,12 @@ export function MessageInput() {
   const lastTypingEmit = useRef(0)
   const recordTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // F3: mirror `recording` into a ref so the unmount cleanup below can read
-  // the *current* value rather than the value captured when the cleanup was
-  // registered. Without this, navigating away mid-recording leaks the mic
-  // stream (the OS mic indicator stays on) because the cleanup closure sees
-  // the stale `false`.
+  // mirror recording into ref so unmount cleanup sees current value (avoid stale closure)
   const recordingRef = useRef(false)
   useEffect(() => {
     recordingRef.current = recording
   }, [recording])
 
-  // listen for reply events
   useEffect(() => {
     function onReply(e: Event) {
       const msg = (e as CustomEvent).detail as MessageWithSender
@@ -91,11 +86,7 @@ export function MessageInput() {
     return () => window.removeEventListener('zc-reply', onReply)
   }, [])
 
-  // F3 + F9: on unmount, release any in-flight mic stream (so the OS mic
-  // indicator doesn't stay lit after navigating away mid-recording) and clear
-  // any pending typing-stop timer (otherwise `emitTyping(false)` would fire
-  // on a gone socket). Reads `recordingRef.current` (the ref mirror of
-  // `recording`) so the closure sees the up-to-date value.
+  // on unmount: release mic stream + clear typing timer (best-effort, never throw)
   useEffect(() => {
     return () => {
       if (recordingRef.current) {
@@ -107,7 +98,7 @@ export function MessageInput() {
           }
           if (recordTimer.current) clearInterval(recordTimer.current)
         } catch {
-          // best-effort — never throw from a cleanup
+          // best-effort
         }
       }
       if (typingTimer.current) {
@@ -146,7 +137,7 @@ export function MessageInput() {
   async function send(content: string, type: string = 'text') {
     if (!activeChatId || !content.trim()) return
     try {
-      // E2EE: encrypt the content before sending (server only sees ciphertext)
+      // e2ee: encrypt before sending (server only sees ciphertext)
       let encryptedContent = content.trim()
       if (type === 'text' && activeChat) {
         try {
@@ -170,7 +161,7 @@ export function MessageInput() {
         expiresIn: type === 'text' ? expiresIn : null,
       })
       if (data.message) {
-        // Decrypt our own message for local display
+        // decrypt our own message for local display
         if (type === 'text' && activeChat) {
           try {
             const { decryptMessageForChat } = await import('@/lib/e2ee')
@@ -180,7 +171,7 @@ export function MessageInput() {
               activeChat.type
             )
           } catch {
-            // keep original if decryption fails
+            // keep original
           }
         }
         addMessage(activeChatId, data.message)
@@ -263,7 +254,7 @@ export function MessageInput() {
     try {
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
 
-      // Client-side size guard (25MB backend limit)
+      // 25MB backend limit
       if (audioBlob.size > MAX_ATTACHMENT_BYTES) {
         toast.error('Voice message too large (max 25MB)')
         return
@@ -276,7 +267,7 @@ export function MessageInput() {
         reader.readAsDataURL(audioBlob)
       })
 
-      // 1. Encrypt the data URL → UTF-8 ciphertext bytes
+      // 1. encrypt the data URL → UTF-8 ciphertext bytes
       let encryptedBytes: Uint8Array
       let ciphertextString: string
       try {
@@ -290,13 +281,13 @@ export function MessageInput() {
         )
         ciphertextString = new TextDecoder().decode(encryptedBytes)
       } catch (e) {
-        // E2EE failed — fall back to plaintext data URL (legacy behaviour)
+        // e2ee failed — fall back to plaintext data URL (legacy)
         console.warn('E2EE encryption failed, sending plaintext:', e)
         encryptedBytes = new TextEncoder().encode(audioBase64)
         ciphertextString = audioBase64
       }
 
-      // 2. Upload ciphertext bytes to /api/uploads
+      // 2. upload ciphertext bytes to /api/uploads
       let attachmentPath: string | null = null
       let encryptedUrl: string | null = null
       let useFallback = false
@@ -307,7 +298,7 @@ export function MessageInput() {
           { contentType: 'application/octet-stream', fileName: `voice-${Date.now()}.webm` },
         )
         if (upload.fallback) {
-          // Dev mode — no Supabase. Embed ciphertext string in content (legacy).
+          // dev mode (no supabase) — embed ciphertext in content (legacy)
           useFallback = true
         } else if (upload.url && upload.path) {
           try {
@@ -321,21 +312,21 @@ export function MessageInput() {
             )
             attachmentPath = upload.path
           } catch {
-            // URL encryption failed — fall back to embedding ciphertext (no attachmentPath)
+            // URL encryption failed — fall back to embedding ciphertext
             useFallback = true
           }
         } else {
           throw new Error('Upload succeeded but no URL or fallback flag returned')
         }
       } catch (e: any) {
-        // 413 / 507 / network — show server message and abort
+        // 413/507/network — show server message and abort
         toast.error(e.message || 'Failed to upload voice message')
         return
       }
 
       const contentToSend = useFallback ? ciphertextString : (encryptedUrl ?? ciphertextString)
 
-      // 3. Send the message
+      // 3. send the message
       const data = await apiPost<{ message: any }>(`/api/${activeChatId}/messages`, {
         content: contentToSend,
         type: 'voice',
@@ -368,7 +359,7 @@ export function MessageInput() {
     if (!file) return
     e.target.value = ''
 
-    // Client-side size guard (25MB backend limit)
+    // 25MB backend limit
     if (file.size > MAX_ATTACHMENT_BYTES) {
       toast.error('File too large (max 25MB)')
       return
@@ -377,7 +368,7 @@ export function MessageInput() {
 
     setFileUploading(true)
     try {
-      // 1. Read as base64 data URL
+      // 1. read as base64 data URL
       const reader = new FileReader()
       const fileData = await new Promise<string>((resolve, reject) => {
         reader.onloadend = () => resolve(reader.result as string)
@@ -387,7 +378,7 @@ export function MessageInput() {
 
       const msgType = file.type.startsWith('image/') ? 'image' : 'file'
 
-      // 2. Encrypt the data URL → UTF-8 ciphertext bytes
+      // 2. encrypt the data URL → UTF-8 ciphertext bytes
       let encryptedBytes: Uint8Array
       let ciphertextString: string
       try {
@@ -401,13 +392,13 @@ export function MessageInput() {
         )
         ciphertextString = new TextDecoder().decode(encryptedBytes)
       } catch (err) {
-        // E2EE failed — fall back to plaintext data URL (legacy behaviour)
+        // e2ee failed — fall back to plaintext data URL (legacy)
         console.warn('E2EE encryption failed, sending plaintext:', err)
         encryptedBytes = new TextEncoder().encode(fileData)
         ciphertextString = fileData
       }
 
-      // 3. Upload ciphertext bytes to /api/uploads
+      // 3. upload ciphertext bytes to /api/uploads
       let attachmentPath: string | null = null
       let encryptedUrl: string | null = null
       let useFallback = false
@@ -418,7 +409,7 @@ export function MessageInput() {
           { contentType: 'application/octet-stream', fileName: file.name },
         )
         if (upload.fallback) {
-          // Dev mode — no Supabase. Embed ciphertext string in content (legacy).
+          // dev mode (no supabase) — embed ciphertext in content (legacy)
           useFallback = true
         } else if (upload.url && upload.path) {
           try {
@@ -432,21 +423,21 @@ export function MessageInput() {
             )
             attachmentPath = upload.path
           } catch {
-            // URL encryption failed — fall back to embedding ciphertext (no attachmentPath)
+            // URL encryption failed — fall back to embedding ciphertext
             useFallback = true
           }
         } else {
           throw new Error('Upload succeeded but no URL or fallback flag returned')
         }
       } catch (err: any) {
-        // 413 / 507 / network — show server message and abort
+        // 413/507/network — show server message and abort
         toast.error(err.message || 'Failed to upload file')
         return
       }
 
       const contentToSend = useFallback ? ciphertextString : (encryptedUrl ?? ciphertextString)
 
-      // 4. Send the message
+      // 4. send the message
       const data = await apiPost<{ message: any }>(`/api/${activeChatId}/messages`, {
         content: contentToSend,
         type: msgType,

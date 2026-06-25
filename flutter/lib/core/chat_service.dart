@@ -4,9 +4,7 @@ import 'api_client.dart';
 import 'models.dart';
 import 'crypto_service.dart';
 
-/// Hard client-side cap matching the server's 25MB per-file limit
-/// (`settings.MAX_FILE_SIZE_BYTES`). Files above this are rejected before
-/// hitting the network so the user gets immediate feedback.
+// 25mb client cap, matches server
 const int kMaxAttachmentBytes = 25 * 1024 * 1024;
 
 class ChatService {
@@ -25,27 +23,14 @@ class ChatService {
     if (before != null) path += '&before=${Uri.encodeComponent(before)}';
     final data = await _api.get(path);
     var messages = (data['messages'] as List).map((m) => Message.fromJson(m)).toList();
-    // Decrypt every message body. CryptoService.decrypt gracefully returns
-    // the input unchanged when it isn't valid ciphertext JSON, so legacy
-    // plaintext messages still render.
+    // decrypt returns input as-is for non-ciphertext, so legacy msgs still work
     for (final m in messages) {
       m.content = await _crypto.decrypt(m.content);
     }
     return messages;
   }
 
-  /// Send a plain text or sticker message.
-  ///
-  /// E2EE policy (L1 fix):
-  ///   • `chatType == 'saved'`  — no encryption (only the owner sees these).
-  ///   • `chatType == 'direct'` — fetch the recipient's X25519 identity public
-  ///     key via `/api/keys/{recipientUserId}` and encrypt with THAT (not our
-  ///     own key, which was the L1 bug — recipients could never decrypt).
-  ///   • `chatType == 'group'` — group E2EE (per-member or shared group key)
-  ///     is complex; for now we fall back to plaintext. TODO: implement
-  ///     either fan-out encryption or a Signal-style sender-key scheme.
-  ///   • If the recipient hasn't uploaded keys yet, fall back to plaintext so
-  ///     the message at least sends (graceful degradation).
+  // send text/sticker. direct chats are e2ee, saved/group are plaintext for now.
   Future<Message> sendMessage(
     String chatId,
     String content, {
@@ -63,14 +48,13 @@ class ChatService {
       if (expiresIn != null) 'expiresIn': expiresIn,
     });
     var msg = Message.fromJson(data['message']);
-    // Decrypt own echo back so the local UI shows the plaintext.
+    // decrypt own echo so local ui shows plaintext
     msg.content = await _crypto.decrypt(msg.content);
     return msg;
   }
 
-  /// Encrypt [plaintext] for the given chat context. Returns the ciphertext
-  /// JSON string, or the plaintext unchanged when encryption should be
-  /// skipped (saved messages, groups, missing recipient keys).
+  // returns ciphertext json, or plaintext when encryption is skipped (saved,
+  // group, missing recipient key)
   Future<String> _encryptForChat(
     String plaintext,
     String? chatType,
@@ -78,34 +62,20 @@ class ChatService {
   ) async {
     if (chatType == 'saved') return plaintext;
     if (chatType == 'group') {
-      // TODO: implement group E2EE (per-member fan-out or sender-key).
+      // TODO: group e2ee (fan-out or sender-key)
       return plaintext;
     }
     if (recipientUserId == null || recipientUserId.isEmpty) return plaintext;
     final recipientPub = await _crypto.getRecipientPublicKey(recipientUserId);
     if (recipientPub == null || recipientPub.isEmpty) {
-      // Recipient hasn't set up E2EE yet — send plaintext as a graceful
-      // fallback. The web client does the same.
+      // recipient hasn't set up e2ee yet, fall back to plaintext
       return plaintext;
     }
     return _crypto.encrypt(plaintext, recipientPub);
   }
 
-  /// Send an E2EE file/image/voice message via the new upload flow.
-  ///
-  /// Flow:
-  ///   1. Build a `data:<mime>;base64,<...>` string from [fileBytes].
-  ///   2. Encrypt that data URL with `_crypto.encrypt(...)` → ciphertext JSON.
-  ///   3. UTF-8 encode the ciphertext → bytes (ASCII-safe).
-  ///   4. `POST /api/uploads` those bytes as multipart `file`.
-  ///   5. If `fallback: true` (dev mode, no Supabase): send the message with
-  ///      `content = ciphertext` and no `attachmentPath`.
-  ///   6. Otherwise: encrypt the returned `url`, send the message with
-  ///      `content = encryptedUrl`, `type`, `attachmentPath = path`.
-  ///
-  /// On 413 (file_too_large) / 507 (quota_exceeded) the underlying
-  /// [ApiClient.uploadFile] throws an [ApiException] carrying the server's
-  /// `message`; callers should catch it and show it in a SnackBar.
+  // upload flow: encrypt data url → upload ciphertext bytes → encrypt the
+  // returned url → send message. dev fallback (no supabase) skips the url step.
   Future<Message> sendFileMessage(
     String chatId,
     Uint8List fileBytes,
@@ -130,12 +100,10 @@ class ChatService {
     final b64 = base64Encode(fileBytes);
     final dataUrl = 'data:$mime;base64,$b64';
 
-    // 1+2. Encrypt the data URL with the RECIPIENT's key (L1 fix). The
-    // chatType / recipientUserId are passed in by the caller; for saved /
-    // group / no-recipient-key cases the data URL is stored as plaintext.
+    // 1+2. encrypt the data url with the recipient's key
     final ciphertext = await _encryptForChat(dataUrl, chatType, recipientUserId);
 
-    // 3+4. UTF-8 encode ciphertext → upload.
+    // 3+4. utf-8 encode ciphertext → upload
     final cipherBytes = Uint8List.fromList(utf8.encode(ciphertext));
     final uploadRes = await _api.uploadFile(
       fileName,
@@ -144,7 +112,7 @@ class ChatService {
       contentType: contentType,
     );
 
-    // 5. Dev fallback: no Supabase configured on the server.
+    // 5. dev fallback: no supabase on the server
     if (uploadRes['fallback'] == true) {
       final data = await _api.post('/api/$chatId/messages', body: {
         'content': ciphertext,
@@ -158,7 +126,7 @@ class ChatService {
       return msg;
     }
 
-    // 6. Upload succeeded — encrypt the URL with the recipient's key (L1 fix).
+    // 6. upload succeeded — encrypt the url too
     final url = uploadRes['url']?.toString() ?? '';
     final path = uploadRes['path']?.toString();
     final encryptedUrl = await _encryptForChat(url, chatType, recipientUserId);
@@ -172,7 +140,7 @@ class ChatService {
       if (path != null) 'attachmentPath': path,
     });
     var msg = Message.fromJson(data['message']);
-    // Decrypt own echo (URL or data URL) for local display.
+    // decrypt own echo for local display
     msg.content = await _crypto.decrypt(msg.content);
     return msg;
   }
@@ -289,12 +257,8 @@ class ChatService {
     await _api.delete('/api/account');
   }
 
-  /// Update the current user's profile. Any nullable field left null is
-  /// omitted from the PATCH (the backend's `UserUpdate` schema treats absent
-  /// fields as "no change"). Accepts the full set of editable fields the
-  /// backend exposes: `name`, `bio`, `avatarEmoji`, `avatarColor`,
-  /// `accentColor`, `wallpaper` (all camelCase — the backend's CamelModel
-  /// accepts both casings).
+  // null fields are omitted — backend treats absent as "no change".
+  // accepts the full editable field set (backend takes camelCase or snake).
   Future<void> updateProfile({
     String? name,
     String? bio,

@@ -24,16 +24,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
   String? _error;
   final _searchController = TextEditingController();
 
-  /// Subscription IDs returned by `SocketService.on*` — cancelled in
-  /// `dispose` so we remove ONLY this screen's listeners (L3 fix).
+  // socket sub ids — cancelled in dispose so we only remove this screen's
+  // listeners
   final List<int> _socketSubIds = [];
 
   @override
   void initState() {
     super.initState();
-    // L7 fix: register socket callbacks ONCE here, not inside `_loadChats`
-    // (which runs on every refresh and previously accumulated N copies of
-    // each callback per event).
+    // register socket callbacks ONCE here, not inside _loadChats (which runs
+    // on every refresh and would accumulate N copies of each callback)
     _initSocket();
     _loadChats();
   }
@@ -45,15 +44,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final user = auth.currentUser;
     if (user == null) return;
 
-    // Make sure the cookie is loaded from secure storage before reading the
-    // session token out of it.
+    // make sure the cookie is loaded from secure storage before reading the
+    // session token
     await chatService.api.init();
     if (!mounted) return;
     final token = chatService.api.sessionToken;
     if (token == null) return;
 
-    // Register the listeners BEFORE connecting so they're tracked in
-    // `_socketSubIds` even if the widget disposes during the connect() call.
+    // register listeners BEFORE connecting so they're tracked even if the
+    // widget disposes during connect()
     _socketSubIds.add(socket.onMessage((data) {
       if (mounted) _loadChats();
     }));
@@ -61,8 +60,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       if (mounted) setState(() {});
     }));
 
-    // L10/X5 fix: connect with the session token so the backend can
-    // authenticate the socket; reconnect automatically if the user changed.
+    // connect with session token so backend authenticates; reconnect if user changed
     await socket.connect(user.id, token);
   }
 
@@ -80,7 +78,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         });
       }
 
-      // Kick off E2EE init in the background — don't block the UI on it.
+      // kick off e2ee init in the background — don't block the ui on it
       auth.initE2EE();
     } catch (e) {
       if (mounted) {
@@ -147,7 +145,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   @override
   void dispose() {
-    // L3 fix: cancel ONLY this screen's socket subscriptions.
+    // cancel ONLY this screen's socket subs
     final socket = SocketService();
     for (final id in _socketSubIds) {
       socket.cancelSubscription(id);
@@ -189,7 +187,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 context,
                 MaterialPageRoute(builder: (_) => const SettingsScreen()),
               );
-              // Refresh in case the user logged out from settings.
+              // refresh in case the user logged out from settings
               if (mounted) _loadChats(silent: true);
             },
           ),
@@ -281,8 +279,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     return RefreshIndicator(
       onRefresh: _refresh,
       child: ListView.separated(
-        // Guarantee the list is scrollable even with 1 item so
-        // RefreshIndicator works.
+        // keep the list scrollable even with 1 item so RefreshIndicator works
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount: filtered.length,
@@ -406,7 +403,7 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Different copy for "no chats yet" vs "no search results".
+    // different copy for "no chats yet" vs "no search results"
     final filtering = query.isNotEmpty;
     final icon = filtering ? Icons.search_off : Icons.chat_bubble_outline;
     final title = filtering ? 'No matches' : 'No chats yet';

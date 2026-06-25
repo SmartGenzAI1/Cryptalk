@@ -22,7 +22,7 @@ import type { SafeUser } from '@/lib/types'
 import { apiGet, apiPost } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
-const ICON_CHOICES = AVATAR_ICONS.slice(0, 24) // first 24 for the picker
+const ICON_CHOICES = AVATAR_ICONS.slice(0, 24) // first 24 for picker
 const COLOR_CHOICES = AVATAR_COLOR_KEYS
 
 export function NewChatDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (b: boolean) => void }) {
@@ -41,7 +41,7 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
   const setActiveChatId = useChatStore((s) => s.setActiveChatId)
   const setActiveChat = useChatStore((s) => s.setActiveChat)
   const setMessages = useChatStore((s) => s.setMessages)
-  // State initializes fresh on each mount — no reset effect needed
+  // state initializes fresh on each mount — no reset effect needed
   const [query, setQuery] = useState('')
   const [users, setUsers] = useState<SafeUser[]>([])
   const [selected, setSelected] = useState<string[]>([])
@@ -111,7 +111,7 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
   }
 
   async function openChatAfterCreate(chat: any) {
-    // fetch chat list item shape (lastMessage null, lastReadAt)
+    // build chat list item shape
     const listItem = {
       ...chat,
       updatedAt: chat.createdAt,

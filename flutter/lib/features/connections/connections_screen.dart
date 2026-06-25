@@ -4,14 +4,10 @@ import '../../core/chat_service.dart';
 import '../../core/models.dart';
 import '../../core/ui/avatar.dart';
 
-/// Three-tab connections screen: Find (search + add), Requests (incoming),
-/// Mine (accepted connections). Mobile-first: full-width search bar, 56px
-/// touch targets, inline loading + empty states, no useless modals.
-///
-/// Each tab owns its own data so they refresh independently — the parent is
-/// just a tab shell. The Requests tab pushes its current count into the
-/// shared [ValueNotifier] so the AppBar badge can reflect it without
-/// rebuilding the whole tree.
+// three-tab connections screen: Find (search+add), Requests (incoming),
+// Mine (accepted). each tab owns its own data so they refresh independently —
+// parent is just a tab shell. Requests tab pushes its count into the shared
+// ValueNotifier so the appbar badge reflects it without rebuilding the tree.
 class ConnectionsScreen extends StatefulWidget {
   const ConnectionsScreen({super.key});
 
@@ -65,7 +61,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
   }
 }
 
-/// Find tab — search by username + connect.
+// find tab — search by username + connect
 class _FindTab extends StatefulWidget {
   const _FindTab();
 
@@ -231,8 +227,8 @@ class _FindTabState extends State<_FindTab> {
   }
 }
 
-/// Requests tab — incoming connection requests. Pushes the current count
-/// into [countNotifier] so the parent AppBar badge can reflect it.
+// requests tab — incoming connection requests. pushes count into
+// countNotifier so the appbar badge reflects it
 class _RequestsTab extends StatefulWidget {
   final ValueNotifier<int> countNotifier;
   const _RequestsTab({required this.countNotifier});
@@ -360,7 +356,7 @@ class _RequestsTabState extends State<_RequestsTab> {
   }
 }
 
-/// Mine tab — accepted connections.
+// mine tab — accepted connections
 class _ConnectionsTab extends StatefulWidget {
   const _ConnectionsTab();
 

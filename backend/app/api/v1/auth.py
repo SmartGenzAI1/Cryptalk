@@ -50,15 +50,14 @@ class LegacyLoginRequest(BaseModel):
 
 def _set_cookie(response: Response, user_id: str) -> None:
     token = create_session_token(user_id)
-    # B3: set `secure` in production (HTTPS) so the cookie can't be intercepted
-    # over plain HTTP.  In dev (HTTP localhost) we leave it off so login works.
-    # `httponly` blocks JS access (XSS theft); `samesite=lax` blocks CSRF on
-    # top-level navigations from other origins.
+    # httponly: JS can't read it (XSS theft)
+    # samesite=lax: blocks CSRF on top-level navs
+    # secure: only in prod (https)
     response.set_cookie(
         key="tc_session",
         value=token,
         httponly=True,
-        secure=settings.is_postgres,  # True in prod (Postgres/Render), False in dev (SQLite)
+        secure=settings.is_postgres,
         samesite="lax",
         max_age=2592000,
         path="/",
@@ -144,8 +143,7 @@ async def set_username(req: UsernameOnboardingRequest, request: Request, db: Asy
 async def login_with_email(req: EmailLoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
     email = _validate_email(req.email)
 
-    # Brute-force protection: check if this account is locked before even
-    # hitting the DB.  Returns 429 with Retry-After so the client can back off.
+    # brute-force check before hitting the DB
     from app.core.brute_force import is_locked, record_failed_attempt, clear_failures
     locked, retry_after = is_locked(email)
     if locked:
@@ -157,14 +155,10 @@ async def login_with_email(req: EmailLoginRequest, response: Response, db: Async
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(req.password, user.password_hash or "x" * 64):
-        # Record the failure — if this pushes past the threshold, the next
-        # request will be locked out.
         record_failed_attempt(email)
-        # Constant-time-ish: don't reveal whether the email exists vs the
-        # password was wrong (same message either way).
+        # don't reveal whether the email exists vs password wrong
         raise AuthError("Invalid email or password")
 
-    # Success — clear the failure counter.
     clear_failures(email)
     user.is_online = True
     user.last_seen = now_ms()
@@ -175,12 +169,9 @@ async def login_with_email(req: EmailLoginRequest, response: Response, db: Async
 
 @router.post("/login-legacy", include_in_schema=False)
 async def login_legacy(req: LegacyLoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
-    """Legacy username/password login — kept only for the seeded demo accounts
-    (alex, sam, priya, marco) that have no email.  Hidden from OpenAPI docs so
-    it doesn't show up as an attack surface; email-based login is the primary path.
-    """
+    # kept for seeded demo accounts (alex, sam, priya, marco) that have no email.
+    # hidden from openapi — email login is the primary path.
     username = req.username.lower().strip()
-    # Brute-force protection keyed on the username (same mechanism).
     from app.core.brute_force import is_locked, record_failed_attempt, clear_failures
     locked, retry_after = is_locked(username)
     if locked:

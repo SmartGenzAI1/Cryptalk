@@ -1,4 +1,4 @@
-"""User endpoints — search, profile, settings."""
+# user endpoints — search, profile, settings
 
 from typing import List
 

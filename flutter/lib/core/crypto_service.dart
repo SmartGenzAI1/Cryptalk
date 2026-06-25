@@ -4,36 +4,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'api_client.dart';
 
-/// End-to-end encryption service for Cryptalk.
-///
-/// Each device owns three long-lived keypairs and one signature:
-///   • X25519 **identity** keypair — used for ECDH key agreement.
-///   • Ed25519 **signing** keypair  — used to sign the signed prekey (so other
-///     clients can verify that the prekey really belongs to us).
-///   • X25519 **signed prekey**     — a second X25519 keypair whose public key
-///     is signed by the Ed25519 signing key. Uploaded alongside the identity
-///     key so other clients can build a prekey bundle.
-///   • The Ed25519 **signature** over the signed prekey public key.
-///
-/// All private bytes live in `FlutterSecureStorage`; only public bytes + the
-/// signature are uploaded to the server (`POST /api/keys/upload`).
-///
-/// The encrypted message format is a JSON blob:
-///   `{ ciphertext, nonce, ephemeralPublicKey, mac }`
-/// matching the field names the web client reads (`ciphertext`, `nonce`,
-/// `ephemeralPublicKey`). The `mac` field is extra (web ignores unknown
-/// fields) and is required by Flutter's Chacha20-Poly1305 decrypt path.
-///
-/// NOTE on cross-client compat: the web client uses libsodium's
-/// `crypto_secretbox_easy` (XSalsa20-Poly1305) with a non-standard HKDF
-/// (HMAC-SHA256 extract + BLAKE2b expand). Flutter uses Chacha20-Poly1305 with
-/// standard HKDF-SHA256 from the `cryptography` package. The JSON *shape*
-/// matches, so the key-exchange layer is now interoperable, but a message
-/// encrypted by Flutter cannot yet be decrypted by web (and vice versa) until
-/// both sides adopt the same symmetric cipher. Flutter↔Flutter works end-to-end.
-/// Switching Flutter to a libsodium binding (`sodium_libs` or similar) is the
-/// recommended follow-up — out of scope here because the task says not to add
-/// new pubspec dependencies.
+// e2ee for cryptalk. each device has an x25519 identity keypair, an
+// ed25519 signing keypair, and a signed x25519 prekey (signed by the
+// ed25519 key). privates live in flutter_secure_storage; only public bytes
+// + the signature go to /api/keys/upload.
+//
+// ciphertext json shape: {ciphertext, nonce, ephemeralPublicKey, mac} —
+// web reads the first three, mac is extra (chacha20-poly1305 needs it).
+//
+// NOTE: flutter↔flutter e2ee works end-to-end, but flutter↔web doesn't yet
+// — web uses libsodium XSalsa20-Poly1305 + non-standard hkdf, we use
+// chacha20-poly1305 + standard hkdf. same json shape, different cipher.
+// switching to a libsodium binding would fix it but adds a dep.
 class CryptoService {
   static final CryptoService _instance = CryptoService._internal();
   factory CryptoService() => _instance;
@@ -42,25 +24,23 @@ class CryptoService {
   final _storage = const FlutterSecureStorage();
   final _api = ApiClient();
 
-  // X25519 identity keypair (for ECDH).
+  // x25519 identity keypair (ecdh)
   SimpleKeyPair? _identityKeyPair;
-  // Ed25519 signing keypair (for signing the prekey).
+  // ed25519 signing keypair (signs the prekey)
   SimpleKeyPair? _signingKeyPair;
-  // X25519 signed prekey keypair.
+  // x25519 signed prekey keypair
   SimpleKeyPair? _signedPreKeyPair;
-  // Ed25519 signature over the signed prekey public key.
+  // ed25519 signature over the signed prekey public key
   List<int>? _signedPreKeySignature;
 
   bool _initialized = false;
 
-  /// Cache: userId → recipient public-key bundle. The values are the raw
-  /// base64 strings exactly as returned by `/api/keys/{userId}`.
+  // cache: userId → recipient public key bundle (raw base64 from /api/keys/{userId})
   final Map<String, Map<String, String>> _recipientKeyCache = {};
 
   bool get isInitialized => _initialized;
 
-  /// Load persisted key material from secure storage, or generate a fresh
-  /// identity if none exists. Idempotent.
+  // load keys from secure storage, or generate a fresh identity. idempotent.
   Future<void> init() async {
     if (_initialized) return;
 
@@ -97,9 +77,8 @@ class CryptoService {
       _signedPreKeySignature = base64Decode(spkSig);
     }
 
-    // If any of the three keypairs is missing, regenerate everything to keep
-    // them consistent (a partial state should never happen in practice, but
-    // this avoids subtle bugs if secure storage was partially wiped).
+    // any missing keypair → regenerate everything to keep them consistent
+    // (partial state shouldn't happen but avoids subtle bugs)
     if (_identityKeyPair == null ||
         _signingKeyPair == null ||
         _signedPreKeyPair == null ||
@@ -109,9 +88,8 @@ class CryptoService {
     _initialized = true;
   }
 
-  /// Generate a brand-new identity (X25519 + Ed25519 + signed prekey) and
-  /// persist all private bytes to secure storage. Overwrites any existing
-  /// keys — call only on first run or explicit reset.
+  // generate fresh identity + signed prekey, persist privates to secure
+  // storage. overwrites existing keys — first run or explicit reset only.
   Future<void> generate() async {
     final x25519 = X25519();
     final ed25519 = Ed25519();
@@ -120,13 +98,13 @@ class CryptoService {
     _signingKeyPair = await ed25519.newKeyPair();
     _signedPreKeyPair = await x25519.newKeyPair();
 
-    // Sign the signed prekey's public key with the Ed25519 signing private key.
+    // sign the prekey pub with the ed25519 signing key
     final spkPub = await _signedPreKeyPair!.extractPublicKey();
     final spkPubBytes = spkPub.bytes;
     final signature = await ed25519.sign(spkPubBytes, keyPair: _signingKeyPair!);
     _signedPreKeySignature = signature.bytes;
 
-    // Persist everything to secure storage.
+    // persist to secure storage
     final idPriv = await _identityKeyPair!.extractPrivateKeyBytes();
     final idPub = await _identityKeyPair!.extractPublicKey();
     final signPriv = await _signingKeyPair!.extractPrivateKeyBytes();
@@ -144,34 +122,32 @@ class CryptoService {
     _initialized = true;
   }
 
-  /// X25519 identity public key (for ECDH) — base64-encoded.
+  // x25519 identity pub (ecdh), base64
   String get identityPublicKeyBase64 {
     if (_identityKeyPair == null) return '';
     return base64Encode((_identityKeyPair!.publicKey as PublicKey).bytes);
   }
 
-  /// Ed25519 signing public key — base64-encoded.
+  // ed25519 signing pub, base64
   String get signingPublicKeyBase64 {
     if (_signingKeyPair == null) return '';
     return base64Encode((_signingKeyPair!.publicKey as PublicKey).bytes);
   }
 
-  /// X25519 signed prekey public key — base64-encoded.
+  // x25519 signed prekey pub, base64
   String get signedPreKeyPublicBase64 {
     if (_signedPreKeyPair == null) return '';
     return base64Encode((_signedPreKeyPair!.publicKey as PublicKey).bytes);
   }
 
-  /// Ed25519 signature over the signed prekey public key — base64-encoded.
+  // ed25519 signature over the signed prekey pub, base64
   String get signedPreKeySignatureBase64 {
     if (_signedPreKeySignature == null) return '';
     return base64Encode(_signedPreKeySignature!);
   }
 
-  /// Fetch the recipient's public-key bundle from `/api/keys/{userId}` and
-  /// return their base64-encoded X25519 identity public key (the one used for
-  /// ECDH). Returns null if the recipient hasn't set up E2EE yet or the
-  /// request fails. Results are cached in-memory for the session.
+  // fetch recipient's x25519 identity pub from /api/keys/{userId}, cached.
+  // returns null if they haven't set up e2ee yet.
   Future<String?> getRecipientPublicKey(String userId) async {
     final cached = _recipientKeyCache[userId];
     if (cached != null) return cached['identityPublicKey'];
@@ -197,14 +173,8 @@ class CryptoService {
     }
   }
 
-  /// Encrypt [plaintext] for a recipient whose X25519 identity public key is
-  /// [recipientPublicKeyB64]. Returns a JSON string with the same field names
-  /// the web client reads (`ciphertext`, `nonce`, `ephemeralPublicKey`), plus
-  /// an extra `mac` field used by Flutter's Chacha20-Poly1305 decrypt path.
-  ///
-  /// If the crypto service hasn't been initialized yet (L9 guard), the
-  /// plaintext is returned unchanged so the message at least sends rather
-  /// than crashing the app.
+  // encrypt plaintext → ciphertext json. if not initialized yet, returns
+  // plaintext unchanged so the message at least sends.
   Future<String> encrypt(String plaintext, String recipientPublicKeyB64) async {
     if (_identityKeyPair == null || recipientPublicKeyB64.isEmpty) {
       debugPrint('CryptoService.encrypt: not initialized or empty recipient key — sending plaintext');
@@ -215,18 +185,18 @@ class CryptoService {
     final chacha = Chacha20Poly1305();
     final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
 
-    // 1. Per-message ephemeral X25519 keypair.
+    // 1. per-message ephemeral x25519 keypair
     final ephemeralPair = await x25519.newKeyPair();
     final recipientPubKey = PublicKey(base64Decode(recipientPublicKeyB64));
 
-    // 2. ECDH(ephemeral_priv, recipient_identity_pub) → shared secret.
+    // 2. ecdh(ephemeral_priv, recipient_identity_pub) → shared secret
     final sharedSecret = await x25519.sharedSecret(
       keyPair: ephemeralPair,
       remotePublicKey: recipientPubKey,
     );
     final sharedBytes = await sharedSecret.extractBytes();
 
-    // 3. HKDF-SHA256 → 32-byte symmetric key.
+    // 3. hkdf-sha256 → 32-byte symmetric key
     final derivedKey = await hkdf.deriveKey(
       SecretKey(sharedBytes),
       nonce: [],
@@ -234,7 +204,7 @@ class CryptoService {
     );
     final derivedBytes = await derivedKey.extractBytes();
 
-    // 4. Seal with Chacha20-Poly1305 (AEAD). The package generates the nonce.
+    // 4. seal with chacha20-poly1305 (aead). package generates the nonce.
     final secretBox = await chacha.seal(
       utf8.encode(plaintext),
       secretKey: SecretKey(derivedBytes),
@@ -250,14 +220,9 @@ class CryptoService {
     });
   }
 
-  /// Decrypt a JSON ciphertext payload produced by [encrypt]. The
-  /// [senderPublicKey] parameter is currently unused — the sender's ephemeral
-  /// public key is embedded in the payload itself. It's retained for a future
-  /// signature-verification extension.
-  ///
-  /// L9 guard: if `_identityKeyPair` is null (init never ran / failed), the
-  /// input is returned unchanged and a warning is logged, so the UI shows the
-  /// raw ciphertext instead of crashing on a null-deref.
+  // decrypt ciphertext json. senderPublicKey is unused (ephemeral pub is in
+  // the payload) — kept for a future signature-verification extension.
+  // if not initialized, returns input unchanged so ui doesn't crash.
   Future<String> decrypt(String encryptedJson, [String? senderPublicKey]) async {
     if (_identityKeyPair == null) {
       debugPrint('CryptoService.decrypt: not initialized — returning input unchanged');
@@ -267,8 +232,8 @@ class CryptoService {
       final payload = jsonDecode(encryptedJson);
       if (payload['ciphertext'] == null ||
           payload['ephemeralPublicKey'] == null) {
-        // Not an encrypted payload — return as-is (legacy plaintext, or a
-        // sticker name, or a Saved Messages body that was never encrypted).
+        // not an encrypted payload — return as-is (legacy plaintext, sticker
+        // name, or saved-messages body that was never encrypted)
         return encryptedJson;
       }
 
@@ -278,7 +243,7 @@ class CryptoService {
 
       final ephemeralPub = PublicKey(base64Decode(payload['ephemeralPublicKey']));
 
-      // ECDH(my_identity_priv, sender_ephemeral_pub) → same shared secret.
+      // ecdh(my_identity_priv, sender_ephemeral_pub) → same shared secret
       final sharedSecret = await x25519.sharedSecret(
         keyPair: _identityKeyPair!,
         remotePublicKey: ephemeralPub,
@@ -292,8 +257,7 @@ class CryptoService {
       );
       final derivedBytes = await derivedKey.extractBytes();
 
-      // Some legacy payloads may not have a `mac` (e.g. plain text). The
-      // `ciphertext == null` check above filters those out, but be defensive:
+      // some legacy payloads may not have a mac — be defensive
       final macBytes = payload['mac'] != null
           ? base64Decode(payload['mac'])
           : List<int>.filled(16, 0);
@@ -310,9 +274,8 @@ class CryptoService {
 
       return utf8.decode(plaintext);
     } catch (e) {
-      // Decryption failed (wrong key, tampered payload, etc.). Return the raw
-      // input so the UI can show *something* rather than crash. This also
-      // covers legacy plaintext messages that aren't valid JSON.
+      // decryption failed — return raw input so ui shows something. also
+      // covers legacy plaintext msgs that aren't valid json.
       return encryptedJson;
     }
   }

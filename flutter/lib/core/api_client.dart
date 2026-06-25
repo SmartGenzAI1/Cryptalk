@@ -4,10 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'api_config.dart';
 
-/// Thrown by [ApiClient.uploadFile] when the server returns an error
-/// (e.g. 413 file_too_large / 507 quota_exceeded). The [message] field is
-/// populated from the server's `message` JSON field so callers can show it
-/// directly in a SnackBar.
+// server error from uploadFile — message is server-provided so callers can
+// show it directly in a snackbar
 class ApiException implements Exception {
   final int statusCode;
   final String message;
@@ -47,13 +45,9 @@ class ApiClient {
   void setCookie(String? cookie) => _cookie = cookie;
   String? get cookie => _cookie;
 
-  /// Extract the bare session-token value from the stored `tc_session=…`
-  /// cookie string. Returns null if no cookie is stored. Used by the socket
-  /// `identify` payload so the backend can authenticate the realtime
-  /// connection (X5 fix).
+  // bare tc_session value from the cookie, used for socket identify
   String? get sessionToken {
     if (_cookie == null) return null;
-    // Cookie format: "tc_session=<value>; Path=/; HttpOnly; ..."
     final part = _cookie!.split(';').first;
     final eq = part.indexOf('=');
     return eq >= 0 ? part.substring(eq + 1).trim() : null;
@@ -161,17 +155,8 @@ class ApiClient {
     }
   }
 
-  /// Upload an E2EE ciphertext blob to `POST /api/uploads` as multipart
-  /// form-data (field name `file`). The server stores it in Supabase
-  /// Storage and returns `{url, path, size, contentType, fileName, fallback}`.
-  ///
-  /// On 413 (file_too_large) / 507 (quota_exceeded) / any other 4xx-5xx,
-  /// throws an [ApiException] carrying the server's `message` so the caller
-  /// can surface it in a SnackBar.
-  ///
-  /// [path] is the local file path (only used to derive [fileName] when
-  /// [fileName] is null — the server generates its own storage path).
-  /// [bytes] is the ciphertext (UTF-8 encoded ciphertext string).
+  // uploads ciphertext bytes as multipart `file`. throws ApiException on
+  // 4xx/5xx so callers can show the server message in a snackbar.
   Future<Map<String, dynamic>> uploadFile(
     String path,
     Uint8List bytes, {

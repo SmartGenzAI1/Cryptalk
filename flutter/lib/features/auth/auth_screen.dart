@@ -2,13 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/auth_service.dart';
 
-/// Email + password auth screen — toggles between Sign In and Create Account.
-///
-/// Mobile-first:
-///   • Single scrollable column, never overflows when the keyboard opens.
-///   • 48px-tall primary CTA, 44px+ touch targets everywhere.
-///   • Inline form validation (no overlays / modals).
-///   • SafeArea + keyboard-inset padding.
+// email+password auth. toggles between sign in / create account.
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
 
@@ -46,9 +40,8 @@ class _AuthScreenState extends State<AuthScreen> {
       } else {
         await auth.register(email, password);
       }
-      // No explicit navigation needed — AppRouter watches AuthService and
-      // rebuilds as soon as `currentUser` changes. After register, the user
-      // is not yet onboarded, so the router shows OnboardingScreen next.
+      // AppRouter watches AuthService and rebuilds when currentUser changes.
+      // after register, user isn't onboarded yet so router shows OnboardingScreen.
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -92,7 +85,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Logo + brand.
+                    // logo + brand
                     Container(
                       width: 96,
                       height: 96,

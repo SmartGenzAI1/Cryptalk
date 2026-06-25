@@ -1,14 +1,6 @@
-"""Socket.IO event handlers — thin wrappers around the connection manager.
-
-Each handler validates the payload, mutates the manager, and emits the
-appropriate broadcast.  Business logic stays in the service layer; this
-module only deals with realtime transport.
-
-Security: every ``identify`` MUST present a valid session token.  Without
-this check, any client could claim any ``userId`` and receive that user's
-realtime messages/presence (B2).  The token is the same HMAC-signed cookie
-used by the REST API, verified via ``verify_session_token``.
-"""
+# socket.io event handlers — thin wrappers around the connection manager.
+# every identify must present a valid session token, otherwise any client
+# could claim any userId and receive their messages/presence.
 
 import logging
 from datetime import datetime, timezone
@@ -26,13 +18,8 @@ logger = logging.getLogger("cryptalk.realtime")
 
 
 def _verify_socket_auth(data: dict) -> str | None:
-    """Extract + verify the session token from an ``identify`` payload.
-
-    Returns the authenticated ``user_id`` or ``None``.  We accept either
-    ``token`` (preferred) or read the cookie from ``data['cookie']`` for
-    clients that forward it.  The userId in the payload is IGNORED unless
-    it matches the token's user_id — clients cannot self-declare identity.
-    """
+    # userId in the payload is IGNORED unless it matches the token's user_id —
+    # clients can't self-declare identity
     token = (data.get("token") or "").strip()
     if not token:
         return None
@@ -40,13 +27,8 @@ def _verify_socket_auth(data: dict) -> str | None:
 
 
 def _auth_from_environ(environ: dict) -> str | None:
-    """Authenticate a socket connection using the cookie header.
-
-    The browser sends the ``tc_session`` cookie automatically with
-    ``withCredentials: true`` on the WebSocket handshake.  We read it from
-    the HTTP headers in ``environ``, verify the HMAC token, and return the
-    user_id.  Returns ``None`` if the cookie is missing or invalid.
-    """
+    # browser sends tc_session cookie automatically with withCredentials:true
+    # on the websocket handshake. cookie is httponly so JS can't read it.
     from http.cookies import SimpleCookie
 
     cookie_header = environ.get("HTTP_COOKIE", "")
@@ -64,26 +46,21 @@ def _auth_from_environ(environ: dict) -> str | None:
 
 
 def register_handlers(sio: socketio.AsyncServer) -> None:
-    """Register all Socket.IO event handlers on the given server."""
 
     @sio.event
     async def connect(sid: str, environ: dict) -> bool | None:
-        # X5+B2: authenticate at CONNECTION TIME using the cookie header.
-        # The browser sends the tc_session cookie automatically with
-        # withCredentials:true — no JS-readable cookie needed (the cookie
-        # is httponly).  This closes the impersonation hole where any client
-        # could claim any userId via the `identify` event.
+        # authenticate at connection time using the cookie header — closes the
+        # impersonation hole where any client could claim any userId via identify
         user_id = _auth_from_environ(environ)
         if not user_id:
             logger.warning("Socket %s rejected: no valid session cookie", sid)
-            # Emit auth-error then let the connection close — the client's
-            # auth-error handler will force a re-login.
+            # emit auth-error then let the connection close — client will re-login
             await sio.emit("auth-error", {"message": "Not authenticated"}, to=sid)
             return False  # reject the connection
         manager.add(sid, user_id)
         logger.info("Socket connected: %s (user: %s)", sid, user_id[:8])
 
-        # Mark the user online and broadcast presence.
+        # mark user online and broadcast presence
         async with async_session_factory() as db:
             await db.execute(
                 update(User)
@@ -100,12 +77,9 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
         )
         return True
 
-    # Keep the `identify` handler as a no-op for backward compat with older
-    # clients that still emit it — auth already happened at connect time.
+    # `identify` is a no-op for backward compat — auth already happened at connect
     @sio.on("identify")
     async def on_identify(sid: str, data: dict) -> None:
-        # Auth already happened in the connect handler via the cookie header.
-        # This is a no-op for backward compat.
         pass
 
     @sio.on("join-chat")
@@ -139,14 +113,12 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
 
     @sio.on("message-status")
     async def on_message_status(sid: str, data: dict) -> None:
-        """Broadcast message delivery/read status updates."""
         chat_id = data.get("chatId")
         if chat_id:
             await sio.emit("message-status", data, room=f"chat:{chat_id}")
 
     @sio.on("recording")
     async def on_recording(sid: str, data: dict) -> None:
-        """Voice recording indicator."""
         chat_id = data.get("chatId")
         if chat_id:
             await sio.emit("recording", data, room=f"chat:{chat_id}", skip_sid=sid)
@@ -184,8 +156,6 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
                     await db.commit()
                 await sio.emit("user-status", {"userId": offline_user, "isOnline": False})
             except Exception as e:
-                # B10: never swallow DB errors silently — if the update fails,
-                # the user is stuck is_online=True forever.  Log so an operator
-                # can see it; a periodic presence-reaper would also fix this.
+                # log instead of swallowing — otherwise user is stuck is_online=True forever
                 logger.error("Failed to mark user %s offline on disconnect: %s", offline_user, e)
         logger.info("Socket disconnected: %s", sid)

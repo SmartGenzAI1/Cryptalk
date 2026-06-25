@@ -28,15 +28,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 pass
 
     def _client_key(self, request: Request) -> str:
-        """Build a rate-limit key that combines IP + user identity.
-
-        IP-only (B18) means a single attacker behind a NAT gets throttled
-        for everyone, and one user rotating IPs bypasses per-user limits.
-        We include the authenticated user_id (from the session cookie) so
-        each user gets their own bucket regardless of IP, while unauth
-        requests still fall back to IP-only.
-        """
-        # Try to extract the user_id from the session cookie.
+        # combine IP + user identity so one attacker behind NAT doesn't throttle
+        # everyone, and one user rotating IPs can't bypass per-user limits.
         from app.core.security import verify_session_token
         from app.core.config import settings
         token = request.cookies.get(settings.COOKIE_NAME)
@@ -50,9 +43,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         ip = forwarded.split(",")[0].strip() if forwarded else (
             request.client.host if request.client else "unknown"
         )
-        # Combine: authenticated users get per-user + per-IP (so the same
-        # user on 2 IPs gets 2 buckets, but one IP with 10 users gets 10).
-        # Unauthenticated requests are IP-only.
         return f"{ip}:{user_id}" if user_id else ip
 
     async def _check_redis(self, key: str, max_req: int, window: int) -> Tuple[bool, int]:

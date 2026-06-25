@@ -4,12 +4,7 @@ import { Component, ReactNode } from 'react'
 
 interface Props {
   children: ReactNode
-  /**
-   * Optional custom fallback rendered when this boundary catches an error.
-   * If omitted, the full-screen "Something went wrong" UI is shown.
-   * Use a small `fallback` to wrap individual list items / messages so one
-   * bad row only takes itself out instead of killing the whole list (F2).
-   */
+  // optional custom fallback; use a small one to isolate per-item errors
   fallback?: ReactNode
 }
 
@@ -17,12 +12,8 @@ interface State {
   hasError: boolean
 }
 
-/**
- * Top-level React error boundary. A single instance wraps the entire app
- * (registered in `app/layout.tsx`). For finer-grained isolation — e.g. around
- * each `MessageItem` so one malformed message doesn't blank the chat list —
- * wrap the children in their own `<ErrorBoundary fallback={…}>`.
- */
+// top-level error boundary. wrap children in their own <ErrorBoundary fallback={…}>
+// for finer-grained isolation (e.g. around each MessageItem)
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false }
 

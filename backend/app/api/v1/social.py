@@ -1,4 +1,4 @@
-"""Social — connections, blocking, nicknames."""
+# social — connections, blocking, nicknames
 
 import secrets
 from typing import List, Optional
@@ -17,8 +17,7 @@ from app.services.serializers import serialize_user
 router = APIRouter(prefix="/social", tags=["social"])
 
 
-# ─── Schemas ────────────────────────────────────────────────────────────
-
+# schemas
 
 class SendConnectionRequest(BaseModel):
     to_username: str
@@ -33,8 +32,7 @@ class BlockRequest(BaseModel):
     user_id: str
 
 
-# ─── Connections ────────────────────────────────────────────────────────
-
+# connections
 
 @router.get("/connections")
 async def list_connections(request: Request, db: AsyncSession = Depends(get_db)):
@@ -57,7 +55,7 @@ async def list_connections(request: Request, db: AsyncSession = Depends(get_db))
     for r in received.scalars().all():
         connected_ids.add(r.from_user_id)
 
-    # B8: batch-fetch all connected users in ONE query (was N queries).
+    # batch-fetch all connected users in one query (was N queries)
     if not connected_ids:
         return {"connections": []}
     users_result = await db.execute(select(User).where(User.id.in_(connected_ids)))
@@ -75,7 +73,7 @@ async def list_pending_requests(request: Request, db: AsyncSession = Depends(get
         )
     )
     rows = result.scalars().all()
-    # B8: batch-fetch all requesting users in ONE query (was N queries).
+    # batch-fetch all requesting users in one query (was N queries)
     if not rows:
         return {"requests": []}
     from_ids = [r.from_user_id for r in rows]
@@ -167,8 +165,7 @@ async def decline_connection(request_id: str, request: Request, db: AsyncSession
     return {"ok": True}
 
 
-# ─── Blocking ───────────────────────────────────────────────────────────
-
+# blocking
 
 @router.post("/block")
 async def block_user(req: BlockRequest, request: Request, db: AsyncSession = Depends(get_db)):
@@ -209,7 +206,7 @@ async def list_blocked(request: Request, db: AsyncSession = Depends(get_db)):
     uid = get_current_user_id(request)
     result = await db.execute(select(UserBlock).where(UserBlock.blocker_id == uid))
     blocks = result.scalars().all()
-    # B8: batch-fetch all blocked users in ONE query (was N queries).
+    # batch-fetch all blocked users in one query (was N queries)
     if not blocks:
         return {"blocked": []}
     blocked_ids = [b.blocked_id for b in blocks]
@@ -236,8 +233,7 @@ async def is_blocked(user_id: str, request: Request, db: AsyncSession = Depends(
     }
 
 
-# ─── Nicknames ──────────────────────────────────────────────────────────
-
+# nicknames
 
 @router.post("/nickname")
 async def set_nickname(req: SetNicknameRequest, request: Request, db: AsyncSession = Depends(get_db)):

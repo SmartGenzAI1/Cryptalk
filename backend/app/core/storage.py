@@ -1,19 +1,5 @@
-"""Supabase Storage adapter for E2EE file attachments.
-
-Files are uploaded by the client *after* end-to-end encryption, so the bytes
-stored here are always ciphertext — Supabase (and the server) cannot read them.
-
-The service also enforces the storage budget so a single chatty deployment
-cannot blow through the 1 GB free-tier limit:
-
-* ``MAX_FILE_SIZE_BYTES``  — hard per-file cap (default 25 MB).
-* ``STORAGE_QUOTA_BYTES``  — soft total cap (default 950 MB, leaving headroom
-  under Supabase's 1 GB free tier).
-
-When a message is delivered (or deleted for everyone) the message service calls
-``delete_file``/``delete_file_by_url`` to wipe the object, fulfilling the
-"ephemeral storage" promise: the ciphertext is gone from the server too.
-"""
+# supabase storage adapter for e2ee file attachments.
+# files are ciphertext (client encrypts before upload) so we can't read them.
 
 import logging
 from typing import Optional
@@ -26,29 +12,20 @@ logger = logging.getLogger("cryptalk.storage")
 
 
 class StorageError(Exception):
-    """Raised when a storage operation fails for a non-transient reason."""
+    pass
 
 
 class QuotaExceededError(StorageError):
-    """Raised when an upload would push total usage past ``STORAGE_QUOTA_BYTES``."""
+    pass
 
 
 class FileTooLargeError(StorageError):
-    """Raised when a single file exceeds ``MAX_FILE_SIZE_BYTES``."""
+    pass
 
 
 class StorageService:
-    """Thin async wrapper around the Supabase Storage REST API.
-
-    All methods are no-ops (returning ``None``/``False``) when Supabase is not
-    configured, which lets the message layer fall back to the legacy
-    base64-in-content path during local development.
-
-    B9: a single module-level ``httpx.AsyncClient`` is reused across all
-    requests so we keep TLS connections alive instead of handshaking on every
-    upload/delete.  The client is lazily created and closed via ``close()``
-    from the app lifespan shutdown handler.
-    """
+    # async wrapper around supabase storage REST API. no-ops when supabase isn't
+    # configured so the message layer can fall back to base64-in-content.
 
     _token: Optional[str] = None
     _token_expires: float = 0.0
@@ -56,7 +33,7 @@ class StorageService:
 
     @classmethod
     def _get_client(cls) -> httpx.AsyncClient:
-        """Return the shared, reusable ``AsyncClient`` (creates on first call)."""
+        # shared client keeps TLS connections alive
         if cls._client is None or cls._client.is_closed:
             cls._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(60.0, connect=10.0),
@@ -66,7 +43,6 @@ class StorageService:
 
     @classmethod
     async def close(cls) -> None:
-        """Close the shared client — call from the app lifespan shutdown."""
         if cls._client and not cls._client.is_closed:
             await cls._client.aclose()
         cls._client = None
@@ -75,12 +51,11 @@ class StorageService:
 
     @classmethod
     async def _ensure_token(cls) -> Optional[str]:
-        """Return a cached API-key bearer token, refreshing if needed."""
         import time
 
         if not settings.has_supabase:
             return None
-        # Refresh every 50 min (Supabase apikey tokens live ~1 h).
+        # refresh every 50 min (tokens live ~1h)
         if cls._token and time.time() < cls._token_expires:
             return cls._token
         try:
@@ -122,11 +97,6 @@ class StorageService:
         data: bytes,
         content_type: str = "application/octet-stream",
     ) -> Optional[str]:
-        """Upload ``data`` to ``path`` in the configured bucket.
-
-        Returns the public URL on success, or ``None`` on failure / when
-        Supabase is not configured.  Enforces the per-file size cap.
-        """
         if not settings.has_supabase:
             return None
         if len(data) > settings.MAX_FILE_SIZE_BYTES:
@@ -156,10 +126,6 @@ class StorageService:
 
     @classmethod
     def path_from_url(cls, url: str) -> Optional[str]:
-        """Extract the bucket-relative ``path`` from a public URL.
-
-        Returns ``None`` if the URL does not look like one of ours.
-        """
         if not url:
             return None
         marker = f"/storage/v1/object/public/{settings.SUPABASE_BUCKET}/"
@@ -181,10 +147,10 @@ class StorageService:
                 f"{settings.SUPABASE_URL}/storage/v1/object/{settings.SUPABASE_BUCKET}/{path}",
                 headers=cls._headers(token),
             )
-            # 200/204 = deleted, 404 = already gone — all success states for us.
+            # 200/204 = deleted, 404 = already gone — all fine
             if res.status_code in (200, 204, 404):
                 logger.info("Deleted storage object %s", path)
-                # Invalidate the cached usage so the next quota check is fresh.
+                # invalidate cached usage so next quota check is fresh
                 from app.core.cache import cache
                 cache.invalidate("storage_usage")
                 return True
@@ -195,7 +161,6 @@ class StorageService:
 
     @classmethod
     async def delete_file_by_url(cls, url: str) -> bool:
-        """Convenience wrapper — extract path from a public URL then delete."""
         path = cls.path_from_url(url)
         if not path:
             return False
@@ -203,16 +168,7 @@ class StorageService:
 
     @classmethod
     async def get_storage_usage(cls) -> int:
-        """Sum the size of every object currently in the bucket.
-
-        Used by the upload endpoint to enforce ``STORAGE_QUOTA_BYTES``.
-        Returns 0 if Supabase isn't configured or the listing fails.
-
-        Cached for 60 seconds — listing every object on every upload is O(n)
-        and would get slow as the bucket fills.  A 60s window is short enough
-        that the quota check stays meaningful but long enough that a burst of
-        uploads doesn't hammer the Supabase list API.
-        """
+        # cached 60s — listing every object per upload would hammer the api
         if not settings.has_supabase:
             return 0
         from app.core.cache import cache
@@ -225,7 +181,6 @@ class StorageService:
 
     @classmethod
     async def _compute_storage_usage(cls) -> int:
-        """Uncached bucket-size computation (lists every object)."""
         if not settings.has_supabase:
             return 0
         token = await cls._ensure_token()
@@ -252,7 +207,6 @@ class StorageService:
                     break
                 items = res.json() or []
                 for item in items:
-                    # ``metadata.size`` holds the object size in bytes.
                     meta = item.get("metadata") or {}
                     total += int(meta.get("size", 0))
                 if len(items) < limit:
@@ -264,7 +218,6 @@ class StorageService:
 
     @classmethod
     async def check_quota(cls, additional_bytes: int) -> None:
-        """Raise ``QuotaExceededError`` if adding ``additional_bytes`` breaks the cap."""
         if not settings.has_supabase:
             return
         if additional_bytes > settings.MAX_FILE_SIZE_BYTES:

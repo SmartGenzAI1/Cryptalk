@@ -16,7 +16,7 @@ from app.services.serializers import serialize_message
 
 logger = logging.getLogger("cryptalk.messages")
 
-# Message types that carry a file attachment stored in Supabase Storage.
+# message types that carry a file attachment stored in supabase storage
 ATTACHMENT_TYPES = {"image", "file", "voice"}
 
 class MessageService:
@@ -41,7 +41,6 @@ class MessageService:
         query: Optional[str] = None,
         limit: int = 50,
     ) -> List[dict]:
-        """List messages in a chat. Marks the chat as read when not searching."""
         member = await self.chats.get_member(chat_id, user_id)
         if not member:
             raise ForbiddenError("Not a member of this chat")
@@ -65,20 +64,11 @@ class MessageService:
         expires_in: Optional[int] = None,
         attachment_path: Optional[str] = None,
     ) -> dict:
-        """Create and persist a new message.
-
-        ``attachment_path`` is the Supabase Storage path for file/voice/image
-        messages — the server uses it later to delete the ciphertext blob
-        once the message is delivered or deleted-for-everyone.
-        """
         member = await self.chats.get_member(chat_id, user_id)
         if not member:
             raise ForbiddenError("Not a member of this chat")
 
-        # B5: validate attachment_path ownership — a malicious client could
-        # otherwise pass ``files/{otherUser}/...`` and have the server delete
-        # THAT user's attachment when this message is delivered.  Reject any
-        # path that doesn't start with files/{this_user}/ (or contain ``..``).
+        # make sure the path is owned by this user (prevent deleting others' files)
         if attachment_path:
             expected_prefix = f"files/{user_id}/"
             if not attachment_path.startswith(expected_prefix) or ".." in attachment_path:
@@ -86,8 +76,7 @@ class MessageService:
 
         max_len = 10000
         if msg_type in ("image", "file", "voice"):
-            # Content is now a (short, encrypted) URL rather than a giant
-            # base64 blob — but we still allow base64 for the dev fallback.
+            # content is a short encrypted URL now (base64 fallback for dev)
             max_len = 40 * 1024 * 1024
 
         if len(content) > max_len:
@@ -113,19 +102,10 @@ class MessageService:
         return serialize_message(msg, starred=False)
 
     async def mark_delivered(self, chat_id: str, user_id: str) -> dict:
-        """Mark all undelivered messages in a chat as delivered.
-
-        Called every time a chat is opened, so this is on the hot path.
-        Race-condition-safe (B1): instead of read-modify-write on the JSON
-        ``delivered_to`` array in Python (which clobbers on concurrent chat
-        opens), we re-read the row inside the same transaction right before
-        each update, and only append ``user_id`` if it's not already there.
-        The final serialize pass uses the freshly-fetched rows.
-
-        B13: paginates in chunks of 200 so a chat with a large backlog
-        eventually marks everything delivered (the old hard cap left >200
-        undelivered messages permanently undelivered).
-        """
+        # mark undelivered messages as delivered. on the hot path (every chat open).
+        # re-read the row before each update to avoid race conditions (lost updates
+        # from concurrent mark_delivered). paginates in chunks of 200 so very long
+        # backlogs eventually mark everything delivered.
         member = await self.chats.get_member(chat_id, user_id)
         if not member:
             raise ForbiddenError("Not a member of this chat")
@@ -133,7 +113,6 @@ class MessageService:
         threshold = max(total_members - 1, 1)
 
         changed_ids: List[str] = []
-        # Paginate so very long backlogs don't hit the 200-row ceiling.
         offset = 0
         page_limit = 200
         while True:
@@ -145,8 +124,7 @@ class MessageService:
             for m in rows:
                 if m.sender_id == user_id:
                     continue
-                # Re-read the row's delivered_to in THIS transaction to avoid
-                # lost updates from a concurrent mark_delivered call.
+                # re-read delivered_to in this transaction to avoid lost updates
                 delivered_to = json.loads(m.delivered_to) if m.delivered_to else []
                 if user_id in delivered_to:
                     continue
@@ -176,30 +154,21 @@ class MessageService:
         return {"updated": [serialize_message(m) for m in updated]}
 
     async def _purge_attachment(self, message: Message) -> None:
-        """Delete the file blob for a message from Supabase Storage.
-
-        Safe to call when there's no attachment (no-op) or when Supabase
-        isn't configured (also a no-op).  We try the explicit path first,
-        then fall back to extracting a path from a URL in ``content``.
-        """
+        # delete the file blob from supabase. no-op for non-attachments or when
+        # supabase isn't configured. tries explicit path, then URL in content.
         if message.type not in ATTACHMENT_TYPES:
             return
         path = message.attachment_path
         if path:
             await StorageService.delete_file(path)
             return
-        # Legacy/base64 path: content may be a Supabase public URL.
+        # legacy/base64 path: content may be a supabase public URL
         if message.content and message.content.startswith("http"):
             await StorageService.delete_file_by_url(message.content)
 
     async def mark_read(self, chat_id: str, message_id: str, user_id: str) -> dict:
-        """Mark a message as read by the current user.
-
-        B4: verifies chat membership before updating (was missing — any
-        authenticated user could mark any message read by guessing IDs).
-        B1: re-reads ``read_by`` from the row in this transaction before
-        appending, so concurrent reads don't clobber each other.
-        """
+        # verifies chat membership first, then re-reads read_by in this
+        # transaction before appending so concurrent reads don't clobber.
         member = await self.chats.get_member(chat_id, user_id)
         if not member:
             raise ForbiddenError("Not a member of this chat")
@@ -227,13 +196,13 @@ class MessageService:
         self, chat_id: str, message_id: str, user_id: str,
         content: Optional[str] = None, action: Optional[str] = None,
     ) -> dict:
-        """Edit a message (sender only) or toggle its star (any member)."""
+        # edit (sender only) or toggle star (any member)
         msg = await self._get_owned_message(chat_id, message_id)
 
         if action == "star":
             return await self._toggle_star(message_id, user_id, chat_id)
 
-        # Edit path
+        # edit path
         if msg.sender_id != user_id:
             raise ForbiddenError("You can only edit your own messages")
         content = sanitize_text(content)
@@ -248,8 +217,7 @@ class MessageService:
         if msg.sender_id != user_id:
             raise ForbiddenError("You can only delete your own messages")
         if for_everyone:
-            # Purge the attachment before wiping the row content so the
-            # ciphertext is gone immediately for everyone in the chat.
+            # purge attachment before wiping content so ciphertext is gone immediately
             await self._purge_attachment(msg)
             await self.messages.update(
                 message_id,
@@ -264,7 +232,6 @@ class MessageService:
     async def toggle_reaction(
         self, chat_id: str, message_id: str, user_id: str, emoji: str,
     ) -> dict:
-        """Add or remove an emoji reaction."""
         msg = await self._get_owned_message(chat_id, message_id)
         existing = await self.reactions.find(message_id, user_id, emoji)
         if existing:
@@ -276,7 +243,6 @@ class MessageService:
     async def forward(
         self, message_id: str, target_chat_ids: List[str], user_id: str,
     ) -> List[dict]:
-        """Copy a message into one or more target chats."""
         original = await self.messages.get_by_id(message_id)
         if not original:
             raise NotFoundError("Message not found")
@@ -298,15 +264,11 @@ class MessageService:
         return forwarded
 
     async def list_starred(self, user_id: str) -> List[dict]:
-        """Return all messages the user has starred.
-
-        Batch-fetched in TWO queries (stars + messages) instead of the old
-        N+1 pattern that ran ``get_by_id`` per star.
-        """
+        # batch-fetched in two queries (stars + messages) instead of N+1
         stars = await self.stars.list_for_user(user_id)
         if not stars:
             return []
-        # Preserve original (created_at desc) order from the star records.
+        # preserve created_at desc order from the star records
         ordered_ids = [s.message_id for s in stars]
         msgs_by_id = {m.id: m for m in await self.messages.get_many_by_ids(ordered_ids)}
         return [
@@ -324,7 +286,6 @@ class MessageService:
         return {"starred": True}
 
     async def _get_owned_message(self, chat_id: str, message_id: str) -> Message:
-        """Fetch a message, validating it belongs to the given chat."""
         msg = await self.messages.get_by_id(message_id)
         if not msg or msg.chat_id != chat_id:
             raise NotFoundError("Message not found")

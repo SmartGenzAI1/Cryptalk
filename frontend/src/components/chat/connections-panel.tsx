@@ -29,8 +29,7 @@ export function ConnectionsPanel() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SafeUser[]>([])
 
-  // Hoisted above the useEffect that calls it (fixes TDZ lint error — same
-  // pattern as the sidebar fix).
+  // hoisted above the useEffect that calls it (avoids TDZ lint error)
   async function loadData() {
     try {
       const [connData, reqData] = await Promise.all([
@@ -45,8 +44,7 @@ export function ConnectionsPanel() {
   }
 
   useEffect(() => {
-    // Async IIFE so setState happens after an await (not synchronously in
-    // the effect body, which the linter flags as cascading renders).
+    // async iife so setState isn't synchronous in effect body
     let cancelled = false
     ;(async () => {
       if (cancelled) return

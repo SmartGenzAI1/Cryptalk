@@ -1,19 +1,6 @@
-"""File upload endpoints — E2EE ciphertext storage in Supabase.
-
-Flow:
-    1. Client encrypts file bytes with the chat's E2EE key (ciphertext).
-    2. Client POSTs the ciphertext blob here as multipart/form-data.
-    3. We enforce the per-file cap + total storage quota, then store the
-       ciphertext in Supabase Storage.
-    4. We return ``{ url, path, size, contentType, fileName }``.
-    5. Client sends the message with ``content = encrypt(url)``; the URL is
-       the only thing the server ever sees, and even that is encrypted at
-       rest in the message row.
-
-When Supabase is not configured (local dev), the endpoint returns
-``{ fallback: true }`` so the client falls back to embedding the ciphertext
-directly in the message content (the legacy base64 path).
-"""
+# file upload endpoints — e2ee ciphertext storage in supabase.
+# client encrypts then POSTs ciphertext; we store it and return a URL.
+# when supabase isn't configured we tell the client to fall back to base64.
 
 import logging
 import secrets
@@ -37,15 +24,10 @@ router = APIRouter(prefix="/uploads", tags=["uploads"])
 
 
 def _safe_filename(name: Optional[str]) -> str:
-    """Reduce a user-supplied filename to something safe to store.
-
-    Strips path components, keeps the extension, falls back to ``file``.
-    """
     if not name:
         return "file"
-    # Take last path segment (defends against ``../`` style names).
+    # last path segment only (defends against ../)
     base = name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    # Keep alphanumerics, dash, underscore, dot only.
     safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in base)
     return safe[:80] or "file"
 
@@ -56,21 +38,14 @@ async def upload_attachment(
     user_id: str = Depends(get_current_user_id),
     content_length: int = Header(0, alias="content-length"),
 ):
-    """Upload an E2EE-encrypted file blob to Supabase Storage.
-
-    The body should be the *ciphertext* produced by the client's E2EE layer.
-    We never see plaintext file content.
-    """
-    # ─── Dev fallback: no Supabase configured ────────────────────────────
-    # The client should embed the ciphertext in the message content directly.
+    # dev fallback: client should embed ciphertext in message content directly
     if not StorageService.is_available():
         return JSONResponse(
             status_code=200,
             content={"fallback": True, "message": "Supabase not configured — use base64 content"},
         )
 
-    # ─── Per-file size cap (Content-Length first for fast reject) ────────
-    # ``content_length`` may be 0 if chunked; we re-check after reading.
+    # per-file cap (content-length first for fast reject; chunked may send 0)
     if content_length and content_length > settings.MAX_FILE_SIZE_BYTES:
         return JSONResponse(
             status_code=413,
@@ -81,11 +56,9 @@ async def upload_attachment(
             },
         )
 
-    # ─── Read the ciphertext blob (capped at MAX_FILE_SIZE_BYTES) ────────
-    # Read in a streaming way with a hard ceiling so a malicious client can't
-    # OOM us by streaming gigabytes.
+    # stream-read with a hard ceiling so a malicious client can't OOM us
     blob = bytearray()
-    remaining = settings.MAX_FILE_SIZE_BYTES + 1  # +1 so we can detect overflow
+    remaining = settings.MAX_FILE_SIZE_BYTES + 1  # +1 to detect overflow
     while remaining > 0:
         chunk = await file.read(64 * 1024)
         if not chunk:
@@ -108,7 +81,7 @@ async def upload_attachment(
             status_code=400, content={"error": "empty_file", "message": "Uploaded file is empty"}
         )
 
-    # ─── Total storage quota check (sums existing bucket usage) ──────────
+    # total storage quota check
     try:
         await StorageService.check_quota(size)
     except FileTooLargeError:
@@ -132,7 +105,7 @@ async def upload_attachment(
     except StorageError as e:
         logger.warning("Quota check failed: %s", e)
 
-    # ─── Upload to Supabase ──────────────────────────────────────────────
+    # upload to supabase
     rand_id = secrets.token_hex(8)
     safe_name = _safe_filename(file.filename)
     path = f"files/{user_id}/{rand_id}/{safe_name}"
@@ -158,11 +131,6 @@ async def upload_attachment(
 
 @router.get("/quota")
 async def get_quota(user_id: str = Depends(get_current_user_id)):
-    """Return current storage usage and the configured quota.
-
-    Lets the client show a "X MB of 1 GB used" indicator and warn the user
-    before they hit the wall.
-    """
     if not StorageService.is_available():
         return {"available": False, "used": 0, "quota": 0, "maxFile": 0}
     used = await StorageService.get_storage_usage()
@@ -179,17 +147,10 @@ async def delete_attachment(
     path: str = "",
     user_id: str = Depends(get_current_user_id),
 ):
-    """Delete a single attachment by its bucket path.
-
-    Only the user who owns the path (encoded in ``files/{userId}/...``) may
-    delete it.  Used as an escape hatch when a client cancels an upload.
-    """
     if not path:
         return JSONResponse(status_code=400, content={"error": "missing_path"})
-    # B5+B6: strict ownership + path-traversal defense.  The path must:
-    #   1. start with files/{user_id}/  (owner check)
-    #   2. contain NO ".." segments     (path traversal inside the bucket)
-    #   3. contain NO null bytes          (string-termination tricks)
+    # ownership + path-traversal defense: path must start with files/{user_id}/,
+    # no ".." segments, no null bytes
     prefix = f"files/{user_id}/"
     if not path.startswith(prefix) or ".." in path or "\x00" in path:
         return JSONResponse(

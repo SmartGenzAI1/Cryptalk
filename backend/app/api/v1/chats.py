@@ -1,4 +1,4 @@
-"""Chat endpoints — list, create, get, settings."""
+# chat endpoints — list, create, get, settings
 
 from fastapi import APIRouter, Depends
 

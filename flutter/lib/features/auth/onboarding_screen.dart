@@ -4,23 +4,8 @@ import '../../core/auth_service.dart';
 import '../../core/chat_service.dart';
 import '../../core/ui/avatar.dart';
 
-/// One-shot profile setup shown after the user has just registered (or logged
-/// in to an account that never finished onboarding).
-///
-/// Design goals:
-///   • **Delightful**: large hero avatar, calm explanatory copy, single
-///     scrollable column, 48px-tall primary CTA.
-///   • **Prefilled**: username suggestion derived from the email local-part,
-///     display name defaulting to the same prefix Capitalized.
-///   • **One-tap avatar**: tap the avatar (or the "Change avatar" pill) to
-///     open a bottom-sheet picker with emoji + color. The selection is
-///     persisted via `PATCH /api/users/me` after the main `onboard` call so
-///     the backend keeps it.
-///   • **No useless overlays**: validation is inline (Form + TextFormField
-///     validators). Errors are surfaced via SnackBar only for thrown API
-///     exceptions.
-///   • **Mobile-first**: SafeArea, 44px+ touch targets, scrollable, fills
-///     width, keyboard-friendly `textInputAction`.
+// one-shot profile setup shown after register (or login to an account that
+// never finished onboarding).
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -37,9 +22,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   String _avatarColor = 'emerald';
   bool _avatarChanged = false;
 
-  /// Avatar emoji palette — matches the backend's per-user avatar options
-  /// (a curated subset of the icon registry; persisted as the icon key, not
-  /// the unicode glyph).
+  // avatar emoji keys — curated subset of the icon registry
   static const List<String> _avatarEmojiKeys = [
     'fox', 'cat', 'dog', 'panda', 'lion', 'unicorn',
     'rabbit', 'owl', 'bear', 'frog', 'turtle', 'butterfly',
@@ -54,9 +37,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   void initState() {
     super.initState();
-    // Prefill sensible defaults from the current user's email so the user
-    // can just tap "Start Chatting" without typing anything (when the
-    // suggestion is free).
+    // prefill defaults from the user's email so they can just tap Start
+    // Chatting without typing anything
     final user = context.read<AuthService>().currentUser;
     if (user != null) {
       _avatarEmoji = user.avatarEmoji.isNotEmpty ? user.avatarEmoji : 'fox';
@@ -93,9 +75,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       final auth = context.read<AuthService>();
       await auth.onboard(username, name);
 
-      // If the user changed their avatar in the picker, persist it via the
-      // profile-update endpoint. Failures are non-fatal (onboarding itself
-      // already succeeded) — just log.
+      // if the user changed their avatar in the picker, persist it. failures
+      // are non-fatal — onboarding already succeeded, just log
       if (_avatarChanged) {
         try {
           await context.read<ChatService>().updateProfile(
@@ -104,12 +85,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               );
           await auth.refreshMe();
         } catch (_) {
-          // Swallow: the user is already onboarded; avatar can be changed
-          // later from Settings → Edit Profile.
+          // user is already onboarded; avatar can be changed later in settings
         }
       }
-      // No explicit navigation — AppRouter watches AuthService and will
-      // rebuild to ChatListScreen as soon as `isOnboarded` flips true.
+      // no explicit navigation — AppRouter watches AuthService and rebuilds to
+      // ChatListScreen when isOnboarded flips true
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -154,7 +134,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         ?.copyWith(color: Colors.grey),
                   ),
                   const SizedBox(height: 16),
-                  // Live preview
+                  // live preview
                   Center(
                     child: AvatarIcon(
                       iconKey: _avatarEmoji,
@@ -285,7 +265,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const SizedBox(height: 12),
-                    // Hero avatar preview (tap to change).
+                    // hero avatar preview (tap to change)
                     Center(
                       child: Semantics(
                         button: true,

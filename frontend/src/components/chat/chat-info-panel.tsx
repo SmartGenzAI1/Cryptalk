@@ -24,7 +24,7 @@ export function ChatInfoPanel() {
   const other = activeChat?.members.find((m) => m.user.id !== currentUser?.id)
   const online = other ? onlineUserIds.has(other.user.id) : false
 
-  // Generate safety number for E2EE verification (Signal-style)
+  // generate safety number for E2EE verification (Signal-style)
   useEffect(() => {
     if (!activeChat || !e2eeEnabled || !isDirect || !other) return
     let cancelled = false
@@ -46,7 +46,7 @@ export function ChatInfoPanel() {
 
   if (!activeChat) return null
 
-  // media: stickers & images from messages
+  // stickers & images
   const media = messages.filter((m) => m.type === 'sticker' || m.type === 'image')
   const links = messages.flatMap((m) => {
     const matches = m.content.match(/https?:\/\/[^\s]+/g)

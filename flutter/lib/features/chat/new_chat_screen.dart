@@ -4,9 +4,7 @@ import '../../core/chat_service.dart';
 import '../../core/models.dart';
 import '../../core/ui/avatar.dart';
 
-/// "New chat" screen — search for a user by username and start a direct chat
-/// with them on tap. Mobile-first: full-width search bar, 56px touch targets,
-/// inline loading + empty states, no useless modals.
+// search for a user by username and start a direct chat on tap.
 class NewChatScreen extends StatefulWidget {
   const NewChatScreen({super.key});
 

@@ -107,11 +107,7 @@ export function ChatWindow() {
     }
   }
 
-  // F7: in-chat search input is committed immediately to `searchQuery` for
-  // instant input feedback, but the actual server call (`searchInChat`) is
-  // debounced 250ms so we don't hit the API on every keystroke. The previous
-  // implementation fired `searchInChat` synchronously inside the `onChange`
-  // handler.
+  // debounce the actual server call 250ms; query commits instantly for input feedback
   function runSearch(q: string) {
     setSearchQuery(q)
     if (!q.trim() || !activeChatId) {
@@ -123,11 +119,7 @@ export function ChatWindow() {
   useEffect(() => {
     if (!activeChatId) return
     const q = searchQuery.trim()
-    // The empty-query case is handled synchronously in `runSearch` (which
-    // clears results immediately for snappy UX) — we must not call setState
-    // here for the empty branch or React's `react-hooks/set-state-in-effect`
-    // rule fires (cascading renders). Just bail and let the debounce run
-    // only when there's an actual query to send.
+    // empty-query case handled in runSearch; bailing here avoids the set-state-in-effect rule
     if (!q) return
     let cancelled = false
     const t = setTimeout(async () => {
@@ -137,7 +129,6 @@ export function ChatWindow() {
         setSearchResults(results)
         setSearchIndex(0)
         if (results.length > 0) {
-          // scroll to first result
           const el = document.getElementById(`msg-${results[0].id}`)
           el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
         }

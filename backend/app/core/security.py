@@ -1,4 +1,4 @@
-"""Security: scrypt hashing, HMAC tokens, input validation."""
+# security: scrypt hashing, HMAC tokens, input validation
 
 import hashlib
 import hmac
@@ -14,8 +14,8 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.exceptions import AuthError
 
-# ─── Password hashing ───────────────────────────────────────────────────
-# scrypt parameters — must match the Node.js crypto.scryptSync defaults.
+# password hashing
+# scrypt params must match node.js crypto.scryptSync defaults
 _SCRYPT_N = 16384
 _SCRYPT_R = 8
 _SCRYPT_P = 1
@@ -26,7 +26,7 @@ def hash_password(password: str) -> str:
     salt = os.urandom(16).hex()
     derived = hashlib.scrypt(
         password.encode(),
-        salt=salt.encode(),  # Node.js passes salt as UTF-8 string, not raw bytes
+        salt=salt.encode(),  # node.js passes salt as UTF-8 string, not raw bytes
         n=_SCRYPT_N,
         r=_SCRYPT_R,
         p=_SCRYPT_P,
@@ -50,7 +50,7 @@ def verify_password(password: str, stored: str) -> bool:
     except (ValueError, TypeError):
         return False
 
-# ─── Session tokens ────────────────────────────────────────────────────
+# session tokens
 
 def _sign(payload: str) -> str:
     mac = hmac.new(
@@ -92,10 +92,9 @@ def get_client_fingerprint(request) -> str:
     raw = f"{ip}:{user_agent}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
-# ─── Date helpers ──────────────────────────────────────────────────────
-# Prisma stores datetimes as integer milliseconds since epoch in SQLite.
-# These helpers bridge between the integer storage and ISO-8601 strings
-# consumed by the API layer.
+# date helpers
+# prisma stores datetimes as int millis since epoch in sqlite.
+# these bridge between int storage and ISO-8601 strings the api layer wants.
 
 def now_ms() -> int:
 
@@ -120,7 +119,7 @@ def iso_to_ms(iso_str: str) -> int:
     except (ValueError, AttributeError):
         return now_ms()
 
-# ─── Input validation & sanitization ───────────────────────────────────
+# input validation & sanitization
 
 import re
 from html import escape as _html_escape
@@ -167,7 +166,7 @@ def sanitize_bio(text: str) -> str:
 
     return sanitize_text(text, _MAX_BIO_LENGTH)
 
-# ─── FastAPI dependencies ──────────────────────────────────────────────
+# fastapi dependencies
 
 def get_current_user_id(request: Request) -> str:
 
@@ -186,7 +185,7 @@ def get_optional_user_id(request: Request) -> Optional[str]:
         return None
     return _verify(token)
 
-# Type alias for dependency injection
+# type aliases for DI
 CurrentUser = Depends(get_current_user_id)
 OptionalUser = Depends(get_optional_user_id)
 DbSession = Depends(get_db)

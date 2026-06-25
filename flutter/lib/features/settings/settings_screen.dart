@@ -6,11 +6,9 @@ import '../../core/models.dart';
 import '../../core/ui/avatar.dart';
 import '../connections/connections_screen.dart';
 
-/// Settings screen — grouped sections, no clutter, no stacked dialogs.
-///
-/// Each action that needs input (blocked users list, cross-chat search,
-/// report a problem) opens its own dedicated screen via `Navigator.push`
-/// rather than stacking an AlertDialog on top of another AlertDialog.
+// settings screen — grouped sections, no clutter. each action that needs
+// input (blocked users, cross-chat search, report) opens its own screen via
+// Navigator.push instead of stacking dialogs.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -187,7 +185,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-/// Profile card at the top of the settings list — large avatar, name, @username.
+// profile card at the top of the settings list — large avatar, name, @username
 class _ProfileHeader extends StatelessWidget {
   final AppUser user;
   const _ProfileHeader({required this.user});
@@ -242,8 +240,8 @@ class _ProfileHeader extends StatelessWidget {
   }
 }
 
-/// A labelled group of ListTiles. Material 3 doesn't ship a settings-group
-/// widget, so this is a small helper: title + card-shaped container.
+// labelled group of listtiles. material 3 has no settings-group widget so
+// this is a small helper: title + card-shaped container.
 class _SettingsSection extends StatelessWidget {
   final String title;
   final List<Widget> children;
@@ -287,7 +285,7 @@ class _SettingsSection extends StatelessWidget {
   }
 }
 
-// ─── Edit Profile ────────────────────────────────────────────────────────
+// ─── edit profile ────────────────────────────────────────────────────────
 
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({super.key});
@@ -346,8 +344,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             avatarEmoji: _avatarEmoji,
             avatarColor: _avatarColor,
           );
-      // Refresh the cached user so the settings list and chat list show the
-      // new avatar/name immediately.
+      // refresh cached user so settings + chat list show the new avatar/name
       await context.read<AuthService>().refreshMe();
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -584,7 +581,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   }
 }
 
-// ─── Blocked Users Screen ────────────────────────────────────────────────
+// ─── blocked users screen ────────────────────────────────────────────────
 
 class BlockedUsersScreen extends StatefulWidget {
   const BlockedUsersScreen({super.key});
@@ -721,7 +718,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   }
 }
 
-// ─── Cross-Chat Search Screen ────────────────────────────────────────────
+// ─── cross-chat search screen ────────────────────────────────────────────
 
 class CrossChatSearchScreen extends StatefulWidget {
   const CrossChatSearchScreen({super.key});
@@ -841,7 +838,7 @@ class _CrossChatSearchScreenState extends State<CrossChatSearchScreen> {
   }
 }
 
-// ─── Report a Problem Screen ─────────────────────────────────────────────
+// ─── report a problem screen ────────────────────────────────────────────
 
 class ReportScreen extends StatefulWidget {
   const ReportScreen({super.key});

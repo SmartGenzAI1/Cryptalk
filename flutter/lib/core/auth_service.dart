@@ -4,13 +4,8 @@ import 'models.dart';
 import 'crypto_service.dart';
 import 'socket_service.dart';
 
-/// Holds the current authenticated [AppUser] and exposes the auth lifecycle
-/// methods (login/register/onboard/logout) plus E2EE init.
-///
-/// Extends [ChangeNotifier] so the [AppRouter] (and any other
-/// `context.watch<AuthService>()` consumer) rebuilds whenever the current
-/// user changes — without this, navigating `login → onboarding → chat list`
-/// would silently break because the router never gets a rebuild signal.
+// holds current user + auth lifecycle. AppRouter watches currentUser so
+// navigation between login/onboarding/chat list happens automatically.
 class AuthService extends ChangeNotifier {
   final _api = ApiClient();
   final _crypto = CryptoService();
@@ -62,16 +57,12 @@ class AuthService extends ChangeNotifier {
     return _currentUser!;
   }
 
-  /// Refresh the cached current user from `/api/auth/me` (e.g. after a
-  /// profile update so the UI reflects the new name/avatar).
   Future<void> refreshMe() async {
     await getMe();
   }
 
   Future<void> logout() async {
-    // Tear down the realtime socket before clearing the session — this also
-    // wipes every per-screen socket subscription (L3/L10 fix) so a stale
-    // listener can't fire after logout.
+    // disconnect socket first so stale listeners can't fire post-logout
     try {
       SocketService().disconnect();
     } catch (_) {}
@@ -80,18 +71,8 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Initialize end-to-end encryption for the current user.
-  ///
-  /// Generates a proper X25519 identity keypair (for ECDH), an Ed25519
-  /// signing keypair (to sign the prekey), and a signed X25519 prekey — then
-  /// uploads ALL FOUR public artifacts (`identity_public_key`,
-  /// `signing_public_key`, `signed_prekey_public`, `signed_prekey_signature`)
-  /// to `/api/keys/upload` so that other clients (web or Flutter) can build a
-  /// prekey bundle and encrypt messages to us.
-  ///
-  /// L2 fix: previously this uploaded the X25519 key as all three "public
-  /// keys" and a literal `'sig'` string as the signature, which broke
-  /// cross-client E2EE entirely.
+  // generates identity + signing + signed prekey keypairs and uploads the
+  // public artifacts to /api/keys/upload so other clients can encrypt to us
   Future<void> initE2EE() async {
     if (!_crypto.isInitialized) {
       await _crypto.init();

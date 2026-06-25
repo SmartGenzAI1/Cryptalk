@@ -53,12 +53,7 @@ export function ChatList() {
   const updateChatListItem = useChatStore((s) => s.updateChatListItem)
   const [newChatOpen, setNewChatOpen] = useState(false)
 
-  // Debounced search input — keep a local string for instant feedback while
-  // the (potentially heavy) filter only runs ~200ms after the user stops typing.
-  // Local `searchInput` is the source of truth for the <Input> value; the
-  // store's `searchQuery` is the debounced "committed" value used by the filter.
-  // No other component writes to the store's searchQuery, so no reverse-sync is
-  // needed (avoids a setState-in-effect cascading-render warning).
+  // debounce search input: local value for instant feedback, store value committed after 200ms
   const [searchInput, setSearchInput] = useState(searchQuery)
   useEffect(() => {
     const t = setTimeout(() => {
@@ -118,15 +113,10 @@ export function ChatList() {
     return { text: prefix + lm.content, icon: null }
   }
 
-  // Prefetch a chat's messages when the user hovers its list item for >300ms.
-  // Skips chats that already have messages in the store. Does not switch the
-  // active chat — only warms the cache so opening feels instant.
-  // Reads `messages` lazily via getState() to avoid re-rendering ChatList on
-  // every message update.
+  // prefetch messages on hover >300ms; reads store lazily to avoid re-renders
   const prefetchTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   function schedulePrefetch(chat: ChatListItem) {
     if (prefetchTimers.current.has(chat.id)) return
-    // Already cached in store — nothing to do
     const cur = useChatStore.getState().messages[chat.id]
     if (cur && cur.length > 0) return
     const t = setTimeout(() => {
@@ -143,7 +133,6 @@ export function ChatList() {
     }
   }
   useEffect(() => {
-    // Cleanup any pending prefetch timers on unmount
     const timers = prefetchTimers.current
     return () => {
       timers.forEach((t) => clearTimeout(t))
@@ -151,23 +140,16 @@ export function ChatList() {
     }
   }, [])
   async function prefetchChat(chat: ChatListItem) {
-    // F12: capture the chat id at start. Before each `setMessages(...)` call,
-    // re-check `useChatStore.getState().activeChatId` — if the user has
-    // switched to a different chat in the meantime, abort the prefetch so we
-    // don't write this chat's (potentially stale) messages into a slot the
-    // user is no longer viewing. We treat `activeChatId === null` (user
-    // closed all chats) as "still here" so the hover-prefetch use case keeps
-    // working before the user has opened any chat.
+    // abort if user switched to a different chat (null = still here, preserves hover-prefetch)
     const chatId = chat.id
     const switchedAway = () => {
       const a = useChatStore.getState().activeChatId
       return a !== null && a !== chatId
     }
-    // Skip if another render populated the store meanwhile
     const cur = useChatStore.getState().messages[chatId]
     if (cur && cur.length > 0) return
     try {
-      // 1. Try IndexedDB cache first (instant)
+      // 1. try IndexedDB cache first (instant)
       const { loadCachedMessages } = await import('@/lib/message-cache')
       const cached = await loadCachedMessages(chatId)
       const storeNow = useChatStore.getState().messages[chatId]
@@ -176,7 +158,7 @@ export function ChatList() {
         if (switchedAway()) return
         useChatStore.getState().setMessages(chatId, cached)
       }
-      // 2. Background-fetch latest from server (no loading state, no toast)
+      // 2. background-fetch latest from server (no loading state, no toast)
       const data = await apiGet<{ messages: any[] }>(`/api/${chatId}/messages?limit=50`)
       if (!data.messages) return
       if (switchedAway()) return
@@ -190,7 +172,7 @@ export function ChatList() {
               try {
                 m.content = await decryptMessageForChat(m.content, chatId, chat.type)
               } catch {
-                // keep ciphertext if decryption fails
+                // keep ciphertext
               }
             }
             return m
@@ -214,23 +196,23 @@ export function ChatList() {
     setInfoPanelOpen(false)
     setMessagesLoading(chat.id, true)
 
-    // 1. Show cached messages instantly (< 200ms) for instant sync
+    // 1. show cached messages instantly (< 200ms)
     try {
       const { loadCachedMessages } = await import('@/lib/message-cache')
       const cached = await loadCachedMessages(chat.id)
       if (cached.length > 0) {
         setMessages(chat.id, cached)
-        setMessagesLoading(chat.id, false) // hide loading skeleton immediately
+        setMessagesLoading(chat.id, false)
       }
     } catch {
-      // cache not ready — will show loading skeleton
+      // cache miss — will show loading skeleton
     }
 
     try {
-      // 2. Fetch latest from server (background sync)
+      // 2. fetch latest from server (background sync)
       const data = await apiGet<{ messages: any[] }>(`/api/${chat.id}/messages?limit=50`)
       if (data.messages) {
-        // E2EE: decrypt all text messages before storing in state
+        // e2ee: decrypt text messages before storing
         try {
           const { decryptMessageForChat } = await import('@/lib/e2ee')
           const decrypted = await Promise.all(
@@ -239,7 +221,7 @@ export function ChatList() {
                 try {
                   m.content = await decryptMessageForChat(m.content, chat.id, chat.type)
                 } catch {
-                  // keep ciphertext if decryption fails (e.g., no key yet)
+                  // keep ciphertext (e.g. no key yet)
                 }
               }
               return m
@@ -247,31 +229,26 @@ export function ChatList() {
           )
           setMessages(chat.id, decrypted)
 
-          // 3. Cache decrypted messages for instant sync next time
+          // 3. cache decrypted messages for next time
           const { cacheMessages } = await import('@/lib/message-cache')
           cacheMessages(chat.id, decrypted)
         } catch {
-          // E2EE not ready — store as-is
+          // e2ee not ready — store as-is
           setMessages(chat.id, data.messages)
         }
 
-        // 4. Mark messages as delivered (recipient opened the chat)
+        // 4. mark messages as delivered (recipient opened the chat)
         if (chat.type !== 'saved') {
-          // F13: was `.catch(() => {})` — silently swallowing all errors
-          // meant delivery receipts would silently stop working if the
-          // endpoint broke, with no log to trace. Surface to the console so
-          // debugging is possible.
+          // surface errors so delivery receipts don't silently break
           apiPost(`/api/${chat.id}/messages/delivered`).catch((e) =>
             console.warn('mark_delivered failed:', e)
           )
-          // Broadcast delivery status via socket
           getSocket()?.emit('message-status', {
             chatId: chat.id,
             status: 'delivered',
           })
         }
       }
-      // clear unread
       updateChatListItem(chat.id, { unreadCount: 0 })
       setActiveChat({
         id: chat.id,

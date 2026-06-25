@@ -1,11 +1,5 @@
-"""Tiny TTL cache for process-local values that are expensive to recompute.
-
-We avoid pulling in Redis / memcached for the dev path — the values we cache
-(storage-usage summary, rate-limit counters) are per-process and tolerate a
-short staleness window.  In a multi-process deployment you'd swap this for
-Redis, but the call sites (``cached`` decorator / ``get_cached``) stay the
-same.
-"""
+# tiny TTL cache for process-local values that are expensive to recompute
+# (storage usage, etc.). swap for redis in multi-process.
 
 import time
 from typing import Any, Optional

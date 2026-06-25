@@ -22,7 +22,7 @@ import { cn } from '@/lib/utils'
 
 export function ProfileDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (b: boolean) => void }) {
   const currentUser = useChatStore((s) => s.currentUser)
-  // Only mount the form when open — state initializes from props, no effect needed
+  // only mount the form when open — state initializes from props, no effect needed
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">

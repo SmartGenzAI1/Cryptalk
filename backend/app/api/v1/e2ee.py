@@ -1,4 +1,4 @@
-"""Public key distribution for E2EE."""
+# public key distribution for E2EE
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -12,7 +12,6 @@ router = APIRouter(prefix="/keys", tags=["e2ee"])
 
 
 class PublicKeyBundle(BaseModel):
-    """A user's public key material — safe to share with anyone."""
     user_id: str
     identity_public_key: Optional[str] = None  # X25519 (base64)
     signing_public_key: Optional[str] = None    # Ed25519 (base64)
@@ -21,7 +20,6 @@ class PublicKeyBundle(BaseModel):
 
 
 class UploadKeysRequest(BaseModel):
-    """Upload public keys — called once during onboarding."""
     identity_public_key: str
     signing_public_key: str
     signed_prekey_public: str
@@ -34,7 +32,7 @@ async def upload_public_keys(
     user_id: str = Depends(get_current_user_id),
     user_repo: UserRepository = Depends(get_user_repo),
 ):
-    """Upload public keys for E2EE. Private keys NEVER leave the client."""
+    # private keys never leave the client
     await user_repo.update(
         user_id,
         identity_public_key=req.identity_public_key,
@@ -51,10 +49,6 @@ async def get_public_keys(
     user_id: str = Depends(get_current_user_id),
     user_repo: UserRepository = Depends(get_user_repo),
 ):
-    """Fetch another user's public keys for E2EE key agreement.
-
-
-    """
     user = await user_repo.get_by_id(target_user_id)
     if not user:
         from app.core.exceptions import NotFoundError
@@ -75,7 +69,6 @@ async def my_key_status(
     user_id: str = Depends(get_current_user_id),
     user_repo: UserRepository = Depends(get_user_repo),
 ):
-    """Check if the current user has uploaded their public keys."""
     user = await user_repo.get_by_id(user_id)
     return {
         "has_keys": bool(user and user.identity_public_key),

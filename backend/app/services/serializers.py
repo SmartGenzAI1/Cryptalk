@@ -1,4 +1,4 @@
-"""ORM to dict serializers."""
+# ORM to dict serializers
 
 import json
 from typing import Any, Dict, List, Optional

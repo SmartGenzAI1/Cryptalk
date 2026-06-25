@@ -33,24 +33,19 @@ interface CachedMessage {
   [key: string]: any
 }
 
-/**
- * Cache messages for a chat (replaces existing cache for that chat).
- * Keeps only the most recent MAX_CACHED_PER_CHAT messages.
- */
+// cache messages for a chat (replaces existing). keeps last MAX_CACHED_PER_CHAT.
 export async function cacheMessages(chatId: string, messages: any[]): Promise<void> {
   try {
     const db = await openDB()
     const tx = db.transaction(STORE_NAME, 'readwrite')
     const store = tx.objectStore(STORE_NAME)
 
-    // Delete old messages for this chat
     const allKeys = await new Promise<IDBValidKey[]>((resolve) => {
       const req = store.getAllKeys()
       req.onsuccess = () => resolve(req.result)
       req.onerror = () => resolve([])
     })
 
-    // Add new messages
     const toCache = messages.slice(-MAX_CACHED_PER_CHAT)
     for (const msg of toCache) {
       store.put({ ...msg, chatId })
@@ -65,10 +60,7 @@ export async function cacheMessages(chatId: string, messages: any[]): Promise<vo
   }
 }
 
-/**
- * Load cached messages for a chat.
- * Returns instantly from IndexedDB (no network).
- */
+// load cached messages instantly from IndexedDB (no network)
 export async function loadCachedMessages(chatId: string): Promise<any[]> {
   try {
     const db = await openDB()
@@ -92,15 +84,12 @@ export async function loadCachedMessages(chatId: string): Promise<any[]> {
   }
 }
 
-/**
- * Clear cached messages for a specific chat (on logout).
- */
+// clear cached messages for one chat (or all if no chatId)
 export async function clearChatCache(chatId?: string): Promise<void> {
   try {
     const db = await openDB()
     const tx = db.transaction(STORE_NAME, 'readwrite')
     if (chatId) {
-      // Clear specific chat
       const store = tx.objectStore(STORE_NAME)
       const req = store.getAll()
       req.onsuccess = () => {
@@ -110,7 +99,6 @@ export async function clearChatCache(chatId?: string): Promise<void> {
         }
       }
     } else {
-      // Clear all
       tx.objectStore(STORE_NAME).clear()
     }
     return new Promise((resolve) => {

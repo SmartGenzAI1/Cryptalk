@@ -41,7 +41,7 @@ function ForwardForm({ messageId, onDone }: { messageId: string; onDone: () => v
   const chats = useChatStore((s) => s.chats)
   const currentUser = useChatStore((s) => s.currentUser)
   const addMessage = useChatStore((s) => s.addMessage)
-  // State initializes fresh on each mount — no effect needed
+  // state initializes fresh on each mount — no effect needed
   const [selected, setSelected] = useState<string[]>([])
   const [sending, setSending] = useState(false)
 

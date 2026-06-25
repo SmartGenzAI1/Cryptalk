@@ -1,4 +1,4 @@
-"""User service — profile, search, and settings."""
+# user service — profile, search, settings
 
 from typing import List
 
@@ -10,8 +10,6 @@ from app.services.serializers import serialize_user
 
 
 class UserService:
-    """User profile, search, and preference management."""
-
     def __init__(self, user_repo: UserRepository):
         self.users = user_repo
 
@@ -20,7 +18,6 @@ class UserService:
         return serialize_user(user)
 
     async def update(self, user_id: str, **kwargs) -> dict:
-        """Update allowed profile fields with validation."""
         patch = {}
         if kwargs.get("name") is not None:
             patch["name"] = sanitize_text(kwargs["name"], max_length=50)

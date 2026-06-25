@@ -22,7 +22,7 @@ def client():
 
 @pytest.fixture
 def auth_token():
-    """Register a test user and return auth cookie."""
+    # register a test user and return its auth cookie
     import requests
     import uuid
     email = f"test_{uuid.uuid4().hex[:8]}@test.com"

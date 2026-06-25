@@ -1,16 +1,12 @@
 import 'package:flutter/material.dart';
 
-/// Avatar rendering for both user and chat avatars.
-///
-/// The backend stores avatar identities as **icon keys** (`'fox'`, `'cat'`,
-/// `'bookmark'`, etc.) rather than raw emoji — the web client resolves these
-/// to PNG files under `/icons/avatars/<key>.png`. The Flutter app has no
-/// equivalent asset bundle, so we resolve keys to unicode emoji via
-/// [_avatarEmojiMap]. A best-effort fallback returns the raw value if it
-/// already looks like an emoji (legacy data) or a generic 🦊 otherwise.
-///
-/// Also exposes [colorFor] which maps color names (`'emerald'`, `'violet'`,
-/// …) used throughout the API to [Color] constants.
+// avatar rendering. backend stores avatar as an icon key ('fox', 'cat',
+// 'bookmark', ...) rather than emoji — web resolves them to /icons/avatars/*.png
+// but flutter has no asset bundle, so we map keys to unicode emoji here.
+// falls through to the raw value if it already looks like an emoji (legacy)
+// or to 🦊 otherwise.
+//
+// also exposes colorFor which maps the api's color names to Color constants.
 class AvatarIcon extends StatelessWidget {
   final String iconKey;
   final String colorName;
@@ -27,7 +23,7 @@ class AvatarIcon extends StatelessWidget {
 
   static const Color _kDefaultColor = Color(0xFF10b981);
 
-  /// All color names used by the backend, mapped to Material hex values.
+  // color names → material hex values
   static const Map<String, Color> _colors = {
     'emerald': Color(0xFF10b981),
     'violet': Color(0xFF8b5cf6),
@@ -39,11 +35,10 @@ class AvatarIcon extends StatelessWidget {
     'teal': Color(0xFF14b8a6),
   };
 
-  /// Animal icon keys → unicode emoji. Used for both user avatars and
-  /// group/channel/saved chat avatars (the latter via chat-type keys like
-  /// `'chat'`, `'groups'`, `'bookmark'`, `'megaphone'`).
+  // icon keys → unicode emoji. covers user avatars + chat-type icons
+  // ('chat', 'groups', 'bookmark', 'megaphone')
   static const Map<String, String> _avatarEmojiMap = {
-    // Animals (matches frontend/src/lib/icons.ts AVATAR_ICONS)
+    // animals (matches frontend AVATAR_ICONS)
     'fox': '🦊',
     'cat': '🐱',
     'dog': '🐶',
@@ -83,8 +78,8 @@ class AvatarIcon extends StatelessWidget {
     'lizard': '🦎',
     'chameleon': '🦎',
     'starfish': '⭐',
-    'seahorse': ' Seahorse', // no dedicated emoji — falls through to default
-    // Chat-type icons (matches frontend CHAT_ICONS)
+    'seahorse': ' Seahorse', // no dedicated emoji
+    // chat-type icons (matches frontend CHAT_ICONS)
     'chat': '💬',
     'groups': '👥',
     'megaphone': '📢',
@@ -92,23 +87,20 @@ class AvatarIcon extends StatelessWidget {
     'saved': '🔖',
   };
 
-  /// Resolve any stored avatar value to a renderable emoji string.
-  /// - Known icon key (e.g. `'fox'`) → mapped emoji.
-  /// - Legacy raw emoji (short non-ASCII) → returned as-is.
-  /// - Empty / unknown → default 🦊.
+  // resolve any stored avatar value to a renderable emoji.
+  // known key → mapped emoji. legacy short non-ascii → as-is. else 🦊.
   static String resolveEmoji(String? value) {
     if (value == null || value.isEmpty) return '🦊';
     final mapped = _avatarEmojiMap[value];
     if (mapped != null) return mapped;
-    // Legacy emoji: short non-ASCII strings stored directly.
+    // legacy emoji: short non-ascii strings stored directly
     if (value.length <= 4 && RegExp(r'[^\x00-\x7F]').hasMatch(value)) {
       return value;
     }
     return '🦊';
   }
 
-  /// Public alias used by callers that only need the color (without building
-  /// a full widget).
+  // alias for callers that only need the color, no widget
   static Color colorFor(String? name) => _colors[name] ?? _kDefaultColor;
 
   @override
