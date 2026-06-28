@@ -41,10 +41,18 @@ def _auth_from_environ(environ: dict) -> str | None:
 def register_handlers(sio: socketio.AsyncServer) -> None:
 
     @sio.event
-    async def connect(sid: str, environ: dict) -> bool | None:
-        user_id = _auth_from_environ(environ)
+    async def connect(sid: str, environ: dict, auth: dict = None) -> bool | None:
+        user_id = None
+        if auth and isinstance(auth, dict):
+            token = auth.get("token")
+            if token:
+                user_id = verify_session_token(token)
+
         if not user_id:
-            logger.warning("Socket %s rejected: no valid session cookie", sid)
+            user_id = _auth_from_environ(environ)
+
+        if not user_id:
+            logger.warning("Socket %s rejected: no valid session cookie or token", sid)
             await sio.emit("auth-error", {"message": "Not authenticated"}, to=sid)
             return False
         manager.add(sid, user_id)

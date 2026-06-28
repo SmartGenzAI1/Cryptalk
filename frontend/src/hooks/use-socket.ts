@@ -37,9 +37,10 @@ export function useSocket() {
     const socketUrl = backendUrl
       ? backendUrl
       : `/?XTransformPort=${process.env.NEXT_PUBLIC_BACKEND_PORT || '8001'}`
+    const token = typeof window !== 'undefined' ? localStorage.getItem('tc_token') : null
     socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
-      // cookie is httponly so we can't read it in JS — browser sends it automatically here
+      auth: token ? { token } : undefined,
       withCredentials: true,
       forceNew: true,
       reconnection: true,

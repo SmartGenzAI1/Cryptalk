@@ -12,6 +12,15 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  async rewrites() {
+    const backendUrl = process.env.BACKEND_URL || "https://cryptalk-backend-30yc.onrender.com";
+    return [
+      {
+        source: "/api/:path*",
+        destination: `${backendUrl}/api/:path*`,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

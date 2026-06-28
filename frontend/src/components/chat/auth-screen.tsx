@@ -35,7 +35,10 @@ export function AuthScreen() {
     setLoading(true)
     try {
       if (step === 'login') {
-        const data = await apiPost<{ user: any }>('/api/auth/login', { email, password })
+        const data = await apiPost<{ user: any; token?: string }>('/api/auth/login', { email, password })
+        if (data.token) {
+          localStorage.setItem('tc_token', data.token)
+        }
         if (!data.user.isOnboarded) {
           setStep('onboard')
           setLoading(false)
@@ -44,11 +47,17 @@ export function AuthScreen() {
         setCurrentUser(data.user)
         toast.success('Welcome back!')
       } else if (step === 'register') {
-        const data = await apiPost<{ user: any }>('/api/auth/register', { email, password })
+        const data = await apiPost<{ user: any; token?: string }>('/api/auth/register', { email, password })
+        if (data.token) {
+          localStorage.setItem('tc_token', data.token)
+        }
         setStep('onboard')
         toast.success('Account created! Choose your username.')
       } else if (step === 'onboard') {
-        const data = await apiPost<{ user: any }>('/api/auth/onboard', { username, name })
+        const data = await apiPost<{ user: any; token?: string }>('/api/auth/onboard', { username, name })
+        if (data.token) {
+          localStorage.setItem('tc_token', data.token)
+        }
         setCurrentUser(data.user)
         toast.success('Welcome to Cryptalk!')
       }
