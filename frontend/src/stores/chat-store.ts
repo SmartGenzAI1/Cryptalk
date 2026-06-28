@@ -202,9 +202,17 @@ export const useChatStore = create<ChatState>((set, _get) => ({
     }),
 
   infoPanelOpen: false,
-  setInfoPanelOpen: (b) => set({ infoPanelOpen: b }),
+  setInfoPanelOpen: (b) =>
+    set((s) => ({
+      infoPanelOpen: b,
+      ...(b ? { settingsOpen: false, connectionsPanelOpen: false } : {}),
+    })),
   settingsOpen: false,
-  setSettingsOpen: (b) => set({ settingsOpen: b }),
+  setSettingsOpen: (b) =>
+    set((s) => ({
+      settingsOpen: b,
+      ...(b ? { infoPanelOpen: false, connectionsPanelOpen: false } : {}),
+    })),
   searchQuery: '',
   setSearchQuery: (q) => set({ searchQuery: q }),
 
@@ -223,7 +231,11 @@ export const useChatStore = create<ChatState>((set, _get) => ({
   setE2eeEnabled: (b) => set({ e2eeEnabled: b }),
 
   connectionsPanelOpen: false,
-  setConnectionsPanelOpen: (b) => set({ connectionsPanelOpen: b }),
+  setConnectionsPanelOpen: (b) =>
+    set((s) => ({
+      connectionsPanelOpen: b,
+      ...(b ? { infoPanelOpen: false, settingsOpen: false } : {}),
+    })),
 
   updateChatListItem: (id, patch) =>
     set((s) => ({

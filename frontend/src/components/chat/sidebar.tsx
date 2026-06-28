@@ -31,6 +31,10 @@ export function Sidebar() {
   const setCurrentUser = useChatStore((s) => s.setCurrentUser)
   const [profileOpen, setProfileOpen] = useState(false)
 
+  const chats = useChatStore((s) => s.chats)
+  const setActiveChatId = useChatStore((s) => s.setActiveChatId)
+  const activeChatId = useChatStore((s) => s.activeChatId)
+
   const isConnected = useChatStore((s) => s.isConnected)
   const e2eeEnabled = useChatStore((s) => s.e2eeEnabled)
   const setConnectionsPanelOpen = useChatStore((s) => s.setConnectionsPanelOpen)
@@ -42,11 +46,20 @@ export function Sidebar() {
     toast.success('Signed out')
   }
 
+  const savedChat = chats.find((c) => c.type === 'saved')
+  const isSavedActive = savedChat && activeChatId === savedChat.id
+
   const navItems = [
-    { icon: MessageCircle, label: 'Chats', active: true },
-    { icon: Users, label: 'Connections', active: connectionsPanelOpen, onClick: () => { setConnectionsPanelOpen(!connectionsPanelOpen); if (!connectionsPanelOpen) { setSettingsOpen(false) } } },
-    { icon: Megaphone, label: 'Channels', active: false },
-    { icon: Bookmark, label: 'Saved', active: false },
+    { icon: MessageCircle, label: 'Chats', active: !connectionsPanelOpen && !settingsOpen && !isSavedActive, onClick: () => { setConnectionsPanelOpen(false); setSettingsOpen(false); if (isSavedActive) setActiveChatId(null); } },
+    { icon: Users, label: 'Connections', active: connectionsPanelOpen, onClick: () => { setConnectionsPanelOpen(!connectionsPanelOpen); } },
+    { icon: Bookmark, label: 'Saved', active: !!isSavedActive, onClick: () => {
+        if (savedChat) {
+          setActiveChatId(savedChat.id)
+        } else {
+          toast.error('Saved Messages not found')
+        }
+      } 
+    },
   ]
 
   return (

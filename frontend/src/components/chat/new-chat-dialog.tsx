@@ -86,10 +86,6 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
   }
 
   async function createGroup() {
-    if (selected.length === 0) {
-      toast.error('Select at least one member')
-      return
-    }
     if (!groupName.trim()) {
       toast.error('Enter a group name')
       return

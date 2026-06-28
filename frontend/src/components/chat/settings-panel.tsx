@@ -19,6 +19,7 @@ import {
   Lock,
   Zap,
   KeyRound,
+  Bookmark,
 } from 'lucide-react'
 import { useChatStore } from '@/stores/chat-store'
 import { useTheme } from 'next-themes'
@@ -42,6 +43,8 @@ export function SettingsPanel() {
   const currentUser = useChatStore((s) => s.currentUser)
   const setCurrentUser = useChatStore((s) => s.setCurrentUser)
   const setSettingsOpen = useChatStore((s) => s.setSettingsOpen)
+  const chats = useChatStore((s) => s.chats)
+  const setActiveChatId = useChatStore((s) => s.setActiveChatId)
   const { theme, setTheme } = useTheme()
   const [accent, setAccent] = useState(currentUser?.accentColor || 'emerald')
   const [wallpaper, setWallpaper] = useState(currentUser?.wallpaper || 'dots')
@@ -50,6 +53,16 @@ export function SettingsPanel() {
   const [deleteConfirmUsername, setDeleteConfirmUsername] = useState('')
 
   if (!currentUser) return null
+
+  const handleOpenSaved = () => {
+    const savedChat = chats.find((c) => c.type === 'saved')
+    if (savedChat) {
+      setActiveChatId(savedChat.id)
+      setSettingsOpen(false)
+    } else {
+      toast.error('Saved Messages not found')
+    }
+  }
 
   async function applyAccent(c: string) {
     setAccent(c)
@@ -159,6 +172,16 @@ export function SettingsPanel() {
                 <h2 className="text-xl font-bold mt-3">{currentUser.name}</h2>
                 <p className="text-sm text-muted-foreground">@{currentUser.username}</p>
                 {currentUser.bio && <p className="text-sm mt-2 text-center text-muted-foreground">{currentUser.bio}</p>}
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4 flex items-center gap-2 rounded-xl px-4 zc-tap"
+                  onClick={handleOpenSaved}
+                >
+                  <Bookmark className="h-3.5 w-3.5" />
+                  Saved Messages
+                </Button>
               </div>
 
               {/* Theme Settings */}

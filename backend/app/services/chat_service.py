@@ -15,6 +15,22 @@ class ChatService:
 
     async def list_for_user(self, user_id: str) -> List[dict]:
         memberships = await self.chats.get_user_chats(user_id)
+        has_saved = any(chat.type == "saved" for _, chat in memberships)
+        if not has_saved:
+            try:
+                saved = await self.chats.create(
+                    type="saved",
+                    title="Saved Messages",
+                    avatar_emoji="bookmark",
+                    avatar_color="emerald",
+                    created_by=user_id,
+                )
+                await self.chats.add_member(saved.id, user_id, role="owner")
+                # refetch memberships
+                memberships = await self.chats.get_user_chats(user_id)
+            except Exception:
+                pass
+
         valid = [
             (member, chat) for member, chat in memberships
             if not (hasattr(chat, 'expires_at') and chat.expires_at and chat.expires_at < now_ms())

@@ -278,6 +278,7 @@ export function ChatList() {
     }
   }, [])
   async function prefetchChat(chat: ChatListItem) {
+    if (chat.type === 'saved') return
     // abort if user switched to a different chat (null = still here, preserves hover-prefetch)
     const chatId = chat.id
     const switchedAway = () => {
@@ -344,6 +345,23 @@ export function ChatList() {
       }
     } catch {
       // cache miss — will show loading skeleton
+    }
+
+    if (chat.type === 'saved') {
+      updateChatListItem(chat.id, { unreadCount: 0 })
+      setActiveChat({
+        id: chat.id,
+        type: chat.type as any,
+        title: getDisplayTitle(chat),
+        description: chat.description,
+        avatarColor: getDisplayEmoji(chat).color,
+        avatarEmoji: getDisplayEmoji(chat).emoji,
+        createdBy: chat.createdBy,
+        createdAt: chat.createdAt,
+        members: chat.members,
+      })
+      setMessagesLoading(chat.id, false)
+      return
     }
 
     try {
