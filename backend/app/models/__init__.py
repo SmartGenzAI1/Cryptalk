@@ -2,7 +2,7 @@
 # only auth, profiles, membership, and social data live in the DB.
 # messages are relay-only (WebSocket), never persisted.
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, BigInteger, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -20,11 +20,11 @@ class User(Base):
     avatar_emoji = Column("avatarEmoji", String, default="fox")
     is_online = Column("isOnline", Boolean, default=False)
     is_onboarded = Column("isOnboarded", Boolean, default=False)
-    last_seen = Column("lastSeen", Integer)
+    last_seen = Column("lastSeen", BigInteger)
     accent_color = Column("accentColor", String, default="emerald")
     wallpaper = Column("wallpaper", String, default="dots")
-    created_at = Column("createdAt", Integer)
-    updated_at = Column("updatedAt", Integer)
+    created_at = Column("createdAt", BigInteger)
+    updated_at = Column("updatedAt", BigInteger)
 
     identity_public_key = Column("identityPublicKey", String, nullable=True)
     signing_public_key = Column("signingPublicKey", String, nullable=True)
@@ -48,9 +48,9 @@ class Chat(Base):
     avatar_color = Column("avatarColor", String, default="emerald")
     avatar_emoji = Column("avatarEmoji", String, default="chat")
     created_by = Column("createdBy", String, ForeignKey("User.id"))
-    created_at = Column("createdAt", Integer)
-    updated_at = Column("updatedAt", Integer)
-    expires_at = Column("expiresAt", Integer, nullable=True)
+    created_at = Column("createdAt", BigInteger)
+    updated_at = Column("updatedAt", BigInteger)
+    expires_at = Column("expiresAt", BigInteger, nullable=True)
     invite_token = Column("inviteToken", String, nullable=True, index=True)
 
     members = relationship("ChatMember", back_populates="chat", cascade="all, delete-orphan")
@@ -63,9 +63,9 @@ class ChatMember(Base):
     chat_id = Column("chatId", String, ForeignKey("Chat.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column("userId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
     role = Column(String, default="member")  # owner | admin | member
-    joined_at = Column("joinedAt", Integer)
-    last_read_at = Column("lastReadAt", Integer)
-    pinned_at = Column("pinnedAt", Integer, nullable=True)
+    joined_at = Column("joinedAt", BigInteger)
+    last_read_at = Column("lastReadAt", BigInteger)
+    pinned_at = Column("pinnedAt", BigInteger, nullable=True)
     muted = Column("muted", Boolean, default=False)
     chat_key = Column("chatKey", String, nullable=True)
 
@@ -78,7 +78,7 @@ class UserBlock(Base):
     id = Column(String, primary_key=True)
     blocker_id = Column("blockerId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
     blocked_id = Column("blockedId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
-    created_at = Column("createdAt", Integer)
+    created_at = Column("createdAt", BigInteger)
 
 class UserNickname(Base):
     __tablename__ = "UserNickname"
@@ -87,7 +87,7 @@ class UserNickname(Base):
     owner_id = Column("ownerId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
     target_user_id = Column("targetUserId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False)
     nickname = Column(String, nullable=False)
-    created_at = Column("createdAt", Integer)
+    created_at = Column("createdAt", BigInteger)
 
 class ConnectionRequest(Base):
     __tablename__ = "ConnectionRequest"
@@ -96,7 +96,7 @@ class ConnectionRequest(Base):
     from_user_id = Column("fromUserId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
     to_user_id = Column("toUserId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
     status = Column(String, default="pending")
-    created_at = Column("createdAt", Integer)
+    created_at = Column("createdAt", BigInteger)
 
 class Report(Base):
     __tablename__ = "Report"
@@ -107,4 +107,4 @@ class Report(Base):
     chat_id = Column("chatId", String, nullable=True)
     reason = Column(String, nullable=False)
     status = Column(String, default="pending")
-    created_at = Column("createdAt", Integer)
+    created_at = Column("createdAt", BigInteger)

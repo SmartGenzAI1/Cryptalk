@@ -57,6 +57,29 @@ async def lifespan(app: FastAPI):
                     await conn.execute(text("ALTER TABLE \"User\" ADD COLUMN \"pushPlatform\" VARCHAR"))
                 except Exception:
                     pass
+
+            # Convert standard integer timestamp columns to BIGINT for Postgres compatibility
+            if settings.is_postgres:
+                for table, col in [
+                    ("User", "lastSeen"),
+                    ("User", "createdAt"),
+                    ("User", "updatedAt"),
+                    ("Chat", "createdAt"),
+                    ("Chat", "updatedAt"),
+                    ("Chat", "expiresAt"),
+                    ("ChatMember", "joinedAt"),
+                    ("ChatMember", "lastReadAt"),
+                    ("ChatMember", "pinnedAt"),
+                    ("UserBlock", "createdAt"),
+                    ("UserNickname", "createdAt"),
+                    ("ConnectionRequest", "createdAt"),
+                    ("Report", "createdAt"),
+                ]:
+                    try:
+                        await conn.execute(text(f"ALTER TABLE \"{table}\" ALTER COLUMN \"{col}\" TYPE BIGINT"))
+                    except Exception as e:
+                        logger.warning(f"Failed to alter column {table}.{col} to BIGINT: {e}")
+
             await conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_chatmember_user "
                 "ON \"ChatMember\" (\"userId\")"
