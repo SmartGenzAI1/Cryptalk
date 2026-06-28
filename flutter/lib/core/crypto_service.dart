@@ -4,18 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'api_client.dart';
 
-// e2ee for cryptalk. each device has an x25519 identity keypair, an
-// ed25519 signing keypair, and a signed x25519 prekey (signed by the
-// ed25519 key). privates live in flutter_secure_storage; only public bytes
-// + the signature go to /api/keys/upload.
+// E2EE for Cryptalk. Each client generates an X25519 identity keypair (for ECDH),
+// an Ed25519 signing keypair (to sign the prekey), and a signed X25519 prekey.
+// Private keys are saved securely in flutter_secure_storage; public keys are
+// uploaded to the backend.
 //
-// ciphertext json shape: {ciphertext, nonce, ephemeralPublicKey, mac} —
-// web reads the first three, mac is extra (chacha20-poly1305 needs it).
-//
-// NOTE: flutter↔flutter e2ee works end-to-end, but flutter↔web doesn't yet
-// — web uses libsodium XSalsa20-Poly1305 + non-standard hkdf, we use
-// chacha20-poly1305 + standard hkdf. same json shape, different cipher.
-// switching to a libsodium binding would fix it but adds a dep.
+// The message JSON format is: {ciphertext, nonce, ephemeralPublicKey, mac}.
+// Both web and mobile use standardized IETF ChaCha20-Poly1305 and standard HKDF-SHA256,
+// allowing full cross-platform encryption and decryption out of the box.
 class CryptoService {
   static final CryptoService _instance = CryptoService._internal();
   factory CryptoService() => _instance;
@@ -26,10 +22,16 @@ class CryptoService {
 
   // x25519 identity keypair (ecdh)
   SimpleKeyPair? _identityKeyPair;
+  String? _identityPublicKeyBase64;
+
   // ed25519 signing keypair (signs the prekey)
   SimpleKeyPair? _signingKeyPair;
+  String? _signingPublicKeyBase64;
+
   // x25519 signed prekey keypair
   SimpleKeyPair? _signedPreKeyPair;
+  String? _signedPreKeyPublicBase64;
+
   // ed25519 signature over the signed prekey public key
   List<int>? _signedPreKeySignature;
 
@@ -53,25 +55,28 @@ class CryptoService {
     final spkSig = await _storage.read(key: 'signed_prekey_signature');
 
     if (idPriv != null && idPub != null) {
-      _identityKeyPair = SimpleKeyPair(
-        SecretKey(base64Decode(idPriv)),
-        PublicKey(base64Decode(idPub)),
+      _identityKeyPair = SimpleKeyPairData(
+        base64Decode(idPriv),
+        publicKey: SimplePublicKey(base64Decode(idPub), type: KeyPairType.x25519),
         type: KeyPairType.x25519,
       );
+      _identityPublicKeyBase64 = idPub;
     }
     if (signPriv != null && signPub != null) {
-      _signingKeyPair = SimpleKeyPair(
-        SecretKey(base64Decode(signPriv)),
-        PublicKey(base64Decode(signPub)),
+      _signingKeyPair = SimpleKeyPairData(
+        base64Decode(signPriv),
+        publicKey: SimplePublicKey(base64Decode(signPub), type: KeyPairType.ed25519),
         type: KeyPairType.ed25519,
       );
+      _signingPublicKeyBase64 = signPub;
     }
     if (spkPriv != null && spkPub != null) {
-      _signedPreKeyPair = SimpleKeyPair(
-        SecretKey(base64Decode(spkPriv)),
-        PublicKey(base64Decode(spkPub)),
+      _signedPreKeyPair = SimpleKeyPairData(
+        base64Decode(spkPriv),
+        publicKey: SimplePublicKey(base64Decode(spkPub), type: KeyPairType.x25519),
         type: KeyPairType.x25519,
       );
+      _signedPreKeyPublicBase64 = spkPub;
     }
     if (spkSig != null) {
       _signedPreKeySignature = base64Decode(spkSig);
@@ -98,25 +103,31 @@ class CryptoService {
     _signingKeyPair = await ed25519.newKeyPair();
     _signedPreKeyPair = await x25519.newKeyPair();
 
-    // sign the prekey pub with the ed25519 signing key
+    final idPub = await _identityKeyPair!.extractPublicKey();
+    _identityPublicKeyBase64 = base64Encode(idPub.bytes);
+
+    final signPub = await _signingKeyPair!.extractPublicKey();
+    _signingPublicKeyBase64 = base64Encode(signPub.bytes);
+
     final spkPub = await _signedPreKeyPair!.extractPublicKey();
+    _signedPreKeyPublicBase64 = base64Encode(spkPub.bytes);
+
+    // sign the prekey pub with the ed25519 signing key
     final spkPubBytes = spkPub.bytes;
     final signature = await ed25519.sign(spkPubBytes, keyPair: _signingKeyPair!);
     _signedPreKeySignature = signature.bytes;
 
     // persist to secure storage
     final idPriv = await _identityKeyPair!.extractPrivateKeyBytes();
-    final idPub = await _identityKeyPair!.extractPublicKey();
     final signPriv = await _signingKeyPair!.extractPrivateKeyBytes();
-    final signPub = await _signingKeyPair!.extractPublicKey();
     final spkPriv = await _signedPreKeyPair!.extractPrivateKeyBytes();
 
     await _storage.write(key: 'x25519_identity_priv', value: base64Encode(idPriv));
-    await _storage.write(key: 'x25519_identity_pub', value: base64Encode(idPub.bytes));
+    await _storage.write(key: 'x25519_identity_pub', value: _identityPublicKeyBase64!);
     await _storage.write(key: 'ed25519_signing_priv', value: base64Encode(signPriv));
-    await _storage.write(key: 'ed25519_signing_pub', value: base64Encode(signPub.bytes));
+    await _storage.write(key: 'ed25519_signing_pub', value: _signingPublicKeyBase64!);
     await _storage.write(key: 'x25519_signed_prekey_priv', value: base64Encode(spkPriv));
-    await _storage.write(key: 'x25519_signed_prekey_pub', value: base64Encode(spkPubBytes));
+    await _storage.write(key: 'x25519_signed_prekey_pub', value: _signedPreKeyPublicBase64!);
     await _storage.write(key: 'signed_prekey_signature', value: base64Encode(_signedPreKeySignature!));
 
     _initialized = true;
@@ -124,20 +135,17 @@ class CryptoService {
 
   // x25519 identity pub (ecdh), base64
   String get identityPublicKeyBase64 {
-    if (_identityKeyPair == null) return '';
-    return base64Encode((_identityKeyPair!.publicKey as PublicKey).bytes);
+    return _identityPublicKeyBase64 ?? '';
   }
 
   // ed25519 signing pub, base64
   String get signingPublicKeyBase64 {
-    if (_signingKeyPair == null) return '';
-    return base64Encode((_signingKeyPair!.publicKey as PublicKey).bytes);
+    return _signingPublicKeyBase64 ?? '';
   }
 
   // x25519 signed prekey pub, base64
   String get signedPreKeyPublicBase64 {
-    if (_signedPreKeyPair == null) return '';
-    return base64Encode((_signedPreKeyPair!.publicKey as PublicKey).bytes);
+    return _signedPreKeyPublicBase64 ?? '';
   }
 
   // ed25519 signature over the signed prekey pub, base64
@@ -182,15 +190,15 @@ class CryptoService {
     }
 
     final x25519 = X25519();
-    final chacha = Chacha20Poly1305();
+    final chacha = Chacha20.poly1305Aead();
     final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
 
     // 1. per-message ephemeral x25519 keypair
     final ephemeralPair = await x25519.newKeyPair();
-    final recipientPubKey = PublicKey(base64Decode(recipientPublicKeyB64));
+    final recipientPubKey = SimplePublicKey(base64Decode(recipientPublicKeyB64), type: KeyPairType.x25519);
 
     // 2. ecdh(ephemeral_priv, recipient_identity_pub) → shared secret
-    final sharedSecret = await x25519.sharedSecret(
+    final sharedSecret = await x25519.sharedSecretKey(
       keyPair: ephemeralPair,
       remotePublicKey: recipientPubKey,
     );
@@ -198,14 +206,14 @@ class CryptoService {
 
     // 3. hkdf-sha256 → 32-byte symmetric key
     final derivedKey = await hkdf.deriveKey(
-      SecretKey(sharedBytes),
+      secretKey: SecretKey(sharedBytes),
       nonce: [],
       info: utf8.encode('cryptalk-message'),
     );
     final derivedBytes = await derivedKey.extractBytes();
 
     // 4. seal with chacha20-poly1305 (aead). package generates the nonce.
-    final secretBox = await chacha.seal(
+    final secretBox = await chacha.encrypt(
       utf8.encode(plaintext),
       secretKey: SecretKey(derivedBytes),
     );
@@ -238,20 +246,20 @@ class CryptoService {
       }
 
       final x25519 = X25519();
-      final chacha = Chacha20Poly1305();
+      final chacha = Chacha20.poly1305Aead();
       final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
 
-      final ephemeralPub = PublicKey(base64Decode(payload['ephemeralPublicKey']));
+      final ephemeralPub = SimplePublicKey(base64Decode(payload['ephemeralPublicKey']), type: KeyPairType.x25519);
 
       // ecdh(my_identity_priv, sender_ephemeral_pub) → same shared secret
-      final sharedSecret = await x25519.sharedSecret(
+      final sharedSecret = await x25519.sharedSecretKey(
         keyPair: _identityKeyPair!,
         remotePublicKey: ephemeralPub,
       );
       final sharedBytes = await sharedSecret.extractBytes();
 
       final derivedKey = await hkdf.deriveKey(
-        SecretKey(sharedBytes),
+        secretKey: SecretKey(sharedBytes),
         nonce: [],
         info: utf8.encode('cryptalk-message'),
       );
@@ -267,7 +275,7 @@ class CryptoService {
         mac: Mac(macBytes),
       );
 
-      final plaintext = await chacha.open(
+      final plaintext = await chacha.decrypt(
         secretBox,
         secretKey: SecretKey(derivedBytes),
       );
@@ -278,5 +286,106 @@ class CryptoService {
       // covers legacy plaintext msgs that aren't valid json.
       return encryptedJson;
     }
+  }
+
+  // Decrypts a group's chatKey (if present) and stores it in secure storage
+  Future<void> decryptAndStoreGroupKey(String chatId, String encryptedChatKey) async {
+    try {
+      final exists = await _storage.containsKey(key: 'group_key_$chatId');
+      if (exists) return;
+
+      final decryptedBase64 = await decrypt(encryptedChatKey);
+      if (decryptedBase64.isNotEmpty && decryptedBase64 != encryptedChatKey) {
+        // store the raw group key bytes (base64 encoded) under the chat ID
+        await _storage.write(key: 'group_key_$chatId', value: decryptedBase64);
+      }
+    } catch (e) {
+      debugPrint('Failed to decrypt group key for chat $chatId: $e');
+    }
+  }
+
+  // Encrypts a message using the symmetric group key
+  Future<String> encryptGroup(String plaintext, String chatId) async {
+    try {
+      final keyB64 = await _storage.read(key: 'group_key_$chatId');
+      if (keyB64 == null) {
+        debugPrint('No group key found for chat $chatId — sending plaintext');
+        return plaintext;
+      }
+      
+      final keyBytes = base64Decode(keyB64);
+      final chacha = Chacha20.poly1305Aead();
+      
+      final secretBox = await chacha.encrypt(
+        utf8.encode(plaintext),
+        secretKey: SecretKey(keyBytes),
+      );
+
+      return jsonEncode({
+        'ciphertext': base64Encode(secretBox.cipherText),
+        'nonce': base64Encode(secretBox.nonce),
+        'mac': base64Encode(secretBox.mac.bytes),
+      });
+    } catch (e) {
+      debugPrint('Group encryption failed for chat $chatId: $e');
+      return plaintext;
+    }
+  }
+
+  // Decrypts a message using the symmetric group key
+  Future<String> decryptGroup(String encryptedJson, String chatId) async {
+    try {
+      final keyB64 = await _storage.read(key: 'group_key_$chatId');
+      if (keyB64 == null) {
+        return encryptedJson;
+      }
+      final payload = jsonDecode(encryptedJson);
+      if (payload['ciphertext'] == null) {
+        return encryptedJson;
+      }
+      
+      final keyBytes = base64Decode(keyB64);
+      final chacha = Chacha20.poly1305Aead();
+      
+      final macBytes = payload['mac'] != null
+          ? base64Decode(payload['mac'])
+          : List<int>.filled(16, 0);
+      final secretBox = SecretBox(
+        base64Decode(payload['ciphertext']),
+        nonce: base64Decode(payload['nonce']),
+        mac: Mac(macBytes),
+      );
+
+      final plaintextBytes = await chacha.decrypt(
+        secretBox,
+        secretKey: SecretKey(keyBytes),
+      );
+      return utf8.decode(plaintextBytes);
+    } catch (e) {
+      return encryptedJson;
+    }
+  }
+
+  // Decrypts any message content, dynamically checking if it's direct E2EE or group symmetric E2EE
+  Future<String> decryptMessage(String content, String chatId) async {
+    if (_identityKeyPair == null) return content;
+    try {
+      final payload = jsonDecode(content);
+      if (payload != null && payload is Map && payload['ciphertext'] != null) {
+        if (payload['ephemeralPublicKey'] != null) {
+          return await decrypt(content);
+        } else {
+          return await decryptGroup(content, chatId);
+        }
+      }
+    } catch (_) {
+      // not JSON or not encrypted
+    }
+    return content;
+  }
+
+  // Saves a symmetric group key to local secure storage
+  Future<void> saveGroupKey(String chatId, String keyB64) async {
+    await _storage.write(key: 'group_key_$chatId', value: keyB64);
   }
 }

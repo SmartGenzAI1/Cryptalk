@@ -75,12 +75,24 @@ def _verify(token: str) -> Optional[str]:
     return None
 
 def create_session_token(user_id: str) -> str:
-
-    return _sign(user_id)
+    # Embed millisecond expiry timestamp based on cookie settings
+    expiry = now_ms() + (settings.COOKIE_MAX_AGE * 1000)
+    payload = f"{user_id}:{expiry}"
+    return _sign(payload)
 
 def verify_session_token(token: str) -> Optional[str]:
-
-    return _verify(token)
+    payload = _verify(token)
+    if not payload:
+        return None
+    try:
+        user_id, expiry_str = payload.rsplit(":", 1)
+        expiry = int(expiry_str)
+        if now_ms() > expiry:
+            return None  # Token expired
+        return user_id
+    except (ValueError, IndexError):
+        # Enforce strict validation: invalid or legacy tokens without expiry are rejected
+        return None
 
 def get_client_fingerprint(request) -> str:
 
@@ -122,15 +134,23 @@ def iso_to_ms(iso_str: str) -> int:
 # input validation & sanitization
 
 import re
-from html import escape as _html_escape
 
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{3,30}$")
-_MAX_CONTENT_LENGTH = 10_000  # 10 KB per message
+_HEX_ID_RE = re.compile(r"^[a-f0-9]{24}$")
+_MAX_CONTENT_LENGTH = 10_000
 _MAX_TITLE_LENGTH = 100
 _MAX_BIO_LENGTH = 500
 
-def validate_username(username: str) -> str:
+def escape_like(value: str) -> str:
+    # prevent LIKE/ILIKE injection — escape %, _, and \ so they match literally
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
+def validate_hex_id(value: str) -> bool:
+    if not value or not isinstance(value, str):
+        return False
+    return bool(_HEX_ID_RE.match(value))
+
+def validate_username(username: str) -> str:
     from app.core.exceptions import ValidationError
     username = (username or "").strip().lower()
     if not _USERNAME_RE.match(username):
@@ -140,10 +160,9 @@ def validate_username(username: str) -> str:
     return username
 
 def validate_password(password: str) -> str:
-
     from app.core.exceptions import ValidationError
-    if not password or len(password) < 4:
-        raise ValidationError("Password must be at least 4 characters")
+    if not password or len(password) < 6:
+        raise ValidationError("Password must be at least 6 characters")
     if len(password) > 200:
         raise ValidationError("Password is too long")
     return password
@@ -151,8 +170,9 @@ def validate_password(password: str) -> str:
 def sanitize_text(text: str, max_length: int = _MAX_CONTENT_LENGTH) -> str:
     if not text:
         return ""
+    # strip control chars but don't HTML-encode — content is E2EE ciphertext,
+    # the client decrypts and renders it, server never interprets it as HTML
     cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
-    cleaned = _html_escape(cleaned, quote=False)
     cleaned = re.sub(r"[^\S\n]+", " ", cleaned).strip()
     if len(cleaned) > max_length:
         cleaned = cleaned[:max_length]
@@ -169,21 +189,27 @@ def sanitize_bio(text: str) -> str:
 # fastapi dependencies
 
 def get_current_user_id(request: Request) -> str:
-
     token = request.cookies.get(settings.COOKIE_NAME)
     if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+    if not token:
         raise AuthError("Not authenticated")
-    user_id = _verify(token)
+    user_id = verify_session_token(token)
     if not user_id:
         raise AuthError("Invalid or expired session")
     return user_id
 
 def get_optional_user_id(request: Request) -> Optional[str]:
-
     token = request.cookies.get(settings.COOKIE_NAME)
     if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+    if not token:
         return None
-    return _verify(token)
+    return verify_session_token(token)
 
 # type aliases for DI
 CurrentUser = Depends(get_current_user_id)

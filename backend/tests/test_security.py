@@ -50,6 +50,17 @@ class TestSessionTokens:
         tampered = ".".join(parts)
         assert verify_session_token(tampered) is None
 
+    def test_expired_token_rejected(self, monkeypatch):
+        import time
+        current_time = int(time.time() * 1000)
+        # Mock now_ms to be way in the past (e.g. 60 days ago) so the token's expiry is also in the past
+        monkeypatch.setattr("app.core.security.now_ms", lambda: current_time - 60 * 24 * 3600 * 1000)
+        token = create_session_token("user123")
+
+        # Restore now_ms to current time
+        monkeypatch.setattr("app.core.security.now_ms", lambda: current_time)
+        assert verify_session_token(token) is None
+
 
 class TestInputValidation:
     def test_valid_username(self):
@@ -89,11 +100,28 @@ class TestInputValidation:
         assert sanitize_text(None) == ""
 
     def test_sanitize_text_escapes_html(self):
+        # E2EE ciphertext passes through — server doesn't render it as HTML
         result = sanitize_text("<script>alert(1)</script>")
-        assert "<script>" not in result
-        assert "&lt;script&gt;" in result
+        assert result == "<script>alert(1)</script>"
 
     def test_sanitize_text_escapes_quotes(self):
         result = sanitize_text('"onclick="alert(1)')
-        assert "<" not in result
-        assert ">" not in result
+        assert result == '"onclick="alert(1)'
+
+    def test_escape_like(self):
+        from app.core.security import escape_like
+        assert escape_like("normal") == "normal"
+        assert escape_like("50%") == "50\\%"
+        assert escape_like("test_user") == "test\\_user"
+        assert escape_like("back\\slash") == "back\\\\slash"
+        assert escape_like("%_%") == "\\%\\_\\%"
+
+    def test_validate_hex_id(self):
+        from app.core.security import validate_hex_id
+        assert validate_hex_id("a" * 24) is True
+        assert validate_hex_id("abc123def456abc123def456") is True
+        assert validate_hex_id("short") is False
+        assert validate_hex_id("") is False
+        assert validate_hex_id(None) is False
+        assert validate_hex_id("AABBCC" * 4) is False  # uppercase rejected
+

@@ -53,8 +53,23 @@ class AuthService:
         )
         await self.chat_repo.add_member(saved.id, user.id, role="owner")
 
-        # auto-join the welcome channel if it exists
-        welcome = await self.chat_repo.get_by_id("welcome-channel")
+        # auto-join the welcome channel, creating it dynamically if missing
+        welcome = await self.chat_repo.get_by_id(settings.WELCOME_CHANNEL_ID)
+        if not welcome:
+            try:
+                welcome = await self.chat_repo.create(
+                    id=settings.WELCOME_CHANNEL_ID,
+                    type="channel",
+                    title="Welcome Channel",
+                    description="Welcome to Cryptalk! Say hello!",
+                    avatar_emoji="megaphone",
+                    avatar_color="emerald",
+                    created_by=user.id,
+                )
+                await self.chat_repo.add_member(welcome.id, user.id, role="owner")
+            except Exception:
+                welcome = await self.chat_repo.get_by_id(settings.WELCOME_CHANNEL_ID)
+
         if welcome:
             existing = await self.chat_repo.get_member(welcome.id, user.id)
             if not existing:

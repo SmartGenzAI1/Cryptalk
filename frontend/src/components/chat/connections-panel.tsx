@@ -23,7 +23,7 @@ import type { SafeUser } from '@/lib/types'
 import { motion } from 'framer-motion'
 
 export function ConnectionsPanel() {
-  const setConnectionsPanelOpen = useChatStore((s) => s.setSettingsOpen)
+  const setConnectionsPanelOpen = useChatStore((s) => s.setConnectionsPanelOpen)
   const [connections, setConnections] = useState<SafeUser[]>([])
   const [requests, setRequests] = useState<any[]>([])
   const [searchQuery, setSearchQuery] = useState('')

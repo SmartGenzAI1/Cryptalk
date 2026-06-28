@@ -56,6 +56,7 @@ class ApiClient {
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
     if (_cookie != null) 'Cookie': _cookie!,
+    if (sessionToken != null) 'Authorization': 'Bearer $sessionToken',
   };
 
   Future<Map<String, dynamic>> get(String path) async {
@@ -63,7 +64,7 @@ class ApiClient {
       final res = await http.get(
         Uri.parse('${ApiConfig.baseUrl}$path'),
         headers: _headers,
-      ).timeout(const Duration(seconds: 30));
+      ).timeout(Duration(seconds: ApiConfig.defaultTimeoutSeconds));
       _extractCookie(res);
       if (res.statusCode == 401) {
         await _storage.delete(key: 'session_cookie');
@@ -86,7 +87,7 @@ class ApiClient {
         Uri.parse('${ApiConfig.baseUrl}$path'),
         headers: _headers,
         body: body != null ? jsonEncode(body) : null,
-      ).timeout(const Duration(seconds: 60));
+      ).timeout(Duration(seconds: ApiConfig.defaultTimeoutSeconds * 2));
       _extractCookie(res);
       if (res.statusCode >= 400) {
         final err = jsonDecode(res.body);
@@ -105,7 +106,7 @@ class ApiClient {
         Uri.parse('${ApiConfig.baseUrl}$path'),
         headers: _headers,
         body: body != null ? jsonEncode(body) : null,
-      ).timeout(const Duration(seconds: 30));
+      ).timeout(Duration(seconds: ApiConfig.defaultTimeoutSeconds));
       _extractCookie(res);
       if (res.statusCode >= 400) {
         final err = jsonDecode(res.body);
@@ -124,7 +125,7 @@ class ApiClient {
         Uri.parse('${ApiConfig.baseUrl}$path'),
         headers: _headers,
         body: body != null ? jsonEncode(body) : null,
-      ).timeout(const Duration(seconds: 30));
+      ).timeout(Duration(seconds: ApiConfig.defaultTimeoutSeconds));
       _extractCookie(res);
       if (res.statusCode >= 400) {
         final err = jsonDecode(res.body);
@@ -142,7 +143,7 @@ class ApiClient {
       final res = await http.delete(
         Uri.parse('${ApiConfig.baseUrl}$path'),
         headers: _headers,
-      ).timeout(const Duration(seconds: 30));
+      ).timeout(Duration(seconds: ApiConfig.defaultTimeoutSeconds));
       _extractCookie(res);
       if (res.statusCode >= 400) {
         final err = jsonDecode(res.body);
@@ -167,6 +168,7 @@ class ApiClient {
       final uri = Uri.parse('${ApiConfig.baseUrl}/api/uploads');
       final req = http.MultipartRequest('POST', uri);
       if (_cookie != null) req.headers['Cookie'] = _cookie!;
+      if (sessionToken != null) req.headers['Authorization'] = 'Bearer $sessionToken';
 
       final name = fileName ?? _basename(path);
       req.files.add(http.MultipartFile.fromBytes(
@@ -175,7 +177,7 @@ class ApiClient {
         filename: name,
       ));
 
-      final streamed = await req.send().timeout(const Duration(seconds: 120));
+      final streamed = await req.send().timeout(Duration(seconds: ApiConfig.uploadTimeoutSeconds));
       final res = await http.Response.fromStream(streamed);
       _extractCookie(res);
 
@@ -214,5 +216,12 @@ class ApiClient {
         _persistCookie();
       }
     }
+    try {
+      final body = jsonDecode(res.body);
+      if (body != null && body is Map && body['token'] != null) {
+        _cookie = 'tc_session=${body['token']}';
+        _persistCookie();
+      }
+    } catch (_) {}
   }
 }

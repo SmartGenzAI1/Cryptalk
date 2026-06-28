@@ -13,6 +13,12 @@ import {
   Star,
   User,
   Check,
+  ArrowLeft,
+  Trash2,
+  AlertTriangle,
+  Lock,
+  Zap,
+  KeyRound,
 } from 'lucide-react'
 import { useChatStore } from '@/stores/chat-store'
 import { useTheme } from 'next-themes'
@@ -21,9 +27,16 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import { ACCENT_HEX, AVATAR_COLORS, AVATAR_COLOR_KEYS, WALLPAPERS } from '@/lib/types'
-import { updateUserSettings } from '@/lib/actions'
+import { updateUserSettings, deleteAccount } from '@/lib/actions'
+import { apiPost } from '@/lib/api'
+import { clearAllKeys } from '@/lib/key-store'
+import { clearChatCache } from '@/lib/message-cache'
+import { clearAttachmentCache } from '@/lib/attachments'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { Input } from '@/components/ui/input'
+
+type SettingsView = 'main' | 'privacy' | 'about' | 'delete'
 
 export function SettingsPanel() {
   const currentUser = useChatStore((s) => s.currentUser)
@@ -33,6 +46,8 @@ export function SettingsPanel() {
   const [accent, setAccent] = useState(currentUser?.accentColor || 'emerald')
   const [wallpaper, setWallpaper] = useState(currentUser?.wallpaper || 'dots')
   const [saving, setSaving] = useState(false)
+  const [subView, setSubView] = useState<SettingsView>('main')
+  const [deleteConfirmUsername, setDeleteConfirmUsername] = useState('')
 
   if (!currentUser) return null
 
@@ -59,10 +74,76 @@ export function SettingsPanel() {
     }
   }
 
+  async function handleClearData() {
+    if (
+      !confirm(
+        'Are you sure you want to clear all E2EE keys and cache? You will lose access to decrypting previous encrypted group/private messages.'
+      )
+    )
+      return
+    try {
+      await clearAllKeys()
+      await clearChatCache()
+      clearAttachmentCache()
+      await apiPost('/api/auth/logout')
+      setCurrentUser(null)
+      toast.success('Local E2EE keys and caches wiped successfully')
+      window.location.reload()
+    } catch (e) {
+      toast.error('Failed to clear keys')
+    }
+  }
+
+  async function handleDeleteAccount() {
+    if (!currentUser) return
+    if (deleteConfirmUsername !== currentUser.username) {
+      toast.error('Username does not match')
+      return
+    }
+    setSaving(true)
+    try {
+      await deleteAccount()
+      await apiPost('/api/auth/logout')
+      // Clear key store & cache
+      await clearAllKeys()
+      await clearChatCache()
+      clearAttachmentCache()
+      setCurrentUser(null)
+      toast.success('Your account and keys have been permanently deleted')
+      window.location.reload()
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to delete account')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="w-full sm:w-[380px] shrink-0 border-l flex flex-col bg-sidebar/60 zc-glass-sidebar">
+      {/* HEADER */}
       <div className="flex items-center gap-2 px-4 h-16 border-b shrink-0">
-        <span className="font-semibold flex-1 text-lg">Settings</span>
+        {subView !== 'main' ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-full"
+            onClick={() => {
+              if (subView === 'delete') {
+                setSubView('privacy')
+              } else {
+                setSubView('main')
+              }
+            }}
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        ) : null}
+        <span className="font-semibold flex-1 text-lg">
+          {subView === 'main' && 'Settings'}
+          {subView === 'privacy' && 'Privacy & Security'}
+          {subView === 'about' && 'About Cryptalk'}
+          {subView === 'delete' && 'Delete Account'}
+        </span>
         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => setSettingsOpen(false)}>
           <X className="h-4 w-4" />
         </Button>
@@ -70,131 +151,301 @@ export function SettingsPanel() {
 
       <ScrollArea className="flex-1 zc-scroll">
         <div className="p-4 space-y-6">
-          {/* Profile */}
-          <div className="flex flex-col items-center text-center">
-            <ChatAvatar emoji={currentUser.avatarEmoji} color={currentUser.avatarColor} size="xl" />
-            <h2 className="text-xl font-bold mt-3">{currentUser.name}</h2>
-            <p className="text-sm text-muted-foreground">@{currentUser.username}</p>
-            {currentUser.bio && <p className="text-sm mt-2 text-center">{currentUser.bio}</p>}
-          </div>
+          {subView === 'main' && (
+            <div className="space-y-6 zc-fade-in">
+              {/* Profile info */}
+              <div className="flex flex-col items-center text-center">
+                <ChatAvatar emoji={currentUser.avatarEmoji} color={currentUser.avatarColor} size="xl" />
+                <h2 className="text-xl font-bold mt-3">{currentUser.name}</h2>
+                <p className="text-sm text-muted-foreground">@{currentUser.username}</p>
+                {currentUser.bio && <p className="text-sm mt-2 text-center text-muted-foreground">{currentUser.bio}</p>}
+              </div>
 
-          {/* Theme */}
-          <Section icon={<Moon className="h-4 w-4" />} title="Appearance">
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setTheme('light')}
-                className={cn(
-                  'flex items-center gap-2 p-3 rounded-xl border transition-colors zc-tap',
-                  theme === 'light' ? 'bg-accent border-primary' : 'border-border hover:bg-accent/50'
-                )}
-              >
-                <Sun className="h-4 w-4" />
-                <span className="text-sm font-medium">Light</span>
-              </button>
-              <button
-                onClick={() => setTheme('dark')}
-                className={cn(
-                  'flex items-center gap-2 p-3 rounded-xl border transition-colors zc-tap',
-                  theme === 'dark' ? 'bg-accent border-primary' : 'border-border hover:bg-accent/50'
-                )}
-              >
-                <Moon className="h-4 w-4" />
-                <span className="text-sm font-medium">Dark</span>
-              </button>
-            </div>
-          </Section>
+              {/* Theme Settings */}
+              <Section icon={<Moon className="h-4 w-4" />} title="Appearance">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setTheme('light')}
+                    className={cn(
+                      'flex items-center gap-2 p-3 rounded-xl border transition-colors zc-tap',
+                      theme === 'light' ? 'bg-accent border-primary' : 'border-border hover:bg-accent/50'
+                    )}
+                  >
+                    <Sun className="h-4 w-4" />
+                    <span className="text-sm font-medium">Light</span>
+                  </button>
+                  <button
+                    onClick={() => setTheme('dark')}
+                    className={cn(
+                      'flex items-center gap-2 p-3 rounded-xl border transition-colors zc-tap',
+                      theme === 'dark' ? 'bg-accent border-primary' : 'border-border hover:bg-accent/50'
+                    )}
+                  >
+                    <Moon className="h-4 w-4" />
+                    <span className="text-sm font-medium">Dark</span>
+                  </button>
+                </div>
+              </Section>
 
-          {/* Accent color */}
-          <Section icon={<Palette className="h-4 w-4" />} title="Accent color">
-            <div className="flex flex-wrap gap-2">
-              {AVATAR_COLOR_KEYS.map((c) => (
+              {/* Accent color */}
+              <Section icon={<Palette className="h-4 w-4" />} title="Accent color">
+                <div className="flex flex-wrap gap-2">
+                  {AVATAR_COLOR_KEYS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => applyAccent(c)}
+                      className={cn(
+                        'h-10 w-10 rounded-full bg-gradient-to-br transition-all zc-tap',
+                        AVATAR_COLORS[c],
+                        accent === c ? 'ring-2 ring-offset-2 ring-offset-background scale-110' : 'hover:scale-105'
+                      )}
+                    >
+                      {accent === c && <Check className="h-5 w-5 text-white mx-auto drop-shadow" />}
+                    </button>
+                  ))}
+                </div>
+              </Section>
+
+              {/* Wallpaper */}
+              <Section icon={<ImageIcon className="h-4 w-4" />} title="Chat wallpaper">
+                <div className="grid grid-cols-5 gap-2">
+                  {WALLPAPERS.map((w) => (
+                    <button
+                      key={w}
+                      onClick={() => applyWallpaper(w)}
+                      className={cn(
+                        'aspect-square rounded-xl border-2 transition-all zc-tap overflow-hidden relative',
+                        wallpaper === w ? 'border-primary' : 'border-transparent hover:border-border'
+                      )}
+                    >
+                      <div className={cn(
+                        'absolute inset-0',
+                        w === 'dots' && 'zc-wallpaper-dots',
+                        w === 'gradient' && 'zc-wallpaper-gradient',
+                        w === 'plain' && 'zc-wallpaper-plain',
+                        w === 'grid' && 'zc-wallpaper-grid',
+                        w === 'waves' && 'zc-wallpaper-waves'
+                      )} />
+                      {wallpaper === w && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                          <Check className="h-5 w-5 text-white" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </Section>
+
+              {/* Preferences */}
+              <Section icon={<Bell className="h-4 w-4" />} title="Preferences">
+                <div className="space-y-3">
+                  <Row label="Notifications" desc="Get notified of new messages">
+                    <Switch defaultChecked />
+                  </Row>
+                  <Row label="Read receipts" desc="Show others you read their messages">
+                    <Switch defaultChecked />
+                  </Row>
+                </div>
+              </Section>
+
+              {/* Menu items */}
+              <Section icon={<Star className="h-4 w-4" />} title="More">
                 <button
-                  key={c}
-                  onClick={() => applyAccent(c)}
-                  className={cn(
-                    'h-10 w-10 rounded-full bg-gradient-to-br transition-all zc-tap',
-                    AVATAR_COLORS[c],
-                    accent === c ? 'ring-2 ring-offset-2 ring-offset-background scale-110' : 'hover:scale-105'
-                  )}
+                  onClick={() => setSubView('privacy')}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-accent transition-colors text-left zc-tap mt-1"
                 >
-                  {accent === c && <Check className="h-5 w-5 text-white mx-auto drop-shadow" />}
+                  <div className="h-9 w-9 rounded-lg bg-sky-500/15 flex items-center justify-center text-sky-500">
+                    <Shield className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">Privacy & security</div>
+                    <div className="text-xs text-muted-foreground">Manage E2EE & your data</div>
+                  </div>
                 </button>
-              ))}
-            </div>
-          </Section>
-
-          {/* Wallpaper */}
-          <Section icon={<ImageIcon className="h-4 w-4" />} title="Chat wallpaper">
-            <div className="grid grid-cols-5 gap-2">
-              {WALLPAPERS.map((w) => (
                 <button
-                  key={w}
-                  onClick={() => applyWallpaper(w)}
-                  className={cn(
-                    'aspect-square rounded-xl border-2 transition-all zc-tap overflow-hidden relative',
-                    wallpaper === w ? 'border-primary' : 'border-transparent hover:border-border'
-                  )}
+                  onClick={() => setSubView('about')}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-accent transition-colors text-left zc-tap mt-1"
                 >
-                  <div className={cn(
-                    'absolute inset-0',
-                    w === 'dots' && 'zc-wallpaper-dots',
-                    w === 'gradient' && 'zc-wallpaper-gradient',
-                    w === 'plain' && 'zc-wallpaper-plain',
-                    w === 'grid' && 'zc-wallpaper-grid',
-                    w === 'waves' && 'zc-wallpaper-waves'
-                  )} />
-                  {wallpaper === w && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                      <Check className="h-5 w-5 text-white" />
+                  <div className="h-9 w-9 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-500">
+                    <Info className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">About Cryptalk</div>
+                    <div className="text-xs text-muted-foreground">Version 2.0 • Premium Details</div>
+                  </div>
+                </button>
+              </Section>
+            </div>
+          )}
+
+          {subView === 'privacy' && (
+            <div className="space-y-5 zc-fade-in">
+              <div className="p-4 rounded-2xl bg-primary/10 border border-primary/20 space-y-2.5">
+                <div className="flex items-center gap-2 text-primary font-bold text-sm">
+                  <Lock className="h-4 w-4 shrink-0" />
+                  End-to-End Encrypted (E2EE)
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Cryptalk encrypts messages client-side using XChaCha20-Poly1305. The keys are stored inside your device's indexedDB key-store and never sent to our servers. Your conversations are completely private.
+                </p>
+              </div>
+
+              <Section icon={<Shield className="h-4 w-4" />} title="Privacy Policy">
+                <div className="space-y-4 px-1 text-sm leading-relaxed text-muted-foreground">
+                  <div>
+                    <h4 className="font-semibold text-foreground text-xs uppercase mb-1">Zero Log Policy</h4>
+                    <p className="text-xs">
+                      We do not track, index, or store metadata, IP logs, or analytics. Your messages belong to you, and we collect zero user analytical data.
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-foreground text-xs uppercase mb-1">Server Ephemerality</h4>
+                    <p className="text-xs">
+                      Delivered messages are instantly wiped from the backend database. Undelivered messages or media attachments are automatically deleted once the self-destruct timers or delivery confirms are finalized.
+                    </p>
+                  </div>
+                </div>
+              </Section>
+
+              <Section icon={<AlertTriangle className="h-4 w-4" />} title="Data Actions">
+                <div className="space-y-2 mt-1">
+                  <button
+                    onClick={handleClearData}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400 border border-dashed border-border transition-colors text-left zc-tap"
+                  >
+                    <div className="h-9 w-9 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-500">
+                      <KeyRound className="h-4 w-4" />
                     </div>
-                  )}
-                </button>
-              ))}
-            </div>
-          </Section>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium">Wipe E2EE keys & cache</div>
+                      <div className="text-xs text-muted-foreground">Log out & wipe local data</div>
+                    </div>
+                  </button>
 
-          {/* Preferences */}
-          <Section icon={<Bell className="h-4 w-4" />} title="Preferences">
-            <div className="space-y-3">
-              <Row label="Notifications" desc="Get notified of new messages">
-                <Switch defaultChecked />
-              </Row>
-              <Row label="Read receipts" desc="Show others you read their messages">
-                <Switch defaultChecked />
-              </Row>
+                  <button
+                    onClick={() => setSubView('delete')}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-destructive/10 hover:text-destructive border border-dashed border-border transition-colors text-left zc-tap"
+                  >
+                    <div className="h-9 w-9 rounded-lg bg-destructive/15 flex items-center justify-center text-destructive">
+                      <Trash2 className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium">Delete account</div>
+                      <div className="text-xs text-muted-foreground">Permanently delete server data</div>
+                    </div>
+                  </button>
+                </div>
+              </Section>
             </div>
-          </Section>
+          )}
 
-          {/* Quick links */}
-          <Section icon={<Star className="h-4 w-4" />} title="More">
-            <button className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-accent transition-colors text-left zc-tap mt-1">
-              <div className="h-9 w-9 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-500">
-                <Star className="h-4 w-4" />
+          {subView === 'about' && (
+            <div className="space-y-6 text-center zc-fade-in py-2">
+              <div className="flex flex-col items-center">
+                <div className="relative h-20 w-20 rounded-3xl overflow-hidden shadow-lg border bg-gradient-to-br from-emerald-400 to-teal-500 p-3 mb-4 flex items-center justify-center">
+                  <span className="text-white text-4xl font-extrabold select-none">C</span>
+                </div>
+                <h3 className="text-xl font-bold">Cryptalk</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Version 2.0.0 • Production</p>
+                <div className="mt-3 px-3 py-1 bg-primary/10 border border-primary/20 text-[10px] font-bold uppercase tracking-wider text-primary rounded-full">
+                  ⚡ Premium Lifetime License
+                </div>
               </div>
-              <div className="flex-1">
-                <div className="text-sm font-medium">Starred messages</div>
-                <div className="text-xs text-muted-foreground">View your favorites</div>
+
+              <p className="text-xs leading-relaxed text-muted-foreground max-w-sm mx-auto px-4">
+                Cryptalk is a state-of-the-art secure chat application designed for absolute privacy. Feature-rich, fast, and protected by military-grade client-side encryption.
+              </p>
+
+              <div className="grid grid-cols-2 gap-3 text-left">
+                <div className="p-3 rounded-xl border bg-accent/30 space-y-1">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <Lock className="h-3.5 w-3.5 text-primary" />
+                    E2EE Crypto
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">XChaCha20-Poly1305 secure keys</p>
+                </div>
+                <div className="p-3 rounded-xl border bg-accent/30 space-y-1">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <Zap className="h-3.5 w-3.5 text-amber-500" />
+                    Ultra Fast
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Sub-millisecond socket delivery</p>
+                </div>
+                <div className="p-3 rounded-xl border bg-accent/30 space-y-1">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <Shield className="h-3.5 w-3.5 text-blue-500" />
+                    Zero Logs
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">No tracking or analytics</p>
+                </div>
+                <div className="p-3 rounded-xl border bg-accent/30 space-y-1">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <Star className="h-3.5 w-3.5 text-pink-500" />
+                    Lottie
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Telegram animated emojis</p>
+                </div>
               </div>
-            </button>
-            <button className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-accent transition-colors text-left zc-tap mt-1">
-              <div className="h-9 w-9 rounded-lg bg-sky-500/15 flex items-center justify-center text-sky-500">
-                <Shield className="h-4 w-4" />
+
+              <div className="border-t pt-4 text-xs text-muted-foreground">
+                <p>Designed and built for absolute privacy.</p>
+                <p className="font-semibold text-foreground mt-1">© SmartGenzAI. All rights reserved.</p>
               </div>
-              <div className="flex-1">
-                <div className="text-sm font-medium">Privacy & security</div>
-                <div className="text-xs text-muted-foreground">Manage your data</div>
+            </div>
+          )}
+
+          {subView === 'delete' && (
+            <div className="space-y-5 zc-fade-in">
+              <div className="p-4 rounded-2xl bg-destructive/10 border border-destructive/20 text-center space-y-3">
+                <div className="h-12 w-12 rounded-full bg-destructive/20 flex items-center justify-center text-destructive mx-auto">
+                  <AlertTriangle className="h-6 w-6" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-destructive text-base">Irreversible Action</h4>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    This will permanently delete your username, public E2EE key bundles, profile bio, avatar preferences, and active conversations from our database.
+                  </p>
+                </div>
               </div>
-            </button>
-            <button className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-accent transition-colors text-left zc-tap mt-1">
-              <div className="h-9 w-9 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-500">
-                <Info className="h-4 w-4" />
+
+              <div className="p-4 rounded-xl border bg-accent/30 text-xs text-muted-foreground space-y-2 leading-relaxed">
+                <p className="font-semibold text-foreground">⚠️ LOCAL DECRYPTION LOSS WARNING:</p>
+                <p>
+                  Your local cryptographic keys will also be destroyed. Even if some message transcripts remain locally in your browser cache, you will be unable to decrypt them ever again.
+                </p>
               </div>
-              <div className="flex-1">
-                <div className="text-sm font-medium">About Cryptalk</div>
-                <div className="text-xs text-muted-foreground">Version 2.0 • Premium</div>
+
+              <div className="space-y-2.5">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wide px-1">
+                  To confirm, type your username: <span className="font-mono text-foreground font-semibold">@{currentUser.username}</span>
+                </label>
+                <Input
+                  value={deleteConfirmUsername}
+                  onChange={(e) => setDeleteConfirmUsername(e.target.value)}
+                  placeholder="Type username here"
+                  className="rounded-xl"
+                  autoFocus
+                />
               </div>
-            </button>
-          </Section>
+
+              <div className="space-y-2 pt-2">
+                <Button
+                  onClick={handleDeleteAccount}
+                  disabled={deleteConfirmUsername !== currentUser.username || saving}
+                  className="w-full rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90 font-medium py-5 zc-tap"
+                >
+                  {saving ? 'Deleting Account…' : 'Yes, Delete My Account'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => setSubView('privacy')}
+                  className="w-full rounded-xl py-5 zc-tap border border-border"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="text-center text-xs text-muted-foreground py-2">
             {saving && 'Saving…'}Cryptalk · Made with ✨

@@ -19,9 +19,9 @@ function MessageErrorFallback() {
 
 export function MessageList() {
   const activeChatId = useChatStore((s) => s.activeChatId)
-  const messages = useChatStore((s) => s.messages[activeChatId] ?? EMPTY_MESSAGES)
+  const messages = useChatStore((s) => activeChatId ? s.messages[activeChatId] : EMPTY_MESSAGES)
   const currentUser = useChatStore((s) => s.currentUser)
-  const typingUsers = useChatStore((s) => s.typingUsers[activeChatId] ?? EMPTY_TYPING)
+  const typingUsers = useChatStore((s) => activeChatId ? s.typingUsers[activeChatId] : EMPTY_TYPING)
   const chats = useChatStore((s) => s.chats)
   const isLoading = useChatStore((s) => activeChatId ? (s.messagesLoading[activeChatId] ?? false) : false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -43,7 +43,7 @@ export function MessageList() {
         if (msg.expiresIn && msg.createdAt) {
           const expiresAt = new Date(msg.createdAt).getTime() + msg.expiresIn * 1000
           if (now >= expiresAt && !msg.deletedAt) {
-            removeMessage(activeChatId, msg.id)
+            if (activeChatId) removeMessage(activeChatId, msg.id)
           }
         }
       }

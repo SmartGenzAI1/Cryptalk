@@ -38,3 +38,5 @@ flutter:
     - assets/logo.png
     - assets/lottie/
     - assets/icons/defaults/
+    - assets/icons/avatars/
+    - assets/icons/chat/

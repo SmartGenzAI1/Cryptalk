@@ -5,11 +5,12 @@ import {
   generateSignedPreKey,
   encryptMessage,
   decryptMessage,
-  deriveGroupKey,
   encryptGroupMessage,
   decryptGroupMessage,
   toBase64,
+  fromBase64,
   type EncryptedPayload,
+  type IdentityKeyPair,
 } from './crypto'
 import {
   hasIdentityKey,
@@ -19,7 +20,6 @@ import {
   loadGroupKey,
   hasGroupKey,
   clearAllKeys,
-  type IdentityKeyPair,
 } from './key-store'
 import { apiGet, apiPost } from './api'
 
@@ -110,7 +110,7 @@ export async function decryptDirectMessage(
   }
 }
 
-// per-chat shared key derived from chat id
+// shared symmetric group key encryption using group key from local key store
 export async function encryptGroupMessageForChat(
   plaintext: string,
   chatId: string
@@ -118,10 +118,9 @@ export async function encryptGroupMessageForChat(
   const identityKey = await loadIdentityKey()
   if (!identityKey) throw new Error('No identity key — run initE2EE first')
 
-  let groupKey = await loadGroupKey(chatId)
+  const groupKey = await loadGroupKey(chatId)
   if (!groupKey) {
-    groupKey = await deriveGroupKey(chatId, identityKey.encryption.privateKey)
-    await saveGroupKey(chatId, groupKey)
+    throw new Error('Group key not found — chat key must be decrypted first')
   }
 
   const payload = await encryptGroupMessage(plaintext, groupKey)
@@ -141,16 +140,43 @@ export async function decryptGroupMessageForChat(
       return encryptedContent // legacy plaintext
     }
 
-    let groupKey = await loadGroupKey(chatId)
+    const groupKey = await loadGroupKey(chatId)
     if (!groupKey) {
-      groupKey = await deriveGroupKey(chatId, identityKey.encryption.privateKey)
-      await saveGroupKey(chatId, groupKey)
+      return encryptedContent // legacy fallback if key is missing locally
     }
 
-    return await decryptGroupMessage(payload.ciphertext, payload.nonce, groupKey)
+    // Pass ciphertext, nonce, and mac (defaulting to empty mac if missing)
+    return await decryptGroupMessage(
+      payload.ciphertext,
+      payload.nonce,
+      payload.mac || '',
+      groupKey
+    )
   } catch (e: any) {
     if (e.message?.includes('Decryption failed')) throw e
     return encryptedContent // legacy plaintext
+  }
+}
+
+// Decrypts group chat keys using our private key and saves them to local IndexedDB
+export async function decryptAndStoreChatKeys(chats: any[]): Promise<void> {
+  const identityKey = await loadIdentityKey()
+  if (!identityKey) return
+
+  for (const chat of chats) {
+    if (chat.chatKey && chat.type !== 'direct' && chat.type !== 'saved') {
+      try {
+        const hasKey = await hasGroupKey(chat.id)
+        if (!hasKey) {
+          // The chatKey was encrypted by the creator using our public key
+          const decryptedKeyBase64 = await decryptDirectMessage(chat.chatKey)
+          const groupKeyBytes = fromBase64(decryptedKeyBase64)
+          await saveGroupKey(chat.id, groupKeyBytes)
+        }
+      } catch (e) {
+        console.warn(`Failed to decrypt/store group key for chat ${chat.id}:`, e)
+      }
+    }
   }
 }
 

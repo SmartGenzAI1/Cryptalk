@@ -15,8 +15,8 @@ type Step = 'login' | 'register' | 'onboard'
 
 export function AuthScreen() {
   const [step, setStep] = useState<Step>('login')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState(() => process.env.NEXT_PUBLIC_TEST_EMAIL || '')
+  const [password, setPassword] = useState(() => process.env.NEXT_PUBLIC_TEST_PASSWORD || '')
   const [username, setUsername] = useState('')
   const [name, setName] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -68,7 +68,7 @@ export function AuthScreen() {
 
         <div className="relative z-10 flex flex-col justify-between p-12 text-white">
           <div className="flex items-center gap-3">
-            <Image src="/logo.png" alt="Cryptalk" width={56} height={56} className="object-contain drop-shadow-lg" priority />
+            <Image src="/logo.png" alt="Cryptalk" width={56} height={56} className="object-contain drop-shadow-lg" style={{ height: 'auto' }} priority />
             <span className="text-2xl font-bold tracking-tight">Cryptalk</span>
           </div>
 
@@ -106,7 +106,7 @@ export function AuthScreen() {
       <div className="flex-1 flex items-center justify-center p-6">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
           <div className="flex flex-col items-center mb-8">
-            <Image src="/logo.png" alt="Cryptalk" width={96} height={96} className="object-contain drop-shadow-2xl mb-2" priority />
+            <Image src="/logo.png" alt="Cryptalk" width={96} height={96} className="object-contain drop-shadow-2xl mb-2" style={{ height: 'auto' }} priority />
             <span className="text-3xl font-bold tracking-tight">Cryptalk</span>
           </div>
 

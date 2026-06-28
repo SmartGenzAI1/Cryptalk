@@ -2,7 +2,7 @@
 
 const DB_NAME = 'cryptalk-cache'
 const STORE_NAME = 'messages'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const MAX_CACHED_PER_CHAT = 1000
 
 let dbPromise: Promise<IDBDatabase> | null = null
@@ -15,8 +15,14 @@ function openDB(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result)
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result
+      let store
       if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' })
+        store = db.createObjectStore(STORE_NAME, { keyPath: 'id' })
+      } else {
+        store = request.transaction!.objectStore(STORE_NAME)
+      }
+      if (!store.indexNames.contains('chatId')) {
+        store.createIndex('chatId', 'chatId', { unique: false })
       }
     }
   })
@@ -66,15 +72,14 @@ export async function loadCachedMessages(chatId: string): Promise<any[]> {
     const db = await openDB()
     const tx = db.transaction(STORE_NAME, 'readonly')
     const store = tx.objectStore(STORE_NAME)
+    const index = store.index('chatId')
 
     return new Promise((resolve) => {
-      const req = store.getAll()
+      const req = index.getAll(chatId)
       req.onsuccess = () => {
-        const all = req.result as CachedMessage[]
-        const filtered = all
-          .filter((m) => m.chatId === chatId)
-          .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-        resolve(filtered)
+        const result = req.result as CachedMessage[]
+        const sorted = result.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+        resolve(sorted)
       }
       req.onerror = () => resolve([])
     })
@@ -89,17 +94,18 @@ export async function clearChatCache(chatId?: string): Promise<void> {
   try {
     const db = await openDB()
     const tx = db.transaction(STORE_NAME, 'readwrite')
+    const store = tx.objectStore(STORE_NAME)
     if (chatId) {
-      const store = tx.objectStore(STORE_NAME)
-      const req = store.getAll()
+      const index = store.index('chatId')
+      const req = index.getAll(chatId)
       req.onsuccess = () => {
-        const all = req.result as CachedMessage[]
-        for (const msg of all) {
-          if (msg.chatId === chatId) store.delete(msg.id)
+        const matches = req.result as CachedMessage[]
+        for (const msg of matches) {
+          store.delete(msg.id)
         }
       }
     } else {
-      tx.objectStore(STORE_NAME).clear()
+      store.clear()
     }
     return new Promise((resolve) => {
       tx.oncomplete = () => resolve()

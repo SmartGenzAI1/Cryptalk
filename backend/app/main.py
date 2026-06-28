@@ -66,6 +66,20 @@ async def lifespan(app: FastAPI):
             "ON \"ChatMember\" (\"userId\")"
         ))
         conn.commit()
+    if settings.has_redis:
+        try:
+            import redis.asyncio as aioredis
+            client = aioredis.from_url(settings.REDIS_URL)
+            await client.ping()
+            await client.close()
+            logger.info("Redis connection verified successfully at startup")
+        except Exception as e:
+            if settings.is_postgres:
+                logger.critical(f"FATAL: Redis connection failed in production mode: {e}")
+                raise RuntimeError(f"Redis connection failed in production mode: {e}")
+            else:
+                logger.warning(f"Redis connection failed, continuing in development mode: {e}")
+
     sync_engine.dispose()
     logger.info("Database tables + indexes ensured")
     yield
@@ -78,8 +92,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if not settings.is_postgres else None,
+    redoc_url="/redoc" if not settings.is_postgres else None,
     lifespan=lifespan,
 )
 
@@ -96,6 +110,22 @@ app.add_middleware(
 )
 
 _cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",")] if settings.CORS_ORIGINS != "*" else ["*"]
+
+if settings.DEBUG:
+    # Always allow local development origins with credentials support in DEBUG mode
+    for local_origin in [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:54321",
+        "http://127.0.0.1:54321",
+    ]:
+        if local_origin not in _cors_origins:
+            if _cors_origins == ["*"]:
+                _cors_origins = [local_origin]
+            else:
+                _cors_origins.append(local_origin)
 
 app.add_middleware(
     CORSMiddleware,
@@ -153,10 +183,10 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    # hsts only in prod (https)
+    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
     if settings.is_postgres:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
     return response
 
 app.include_router(api_router)
@@ -169,17 +199,56 @@ async def root():
 
 @app.get("/health")
 async def health():
+    from app.core.database import engine
+    from sqlalchemy import text
+    db_ok = False
+    redis_ok = False
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception as e:
+        logger.error(f"Health check: DB connection failed: {e}")
+
+    if settings.has_redis:
+        try:
+            import redis.asyncio as aioredis
+            client = aioredis.from_url(settings.REDIS_URL)
+            await client.ping()
+            await client.close()
+            redis_ok = True
+        except Exception as e:
+            logger.error(f"Health check: Redis connection failed: {e}")
+    else:
+        redis_ok = True
+
+    if not db_ok or not redis_ok:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "error",
+                "database": "ok" if db_ok else "failed",
+                "redis": "ok" if redis_ok else "failed",
+                "sentry": settings.has_sentry,
+            }
+        )
+
     return {
         "status": "ok",
         "online_users": len(manager.all_online_user_ids()),
-        "redis": settings.has_redis,
+        "database": "ok",
+        "redis": "ok" if settings.has_redis else "not_configured",
         "sentry": settings.has_sentry,
     }
 
 
+# Restrict Socket.IO origins to CORS_ORIGINS settings in production
+socketio_cors = [o.strip() for o in settings.CORS_ORIGINS.split(",")] if settings.CORS_ORIGINS != "*" else "*"
+
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins="*",
+    cors_allowed_origins=socketio_cors,
     ping_timeout=settings.SOCKETIO_PING_TIMEOUT,
     ping_interval=settings.SOCKETIO_PING_INTERVAL,
 )
@@ -190,12 +259,15 @@ if settings.has_redis:
         sio = socketio.AsyncServer(
             async_mode="asgi",
             client_manager=mgr,
-            cors_allowed_origins="*",
+            cors_allowed_origins=socketio_cors,
             ping_timeout=settings.SOCKETIO_PING_TIMEOUT,
             ping_interval=settings.SOCKETIO_PING_INTERVAL,
         )
         logger.info("Socket.IO using Redis adapter for multi-process scaling")
     except Exception as e:
+        if settings.is_postgres:
+            logger.critical(f"FATAL: Redis adapter initialization failed in production: {e}")
+            raise RuntimeError(f"Redis adapter initialization failed in production: {e}")
         logger.warning(f"Redis connection failed, falling back to in-memory: {e}")
 
 register_handlers(sio)

@@ -140,6 +140,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       iconKey: _avatarEmoji,
                       colorName: _avatarColor,
                       size: 88,
+                      seed: context.read<AuthService>().currentUser?.id,
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -288,6 +289,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                               iconKey: _avatarEmoji,
                               colorName: _avatarColor,
                               size: 96,
+                              seed: context.read<AuthService>().currentUser?.id,
                             ),
                           ),
                         ),
@@ -302,18 +304,31 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 64,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
                     Text(
-                      'Set up your profile',
+                      'Choose your username',
                       style: Theme.of(context)
                           .textTheme
-                          .headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.bold),
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.bold, fontSize: 24),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Pick a username and display name so friends can find '
-                      'you. You can change these later.',
+                      'Pick a username others can search for.',
                       style: Theme.of(context)
                           .textTheme
                           .bodyMedium
@@ -367,23 +382,42 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       },
                     ),
                     const SizedBox(height: 28),
-                    FilledButton(
-                      onPressed: _loading ? null : _submit,
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(52),
-                        textStyle: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                    GestureDetector(
+                      onTap: _loading ? null : _submit,
+                      child: Container(
+                        height: 52,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF10b981), Color(0xFF0d9488)],
+                          ),
+                          borderRadius: BorderRadius.circular(26),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF10b981).withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
+                        alignment: Alignment.center,
+                        child: _loading
+                            ? const SizedBox(
+                                height: 22,
+                                width: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : const Text(
+                                'Start chatting',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                       ),
-                      child: _loading
-                          ? const SizedBox(
-                              height: 22,
-                              width: 22,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Start Chatting'),
                     ),
                     const SizedBox(height: 16),
                   ],

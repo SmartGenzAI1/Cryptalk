@@ -15,7 +15,14 @@ class ChatService {
 
   Future<List<Chat>> getChats() async {
     final data = await _api.get('/api/chats');
-    return (data['chats'] as List).map((c) => Chat.fromJson(c)).toList();
+    final chats = (data['chats'] as List).map((c) => Chat.fromJson(c)).toList();
+    // Decrypt and store any group chat keys we received
+    for (final chat in chats) {
+      if (chat.chatKey != null && chat.chatKey!.isNotEmpty) {
+        await _crypto.decryptAndStoreGroupKey(chat.id, chat.chatKey!);
+      }
+    }
+    return chats;
   }
 
   Future<List<Message>> getMessages(String chatId, {int limit = 50, String? before}) async {
@@ -23,9 +30,9 @@ class ChatService {
     if (before != null) path += '&before=${Uri.encodeComponent(before)}';
     final data = await _api.get(path);
     var messages = (data['messages'] as List).map((m) => Message.fromJson(m)).toList();
-    // decrypt returns input as-is for non-ciphertext, so legacy msgs still work
+    // decrypt returns input as-is for non-ciphertext, so legacy/system msgs still work
     for (final m in messages) {
-      m.content = await _crypto.decrypt(m.content);
+      m.content = await _crypto.decryptMessage(m.content, chatId);
     }
     return messages;
   }
@@ -40,7 +47,7 @@ class ChatService {
     String? chatType,
     String? recipientUserId,
   }) async {
-    final toStore = await _encryptForChat(content, chatType, recipientUserId);
+    final toStore = await _encryptForChat(content, chatType, recipientUserId, chatId);
     final data = await _api.post('/api/$chatId/messages', body: {
       'content': toStore,
       'type': type,
@@ -49,21 +56,21 @@ class ChatService {
     });
     var msg = Message.fromJson(data['message']);
     // decrypt own echo so local ui shows plaintext
-    msg.content = await _crypto.decrypt(msg.content);
+    msg.content = await _crypto.decryptMessage(msg.content, chatId);
     return msg;
   }
 
   // returns ciphertext json, or plaintext when encryption is skipped (saved,
-  // group, missing recipient key)
+  // missing recipient key)
   Future<String> _encryptForChat(
     String plaintext,
     String? chatType,
     String? recipientUserId,
+    String chatId,
   ) async {
     if (chatType == 'saved') return plaintext;
     if (chatType == 'group') {
-      // TODO: group e2ee (fan-out or sender-key)
-      return plaintext;
+      return _crypto.encryptGroup(plaintext, chatId);
     }
     if (recipientUserId == null || recipientUserId.isEmpty) return plaintext;
     final recipientPub = await _crypto.getRecipientPublicKey(recipientUserId);
@@ -101,7 +108,7 @@ class ChatService {
     final dataUrl = 'data:$mime;base64,$b64';
 
     // 1+2. encrypt the data url with the recipient's key
-    final ciphertext = await _encryptForChat(dataUrl, chatType, recipientUserId);
+    final ciphertext = await _encryptForChat(dataUrl, chatType, recipientUserId, chatId);
 
     // 3+4. utf-8 encode ciphertext → upload
     final cipherBytes = Uint8List.fromList(utf8.encode(ciphertext));
@@ -122,14 +129,14 @@ class ChatService {
         if (expiresIn != null) 'expiresIn': expiresIn,
       });
       var msg = Message.fromJson(data['message']);
-      msg.content = await _crypto.decrypt(msg.content);
+      msg.content = await _crypto.decryptMessage(msg.content, chatId);
       return msg;
     }
 
     // 6. upload succeeded — encrypt the url too
     final url = uploadRes['url']?.toString() ?? '';
     final path = uploadRes['path']?.toString();
-    final encryptedUrl = await _encryptForChat(url, chatType, recipientUserId);
+    final encryptedUrl = await _encryptForChat(url, chatType, recipientUserId, chatId);
 
     final data = await _api.post('/api/$chatId/messages', body: {
       'content': encryptedUrl,
@@ -141,7 +148,7 @@ class ChatService {
     });
     var msg = Message.fromJson(data['message']);
     // decrypt own echo for local display
-    msg.content = await _crypto.decrypt(msg.content);
+    msg.content = await _crypto.decryptMessage(msg.content, chatId);
     return msg;
   }
 
@@ -216,14 +223,36 @@ class ChatService {
     return Chat.fromJson(data['chat']);
   }
 
-  Future<Chat> createGroup(String title, List<String> memberIds, {int? expiresInDays}) async {
+  Future<Chat> createGroup({
+    required String type, // group or channel
+    required String title,
+    String? description,
+    String? avatarEmoji,
+    String? avatarColor,
+    required List<String> memberIds,
+    int? expiresInDays,
+    Map<String, String>? memberKeys,
+  }) async {
     final data = await _api.post('/api/chats', body: {
-      'type': 'group',
+      'type': type,
       'title': title,
+      if (description != null) 'description': description,
+      if (avatarEmoji != null) 'avatarEmoji': avatarEmoji,
+      if (avatarColor != null) 'avatarColor': avatarColor,
       'memberIds': memberIds,
       if (expiresInDays != null) 'expiresInDays': expiresInDays,
+      if (memberKeys != null) 'memberKeys': memberKeys,
     });
     return Chat.fromJson(data['chat']);
+  }
+
+  Future<String?> getUserEncryptionKey(String userId) async {
+    try {
+      final data = await _api.get('/api/keys/$userId');
+      return data['identity_public_key'];
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<List<AppUser>> searchUsers(String query) async {

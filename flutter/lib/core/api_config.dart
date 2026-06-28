@@ -10,4 +10,9 @@ class ApiConfig {
   static bool get hasSupabase =>
       supabaseUrl != null && supabaseUrl!.isNotEmpty &&
       supabaseAnonKey != null && supabaseAnonKey!.isNotEmpty;
+
+  static int get defaultTimeoutSeconds =>
+      int.tryParse(dotenv.env['API_TIMEOUT_SECONDS'] ?? '') ?? 30;
+  static int get uploadTimeoutSeconds =>
+      int.tryParse(dotenv.env['API_UPLOAD_TIMEOUT_SECONDS'] ?? '') ?? 120;
 }

@@ -17,6 +17,11 @@ class SocketService {
   bool _connected = false;
   String? _currentUserId;
 
+  // Track online user IDs
+  final Set<String> _onlineUserIds = {};
+
+  bool isUserOnline(String userId) => _onlineUserIds.contains(userId);
+
   // subscription maps: subId → callback. Map (not List) so removal is O(1)
   int _nextSubId = 0;
   final Map<int, void Function(Map<String, dynamic>)> _messageCallbacks = {};
@@ -53,10 +58,16 @@ class SocketService {
       // send session token so backend authenticates the socket. userId here
       // is just for client-side diagnostics, server derives it from the token
       _socket!.emit('identify', {'userId': userId, 'token': token});
+      for (final cb in _userStatusCallbacks.values.toList()) {
+        cb({'connected': true});
+      }
     });
 
     _socket!.onDisconnect((_) {
       _connected = false;
+      for (final cb in _userStatusCallbacks.values.toList()) {
+        cb({'connected': false});
+      }
     });
 
     _socket!.on('message', (data) {
@@ -67,9 +78,33 @@ class SocketService {
       }
     });
 
+    _socket!.on('presence', (data) {
+      if (data is Map && data['users'] is List) {
+        _onlineUserIds.clear();
+        final usersList = data['users'] as List;
+        for (final u in usersList) {
+          if (u is Map && u['userId'] != null && u['isOnline'] == true) {
+            _onlineUserIds.add(u['userId'].toString());
+          }
+        }
+        for (final cb in _userStatusCallbacks.values.toList()) {
+          cb({'userId': '', 'isOnline': true});
+        }
+      }
+    });
+
     _socket!.on('user-status', (data) {
-      for (final cb in _userStatusCallbacks.values.toList()) {
-        cb(data as Map<String, dynamic>);
+      if (data is Map && data['userId'] != null && data['isOnline'] != null) {
+        final uid = data['userId'].toString();
+        final online = data['isOnline'] as bool;
+        if (online) {
+          _onlineUserIds.add(uid);
+        } else {
+          _onlineUserIds.remove(uid);
+        }
+        for (final cb in _userStatusCallbacks.values.toList()) {
+          cb(Map<String, dynamic>.from(data));
+        }
       }
     });
 
@@ -155,5 +190,6 @@ class SocketService {
     _userStatusCallbacks.clear();
     _typingCallbacks.clear();
     _messageUpdateCallbacks.clear();
+    _onlineUserIds.clear();
   }
 }

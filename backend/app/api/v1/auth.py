@@ -3,6 +3,7 @@ import re
 import secrets
 
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,16 +51,13 @@ class LegacyLoginRequest(BaseModel):
 
 def _set_cookie(response: Response, user_id: str) -> None:
     token = create_session_token(user_id)
-    # httponly: JS can't read it (XSS theft)
-    # samesite=lax: blocks CSRF on top-level navs
-    # secure: only in prod (https)
     response.set_cookie(
-        key="tc_session",
+        key=settings.COOKIE_NAME,
         value=token,
         httponly=True,
         secure=settings.is_postgres,
         samesite="lax",
-        max_age=2592000,
+        max_age=settings.COOKIE_MAX_AGE,
         path="/",
     )
 
@@ -76,8 +74,8 @@ async def register_with_email(req: EmailRegisterRequest, response: Response, db:
         id=secrets.token_hex(12),
         email=email,
         password_hash=hash_password(req.password),
-        avatar_color=secrets.choice(["emerald", "violet", "rose", "amber", "cyan", "lime", "purple", "teal"]),
-        avatar_emoji=secrets.choice(["fox", "cat", "dog", "bird", "fish", "lion", "panda", "unicorn"]),
+        avatar_color=secrets.choice(settings.AVATAR_COLORS),
+        avatar_emoji=secrets.choice(settings.AVATAR_ICONS),
         is_online=True,
         last_seen=now_ms(),
         created_at=now_ms(),
@@ -86,8 +84,9 @@ async def register_with_email(req: EmailRegisterRequest, response: Response, db:
     db.add(user)
     await db.flush()
 
+    token = create_session_token(user.id)
     _set_cookie(response, user.id)
-    return {"user": serialize_user(user)}
+    return {"user": serialize_user(user), "token": token}
 
 @router.post("/onboard")
 async def set_username(req: UsernameOnboardingRequest, request: Request, db: AsyncSession = Depends(get_db)):
@@ -147,9 +146,11 @@ async def login_with_email(req: EmailLoginRequest, response: Response, db: Async
     from app.core.brute_force import is_locked, record_failed_attempt, clear_failures
     locked, retry_after = is_locked(email)
     if locked:
-        response.status_code = 429
-        response.headers["Retry-After"] = str(retry_after)
-        return {"error": "account_locked", "message": "Too many failed attempts. Try again later.", "retry_after": retry_after}
+        return JSONResponse(
+            status_code=429,
+            content={"error": "account_locked", "message": "Too many failed attempts. Try again later.", "retry_after": retry_after},
+            headers={"Retry-After": str(retry_after)},
+        )
 
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
@@ -164,8 +165,9 @@ async def login_with_email(req: EmailLoginRequest, response: Response, db: Async
     user.last_seen = now_ms()
     user.updated_at = now_ms()
 
+    token = create_session_token(user.id)
     _set_cookie(response, user.id)
-    return {"user": serialize_user(user)}
+    return {"user": serialize_user(user), "token": token}
 
 @router.post("/login-legacy", include_in_schema=False)
 async def login_legacy(req: LegacyLoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
@@ -175,9 +177,11 @@ async def login_legacy(req: LegacyLoginRequest, response: Response, db: AsyncSes
     from app.core.brute_force import is_locked, record_failed_attempt, clear_failures
     locked, retry_after = is_locked(username)
     if locked:
-        response.status_code = 429
-        response.headers["Retry-After"] = str(retry_after)
-        return {"error": "account_locked", "message": "Too many failed attempts. Try again later.", "retry_after": retry_after}
+        return JSONResponse(
+            status_code=429,
+            content={"error": "account_locked", "message": "Too many failed attempts. Try again later.", "retry_after": retry_after},
+            headers={"Retry-After": str(retry_after)},
+        )
 
     result = await db.execute(select(User).where(User.username == username))
     user = result.scalar_one_or_none()
@@ -189,23 +193,21 @@ async def login_legacy(req: LegacyLoginRequest, response: Response, db: AsyncSes
     clear_failures(username)
     user.is_online = True
     user.last_seen = now_ms()
+    user.updated_at = now_ms()
 
+    token = create_session_token(user.id)
     _set_cookie(response, user.id)
-    return {"user": serialize_user(user)}
+    return {"user": serialize_user(user), "token": token}
 
 @router.post("/logout")
 async def logout(response: Response):
-    response.delete_cookie(key="tc_session", path="/")
+    response.delete_cookie(key=settings.COOKIE_NAME, path="/")
     return {"ok": True}
 
 @router.get("/me")
 async def me(request: Request, db: AsyncSession = Depends(get_db)):
-    from app.core.security import verify_session_token
-    from app.core.config import settings
-    token = request.cookies.get(settings.COOKIE_NAME)
-    if not token:
-        return {"user": None}
-    user_id = verify_session_token(token)
+    from app.core.security import get_optional_user_id
+    user_id = get_optional_user_id(request)
     if not user_id:
         return {"user": None}
     result = await db.execute(select(User).where(User.id == user_id))

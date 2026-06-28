@@ -68,12 +68,13 @@ class ChatService:
         avatar_emoji: Optional[str] = None,
         avatar_color: Optional[str] = None,
         expires_in_days: Optional[int] = None,
+        member_keys: Optional[dict] = None,
     ) -> dict:
         if chat_type == "direct":
             return await self._create_direct(user_id, member_ids or [])
         return await self._create_group(
             user_id, chat_type, title, description, member_ids or [],
-            avatar_emoji, avatar_color, expires_in_days,
+            avatar_emoji, avatar_color, expires_in_days, member_keys,
         )
 
     async def _create_direct(self, user_id: str, member_ids: List[str]) -> dict:
@@ -100,6 +101,7 @@ class ChatService:
         description: Optional[str], member_ids: List[str],
         avatar_emoji: Optional[str], avatar_color: Optional[str],
         expires_in_days: Optional[int] = None,
+        member_keys: Optional[dict] = None,
     ) -> dict:
         title = sanitize_title(title or "")
         if not title:
@@ -123,7 +125,9 @@ class ChatService:
             expires_at=expires_at,
         )
         for i, uid in enumerate(all_members):
-            await self.chats.add_member(chat.id, uid, role="owner" if i == 0 else "member")
+            role = "owner" if i == 0 else "member"
+            chat_key = member_keys.get(uid) if member_keys else None
+            await self.chats.add_member(chat.id, uid, role=role, chat_key=chat_key)
 
         chat = await self.chats.get_by_id(chat.id)
         member = await self.chats.get_member(chat.id, user_id)
@@ -138,11 +142,17 @@ class ChatService:
             raise ForbiddenError("Not a member of this chat")
 
         if action == "pin":
-            await self.chats.update_member(member.id, pinned_at=now_ms() if value else None)
+            pinned_val = now_ms() if value else None
+            await self.chats.update_member(member.id, pinned_at=pinned_val)
+            member.pinned_at = pinned_val
         elif action == "mute":
-            await self.chats.update_member(member.id, muted=bool(value))
+            mute_val = bool(value)
+            await self.chats.update_member(member.id, muted=mute_val)
+            member.muted = mute_val
         elif action == "pinMessage":
-            await self.chats.update_member(member.id, pinned_message_id=message_id or None)
+            pin_msg_val = message_id or None
+            await self.chats.update_member(member.id, pinned_message_id=pin_msg_val)
+            member.pinned_message_id = pin_msg_val
         else:
             raise ValidationError(f"Unknown action: {action}")
 

@@ -11,10 +11,12 @@ from sqlalchemy import select, update
 from app.core.config import settings
 from app.core.database import async_session_factory
 from app.core.security import now_ms, verify_session_token
-from app.models import User
+from app.models import ChatMember, User
 from app.realtime.connection_manager import manager
 
 logger = logging.getLogger("cryptalk.realtime")
+
+_MAX_RELAY_BYTES = 65_536  # 64 KB max per socket payload
 
 
 def _verify_socket_auth(data: dict) -> str | None:
@@ -84,9 +86,20 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
 
     @sio.on("join-chat")
     async def on_join_chat(sid: str, data: dict) -> None:
+        user_id = manager.get_user_id(sid)
         chat_id = data.get("chatId")
-        if chat_id:
-            await sio.enter_room(sid, f"chat:{chat_id}")
+        if not user_id or not chat_id:
+            return
+        # verify membership before entering the room
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(ChatMember).where(
+                    ChatMember.chat_id == chat_id, ChatMember.user_id == user_id
+                )
+            )
+            if not result.scalar_one_or_none():
+                return
+        await sio.enter_room(sid, f"chat:{chat_id}")
 
     @sio.on("leave-chat")
     async def on_leave_chat(sid: str, data: dict) -> None:
@@ -96,49 +109,91 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
 
     @sio.on("send-message")
     async def on_send_message(sid: str, data: dict) -> None:
+        user_id = manager.get_user_id(sid)
+        if not user_id or not isinstance(data, dict):
+            return
         chat_id = data.get("chatId")
         message = data.get("message")
-        if chat_id and message:
-            await sio.emit(
-                "message",
-                {"chatId": chat_id, "message": message},
-                room=f"chat:{chat_id}",
-            )
+        if not chat_id or not message:
+            return
+        import json
+        if len(json.dumps(data, default=str)) > _MAX_RELAY_BYTES:
+            return
+        await sio.emit(
+            "message",
+            {"chatId": chat_id, "message": message},
+            room=f"chat:{chat_id}",
+        )
 
     @sio.on("typing")
     async def on_typing(sid: str, data: dict) -> None:
+        user_id = manager.get_user_id(sid)
+        if not user_id or not isinstance(data, dict):
+            return
         chat_id = data.get("chatId")
-        if chat_id:
-            await sio.emit("typing", data, room=f"chat:{chat_id}", skip_sid=sid)
+        if not chat_id:
+            return
+        # inject server-side identity so client can't spoof who's typing
+        data["userId"] = user_id
+        await sio.emit("typing", data, room=f"chat:{chat_id}", skip_sid=sid)
 
     @sio.on("message-status")
     async def on_message_status(sid: str, data: dict) -> None:
+        user_id = manager.get_user_id(sid)
+        if not user_id or not isinstance(data, dict):
+            return
         chat_id = data.get("chatId")
-        if chat_id:
-            await sio.emit("message-status", data, room=f"chat:{chat_id}")
+        if not chat_id:
+            return
+        data["userId"] = user_id
+        await sio.emit("message-status", data, room=f"chat:{chat_id}")
 
     @sio.on("recording")
     async def on_recording(sid: str, data: dict) -> None:
+        user_id = manager.get_user_id(sid)
+        if not user_id or not isinstance(data, dict):
+            return
         chat_id = data.get("chatId")
-        if chat_id:
-            await sio.emit("recording", data, room=f"chat:{chat_id}", skip_sid=sid)
+        if not chat_id:
+            return
+        data["userId"] = user_id
+        await sio.emit("recording", data, room=f"chat:{chat_id}", skip_sid=sid)
 
     @sio.on("reaction")
     async def on_reaction(sid: str, data: dict) -> None:
+        user_id = manager.get_user_id(sid)
+        if not user_id or not isinstance(data, dict):
+            return
         chat_id = data.get("chatId")
-        if chat_id:
-            await sio.emit("reaction", data, room=f"chat:{chat_id}")
+        if not chat_id:
+            return
+        data["userId"] = user_id
+        await sio.emit("reaction", data, room=f"chat:{chat_id}")
 
     @sio.on("message-update")
     async def on_message_update(sid: str, data: dict) -> None:
+        user_id = manager.get_user_id(sid)
+        if not user_id or not isinstance(data, dict):
+            return
         chat_id = data.get("chatId")
-        if chat_id:
-            await sio.emit("message-update", data, room=f"chat:{chat_id}")
+        if not chat_id:
+            return
+        import json
+        if len(json.dumps(data, default=str)) > _MAX_RELAY_BYTES:
+            return
+        await sio.emit("message-update", data, room=f"chat:{chat_id}")
 
     @sio.on("chat-updated")
     async def on_chat_updated(sid: str, data: dict) -> None:
+        user_id = manager.get_user_id(sid)
+        if not user_id or not isinstance(data, dict):
+            return
         chat = data.get("chat")
-        for member_id in data.get("memberIds", []):
+        member_ids = data.get("memberIds", [])
+        # only relay if the sender is actually one of the members
+        if user_id not in member_ids:
+            return
+        for member_id in member_ids:
             for target_sid in manager.get_sockets_for_user(member_id):
                 await sio.emit("chat-updated", {"chat": chat}, to=target_sid)
 

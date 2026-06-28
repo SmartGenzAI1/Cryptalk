@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'api_config.dart';
 
@@ -14,7 +15,7 @@ class SupabaseService {
 
   static Future<void> uploadFile(String path, List<int> bytes, String contentType) async {
     if (client == null) return;
-    await client!.storage.from('cryptalk').uploadBinary(path, bytes, fileOptions: FileOptions(contentType: contentType));
+    await client!.storage.from('cryptalk').uploadBinary(path, Uint8List.fromList(bytes), fileOptions: FileOptions(contentType: contentType));
   }
 
   static String? getFileUrl(String path) {

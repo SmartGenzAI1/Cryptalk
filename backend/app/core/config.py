@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     # sentry
     SENTRY_DSN: str = os.environ.get("SENTRY_DSN", "")
 
+    WELCOME_CHANNEL_ID: str = os.environ.get("WELCOME_CHANNEL_ID", "welcome-channel")
+
     # supabase (for storage)
     SUPABASE_URL: str = os.environ.get("SUPABASE_URL", "")
     SUPABASE_KEY: str = os.environ.get("SUPABASE_KEY", "")
@@ -96,6 +98,9 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "SESSION_SECRET must be set. Generate one with: openssl rand -hex 32"
             )
+        if self.is_postgres:
+            if self.SENTRY_DSN and not (self.SENTRY_DSN.startswith("http://") or self.SENTRY_DSN.startswith("https://")):
+                raise RuntimeError("SENTRY_DSN must be a valid HTTP/HTTPS URL in production.")
 
 
 @lru_cache

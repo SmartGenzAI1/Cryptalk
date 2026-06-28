@@ -11,6 +11,7 @@ export function MobileNav() {
   const connectionsPanelOpen = useChatStore((s) => s.connectionsPanelOpen)
   const setActiveChatId = useChatStore((s) => s.setActiveChatId)
   const activeChatId = useChatStore((s) => s.activeChatId)
+  if (activeChatId) return null
 
   return (
     <nav className="md:hidden flex items-center justify-around h-14 border-t bg-sidebar/80 zc-glass-sidebar shrink-0 safe-area-pb">

@@ -65,6 +65,7 @@ class ChatMember(Base):
     pinned_at = Column("pinnedAt", Integer, nullable=True)
     muted = Column("muted", Boolean, default=False)
     pinned_message_id = Column("pinnedMessageId", String, nullable=True)
+    chat_key = Column("chatKey", String, nullable=True)
 
     chat = relationship("Chat", back_populates="members")
     user = relationship("User", back_populates="memberships")

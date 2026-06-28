@@ -33,6 +33,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         from app.core.security import verify_session_token
         from app.core.config import settings
         token = request.cookies.get(settings.COOKIE_NAME)
+        if not token:
+            auth_header = request.headers.get("Authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.split(" ", 1)[1].strip()
         user_id = ""
         if token:
             uid = verify_session_token(token)
@@ -64,6 +68,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             retry_after = int(window - (now - bucket[0]))
             return False, max(retry_after, 1)
         bucket.append(now)
+
+        # housekeeping: purge dead buckets every ~100 requests to cap memory
+        if len(self._hits) > 500:
+            stale = [k for k, v in self._hits.items() if not v]
+            for k in stale:
+                del self._hits[k]
+
         return True, 0
 
     async def dispatch(self, request: Request, call_next):

@@ -30,6 +30,7 @@ export interface EncryptedPayload {
   ciphertext: string
   nonce: string
   ephemeralPublicKey: string
+  mac?: string
 }
 
 // encoding helpers
@@ -93,13 +94,21 @@ async function deriveSharedSecret(
   return sodium.crypto_scalarmult(myPrivateKey, theirPublicKey)
 }
 
-// HKDF-SHA256 for key separation + domain separation
+// HKDF-SHA256 for key derivation (RFC 5869)
 async function deriveEncryptionKey(sharedSecret: Uint8Array, context: string = 'cryptalk-message'): Promise<Uint8Array> {
   await ensureReady()
-  const salt = sodium.from_string('cryptalk-salt-v1')
-  const prk = sodium.crypto_auth(sharedSecret, salt) // extract
-  const info = sodium.from_string(context)
-  const okm = sodium.crypto_generichash(32, info, prk) // expand to 32 bytes
+  // HKDF-Extract: PRK = HMAC-SHA256(salt, IKM)
+  // Standard default salt is hash-length of zeros
+  const salt = new Uint8Array(32)
+  const prk = sodium.crypto_auth_hmacsha256(sharedSecret, salt)
+
+  // HKDF-Expand: OKM = HMAC-SHA256(PRK, info | 0x01)
+  const info = toUTF8(context)
+  const infoWithCounter = new Uint8Array(info.length + 1)
+  infoWithCounter.set(info, 0)
+  infoWithCounter.set([1], info.length)
+
+  const okm = sodium.crypto_auth_hmacsha256(infoWithCounter, prk)
   return okm
 }
 
@@ -113,17 +122,27 @@ export async function encryptMessage(
   await ensureReady()
 
   const recipientPublicKey = fromBase64(recipientPublicKeyBase64)
-
   const ephemeralKeyPair = sodium.crypto_box_keypair()
   const sharedSecret = await deriveSharedSecret(ephemeralKeyPair.privateKey, recipientPublicKey)
   const encryptionKey = await deriveEncryptionKey(sharedSecret)
 
-  // XSalsa20-Poly1305 (authenticated)
-  const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES)
+  // ChaCha20-Poly1305 IETF uses a 12-byte nonce
+  const nonce = sodium.randombytes_buf(12)
   const plaintextBytes = toUTF8(plaintext)
-  const ciphertext = sodium.crypto_secretbox_easy(plaintextBytes, nonce, encryptionKey)
+  
+  // Encrypt with ChaCha20-Poly1305 (returns ciphertext + 16-byte Poly1305 MAC appended)
+  const encrypted = sodium.crypto_aead_chacha20poly1305_ietf_encrypt(
+    plaintextBytes,
+    null, // no additional authenticated data
+    null, // no secret nonce
+    nonce,
+    encryptionKey
+  )
+  
+  const ciphertext = encrypted.subarray(0, encrypted.length - 16)
+  const mac = encrypted.subarray(encrypted.length - 16)
 
-  // zero sensitive data
+  // clear sensitive memory
   ephemeralKeyPair.privateKey.fill(0)
   sharedSecret.fill(0)
   encryptionKey.fill(0)
@@ -131,6 +150,7 @@ export async function encryptMessage(
   return {
     ciphertext: toBase64(ciphertext),
     nonce: toBase64(nonce),
+    mac: toBase64(mac),
     ephemeralPublicKey: toBase64(ephemeralKeyPair.publicKey),
   }
 }
@@ -142,15 +162,26 @@ export async function decryptMessage(
   await ensureReady()
 
   const ephemeralPublicKey = fromBase64(payload.ephemeralPublicKey)
-
   const sharedSecret = await deriveSharedSecret(myPrivateKey, ephemeralPublicKey)
   const encryptionKey = await deriveEncryptionKey(sharedSecret)
 
   const nonce = fromBase64(payload.nonce)
   const ciphertext = fromBase64(payload.ciphertext)
+  const mac = payload.mac ? fromBase64(payload.mac) : new Uint8Array(16)
+
+  // Re-combine ciphertext and MAC for libsodium input
+  const combined = new Uint8Array(ciphertext.length + mac.length)
+  combined.set(ciphertext, 0)
+  combined.set(mac, ciphertext.length)
 
   try {
-    const plaintextBytes = sodium.crypto_secretbox_open_easy(ciphertext, nonce, encryptionKey)
+    const plaintextBytes = sodium.crypto_aead_chacha20poly1305_ietf_decrypt(
+      null,
+      combined,
+      null,
+      nonce,
+      encryptionKey
+    )
     const plaintext = fromUTF8(plaintextBytes)
 
     sharedSecret.fill(0)
@@ -158,7 +189,6 @@ export async function decryptMessage(
 
     return plaintext
   } catch (e) {
-    // zero on failure too
     sharedSecret.fill(0)
     encryptionKey.fill(0)
     throw new Error('Decryption failed — message may have been tampered with')
@@ -167,35 +197,45 @@ export async function decryptMessage(
 
 // group encryption
 
-export async function deriveGroupKey(chatId: string, privateKey: Uint8Array): Promise<Uint8Array> {
-  await ensureReady()
-  const salt = sodium.from_string('cryptalk-group-v1')
-  const keyMaterial = toUTF8(chatId)
-  // BLAKE2b (generichash) for a deterministic key
-  return sodium.crypto_generichash(32, keyMaterial, privateKey)
-}
-
 export async function encryptGroupMessage(
   plaintext: string,
   groupKey: Uint8Array
-): Promise<{ ciphertext: string; nonce: string }> {
+): Promise<{ ciphertext: string; nonce: string; mac: string }> {
   await ensureReady()
-  const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES)
-  const ciphertext = sodium.crypto_secretbox_easy(toUTF8(plaintext), nonce, groupKey)
+  const nonce = sodium.randombytes_buf(12) // 12-byte nonce for standard IETF ChaCha20-Poly1305
+  const encrypted = sodium.crypto_aead_chacha20poly1305_ietf_encrypt(
+    toUTF8(plaintext),
+    null,
+    null,
+    nonce,
+    groupKey
+  )
+  const ciphertext = encrypted.subarray(0, encrypted.length - 16)
+  const mac = encrypted.subarray(encrypted.length - 16)
   return {
     ciphertext: toBase64(ciphertext),
     nonce: toBase64(nonce),
+    mac: toBase64(mac),
   }
 }
 
 export async function decryptGroupMessage(
   ciphertext: string,
   nonce: string,
+  mac: string,
   groupKey: Uint8Array
 ): Promise<string> {
   await ensureReady()
-  const plaintextBytes = sodium.crypto_secretbox_open_easy(
-    fromBase64(ciphertext),
+  const ciphertextBytes = fromBase64(ciphertext)
+  const macBytes = fromBase64(mac)
+  const combined = new Uint8Array(ciphertextBytes.length + macBytes.length)
+  combined.set(ciphertextBytes, 0)
+  combined.set(macBytes, ciphertextBytes.length)
+
+  const plaintextBytes = sodium.crypto_aead_chacha20poly1305_ietf_decrypt(
+    null,
+    combined,
+    null,
     fromBase64(nonce),
     groupKey
   )
@@ -226,7 +266,7 @@ export async function verifyPreKeySignature(
 // safety number for out-of-band identity verification (signal-style)
 export async function generateSafetyNumber(publicKeyBase64: string): Promise<string> {
   await ensureReady()
-  const hash = sodium.crypto_generichash(30, fromBase64(publicKeyBase64))
+  const hash = sodium.crypto_generichash(30, fromBase64(publicKeyBase64), null)
   const num = BigInt('0x' + sodium.to_hex(hash).slice(0, 15))
   return num.toString().padStart(12, '0').replace(/(\d{3})/g, '$1 ').trim()
 }

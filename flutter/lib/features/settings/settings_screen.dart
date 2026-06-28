@@ -5,12 +5,20 @@ import '../../core/chat_service.dart';
 import '../../core/models.dart';
 import '../../core/ui/avatar.dart';
 import '../connections/connections_screen.dart';
+import '../../main.dart';
 
 // settings screen — grouped sections, no clutter. each action that needs
 // input (blocked users, cross-chat search, report) opens its own screen via
 // Navigator.push instead of stacking dialogs.
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  final bool isInline;
+  final VoidCallback? onClose;
+
+  const SettingsScreen({
+    super.key,
+    this.isInline = false,
+    this.onClose,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -23,7 +31,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final user = auth.currentUser;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(
+        title: const Text('Settings'),
+        automaticallyImplyLeading: !widget.isInline,
+        actions: widget.isInline
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: widget.onClose,
+                )
+              ]
+            : null,
+      ),
       body: ListView(
         children: [
           if (user != null) ...[
@@ -66,6 +85,283 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   context,
                   MaterialPageRoute(
                       builder: (_) => const BlockedUsersScreen()),
+                ),
+              ),
+            ],
+          ),
+          _SettingsSection(
+            title: 'Appearance',
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Theme Mode',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: () => auth.setThemeMode(ThemeMode.light),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                color: auth.themeMode == ThemeMode.light
+                                    ? Theme.of(context).colorScheme.primary.withOpacity(0.15)
+                                    : Theme.of(context).colorScheme.surface,
+                                border: Border.all(
+                                  color: auth.themeMode == ThemeMode.light
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(context).colorScheme.outlineVariant,
+                                  width: 2,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.wb_sunny_outlined,
+                                    size: 18,
+                                    color: auth.themeMode == ThemeMode.light
+                                        ? Theme.of(context).colorScheme.primary
+                                        : null,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Light',
+                                    style: TextStyle(
+                                      fontWeight: auth.themeMode == ThemeMode.light
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                      color: auth.themeMode == ThemeMode.light
+                                          ? Theme.of(context).colorScheme.primary
+                                          : null,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: InkWell(
+                            onTap: () => auth.setThemeMode(ThemeMode.dark),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                color: auth.themeMode == ThemeMode.dark
+                                    ? Theme.of(context).colorScheme.primary.withOpacity(0.15)
+                                    : Theme.of(context).colorScheme.surface,
+                                border: Border.all(
+                                  color: auth.themeMode == ThemeMode.dark
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(context).colorScheme.outlineVariant,
+                                  width: 2,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.nightlight_round_outlined,
+                                    size: 18,
+                                    color: auth.themeMode == ThemeMode.dark
+                                        ? Theme.of(context).colorScheme.primary
+                                        : null,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Dark',
+                                    style: TextStyle(
+                                      fontWeight: auth.themeMode == ThemeMode.dark
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                      color: auth.themeMode == ThemeMode.dark
+                                          ? Theme.of(context).colorScheme.primary
+                                          : null,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Accent Color',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 40,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: [
+                          'emerald',
+                          'violet',
+                          'rose',
+                          'amber',
+                          'cyan',
+                          'lime',
+                          'purple',
+                          'teal'
+                        ].map((colorKey) {
+                          final Color colorVal = accentColors[colorKey] ?? const Color(0xFF10B981);
+                          final bool isSelected = (user?.accentColor ?? 'emerald') == colorKey;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 12),
+                            child: GestureDetector(
+                              onTap: () async {
+                                try {
+                                  await auth.updateUserSettings({'accentColor': colorKey});
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Failed to update accent color: $e')),
+                                    );
+                                  }
+                                }
+                              },
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: colorVal,
+                                  shape: BoxShape.circle,
+                                  border: isSelected
+                                      ? Border.all(
+                                          color: Theme.of(context).colorScheme.onSurface,
+                                          width: 3,
+                                        )
+                                      : null,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: colorVal.withOpacity(0.4),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: isSelected
+                                    ? const Icon(
+                                        Icons.check,
+                                        color: Colors.white,
+                                        size: 20,
+                                      )
+                                    : null,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Chat Wallpaper',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    GridView.count(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisCount: 3,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                      childAspectRatio: 1.4,
+                      children: [
+                        'dots',
+                        'gradient',
+                        'plain',
+                        'grid',
+                        'waves'
+                      ].map((wpKey) {
+                        final bool isSelected = (user?.wallpaper ?? 'dots') == wpKey;
+                        return InkWell(
+                          onTap: () async {
+                            try {
+                              await auth.updateUserSettings({'wallpaper': wpKey});
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Failed to update wallpaper: $e')),
+                                );
+                              }
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.surface,
+                              border: Border.all(
+                                color: isSelected
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context).colorScheme.outlineVariant,
+                                width: isSelected ? 2.5 : 1,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Stack(
+                              children: [
+                                Center(
+                                  child: Text(
+                                    wpKey.toUpperCase(),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: isSelected
+                                          ? Theme.of(context).colorScheme.primary
+                                          : Colors.grey,
+                                    ),
+                                  ),
+                                ),
+                                if (isSelected)
+                                  Positioned(
+                                    top: 4,
+                                    right: 4,
+                                    child: Icon(
+                                      Icons.check_circle,
+                                      size: 14,
+                                      color: Theme.of(context).colorScheme.primary,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -200,6 +496,7 @@ class _ProfileHeader extends StatelessWidget {
             iconKey: user.avatarEmoji,
             colorName: user.avatarColor,
             size: 64,
+            seed: user.id,
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -264,20 +561,21 @@ class _SettingsSection extends StatelessWidget {
             ),
           ),
         ),
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Material(
             color: Theme.of(context).colorScheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            children: [
-              for (int i = 0; i < children.length; i++) ...[
-                children[i],
-                if (i < children.length - 1)
-                  const Divider(height: 1, indent: 16, endIndent: 0),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                for (int i = 0; i < children.length; i++) ...[
+                  children[i],
+                  if (i < children.length - 1)
+                    const Divider(height: 1, indent: 16, endIndent: 0),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ],
@@ -389,6 +687,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       iconKey: _avatarEmoji,
                       colorName: _avatarColor,
                       size: 88,
+                      seed: context.read<AuthService>().currentUser?.id,
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -519,6 +818,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                         iconKey: _avatarEmoji,
                         colorName: _avatarColor,
                         size: 96,
+                        seed: context.read<AuthService>().currentUser?.id,
                       ),
                     ),
                   ),
@@ -691,6 +991,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
               iconKey: u.avatarEmoji,
               colorName: u.avatarColor,
               size: 48,
+              seed: u.id,
             ),
             title: Text(
               u.name ?? 'Unknown',
@@ -862,7 +1163,7 @@ class _ReportScreenState extends State<ReportScreen> {
     if (text.isEmpty) return;
     if (mounted) setState(() => _sending = true);
     try {
-      await context.read<ChatService>().api.post('/api/reports', {
+      await context.read<ChatService>().api.post('/api/reports', body: {
         'reason': text,
       });
       if (mounted) {

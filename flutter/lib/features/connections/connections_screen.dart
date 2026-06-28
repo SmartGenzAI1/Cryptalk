@@ -9,7 +9,14 @@ import '../../core/ui/avatar.dart';
 // parent is just a tab shell. Requests tab pushes its count into the shared
 // ValueNotifier so the appbar badge reflects it without rebuilding the tree.
 class ConnectionsScreen extends StatefulWidget {
-  const ConnectionsScreen({super.key});
+  final bool isInline;
+  final VoidCallback? onClose;
+
+  const ConnectionsScreen({
+    super.key,
+    this.isInline = false,
+    this.onClose,
+  });
 
   @override
   State<ConnectionsScreen> createState() => _ConnectionsScreenState();
@@ -31,6 +38,15 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Connections'),
+          automaticallyImplyLeading: !widget.isInline,
+          actions: widget.isInline
+              ? [
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: widget.onClose,
+                  )
+                ]
+              : null,
           bottom: TabBar(
             tabs: [
               const Tab(icon: Icon(Icons.search), text: 'Find'),
@@ -101,7 +117,7 @@ class _FindTabState extends State<_FindTab> {
     if (username.isEmpty) return;
     final api = context.read<ChatService>().api;
     try {
-      await api.post('/api/social/connect', {'to_username': username});
+      await api.post('/api/social/connect', body: {'to_username': username});
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -199,6 +215,7 @@ class _FindTabState extends State<_FindTab> {
                     iconKey: u.avatarEmoji,
                     colorName: u.avatarColor,
                     size: 48,
+                    seed: u.id,
                   ),
                   title: Text(
                     u.name ?? 'Unknown',
@@ -322,6 +339,7 @@ class _RequestsTabState extends State<_RequestsTab> {
             iconKey: from.avatarEmoji,
             colorName: from.avatarColor,
             size: 48,
+            seed: from.id,
           ),
           title: Text(
             from.name ?? 'Unknown',
@@ -431,6 +449,7 @@ class _ConnectionsTabState extends State<_ConnectionsTab> {
             colorName: u.avatarColor,
             size: 48,
             online: u.isOnline,
+            seed: u.id,
           ),
           title: Text(
             u.name ?? 'Unknown',

@@ -38,6 +38,7 @@ class ChatCreate(CamelModel):
     avatar_emoji: Optional[str] = None
     avatar_color: Optional[str] = None
     expires_in_days: Optional[int] = None  # 1-7 days for temp groups
+    member_keys: Optional[dict] = None
 
 class ChatSettingsUpdate(CamelModel):
     action: str  # pin | mute | pinMessage

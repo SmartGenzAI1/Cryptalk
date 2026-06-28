@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'api_client.dart';
 import 'models.dart';
 import 'crypto_service.dart';
@@ -9,9 +10,48 @@ import 'socket_service.dart';
 class AuthService extends ChangeNotifier {
   final _api = ApiClient();
   final _crypto = CryptoService();
+  final _storage = const FlutterSecureStorage();
 
   AppUser? _currentUser;
   AppUser? get currentUser => _currentUser;
+
+  ThemeMode _themeMode = ThemeMode.dark;
+  ThemeMode get themeMode => _themeMode;
+
+  AuthService() {
+    _loadThemeMode();
+  }
+
+  Future<void> _loadThemeMode() async {
+    try {
+      final saved = await _storage.read(key: 'theme_mode');
+      if (saved == 'light') {
+        _themeMode = ThemeMode.light;
+      } else if (saved == 'dark') {
+        _themeMode = ThemeMode.dark;
+      } else if (saved == 'system') {
+        _themeMode = ThemeMode.system;
+      }
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    if (_themeMode == mode) return;
+    _themeMode = mode;
+    notifyListeners();
+    try {
+      await _storage.write(key: 'theme_mode', value: mode.name);
+    } catch (_) {}
+  }
+
+  Future<void> updateUserSettings(Map<String, dynamic> patch) async {
+    final data = await _api.patch('/api/users/me', body: patch);
+    if (data['user'] != null) {
+      _currentUser = AppUser.fromJson(data['user']);
+      notifyListeners();
+    }
+  }
 
   Future<AppUser?> getMe() async {
     try {

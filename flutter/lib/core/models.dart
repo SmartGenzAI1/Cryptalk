@@ -64,6 +64,9 @@ class Chat {
   final int unreadCount;
   final List<ChatMember> members;
   final LastMessage? lastMessage;
+  final String? chatKey;
+  final String? pinnedAt;
+  final bool muted;
 
   Chat({
     required this.id,
@@ -79,6 +82,9 @@ class Chat {
     this.unreadCount = 0,
     this.members = const [],
     this.lastMessage,
+    this.chatKey,
+    this.pinnedAt,
+    this.muted = false,
   });
 
   factory Chat.fromJson(Map<String, dynamic> json) {
@@ -96,6 +102,9 @@ class Chat {
       unreadCount: json['unreadCount'] ?? 0,
       members: (json['members'] as List?)?.map((m) => ChatMember.fromJson(m)).toList() ?? [],
       lastMessage: json['lastMessage'] != null ? LastMessage.fromJson(json['lastMessage']) : null,
+      chatKey: json['chatKey'] ?? json['chat_key'],
+      pinnedAt: json['pinnedAt'] ?? json['pinned_at'],
+      muted: json['muted'] ?? false,
     );
   }
 }

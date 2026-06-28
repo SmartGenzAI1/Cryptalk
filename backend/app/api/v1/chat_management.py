@@ -1,7 +1,7 @@
 import secrets
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -49,15 +49,14 @@ async def leave_chat(chat_id: str, request: Request = None, db: AsyncSession = D
     chat_result = await db.execute(select(Chat).where(Chat.id == chat_id))
     chat = chat_result.scalar_one_or_none()
     if chat:
-        remaining = await db.execute(
+        remaining_result = await db.execute(
             select(ChatMember).where(ChatMember.chat_id == chat_id)
         )
-        if len(remaining.scalars().all()) == 0:
+        remaining_members = list(remaining_result.scalars().all())
+        if len(remaining_members) == 0:
             await db.execute(delete(Chat).where(Chat.id == chat_id))
-        elif member.role == "owner":
-            first_member = remaining.scalars().first()
-            if first_member:
-                first_member.role = "owner"
+        elif member.role == "owner" and remaining_members:
+            remaining_members[0].role = "owner"
 
     return {"ok": True}
 
@@ -287,6 +286,11 @@ async def delete_account(request: Request = None, db: AsyncSession = Depends(get
     from app.core.security import get_current_user_id
     from app.models import UserBlock, UserNickname, ConnectionRequest, Message, Reaction, StarredMessage
     user_id = get_current_user_id(request)
+
+    # nullify sender_id on messages so FKs don't break
+    await db.execute(
+        update(Message).where(Message.sender_id == user_id).values(sender_id=None)
+    )
 
     await db.execute(delete(ChatMember).where(ChatMember.user_id == user_id))
     await db.execute(delete(UserBlock).where(UserBlock.blocker_id == user_id))

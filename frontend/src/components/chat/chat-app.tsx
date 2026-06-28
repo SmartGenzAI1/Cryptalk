@@ -39,8 +39,16 @@ export function ChatApp() {
           apiGet<{ user: any }>('/api/users/me'),
         ])
         if (!mounted) return
-        if (chatsData.chats) setChats(chatsData.chats)
         if (meData.user) setCurrentUser(meData.user)
+        if (chatsData.chats) {
+          setChats(chatsData.chats)
+          try {
+            const { decryptAndStoreChatKeys } = await import('@/lib/e2ee')
+            await decryptAndStoreChatKeys(chatsData.chats)
+          } catch (e) {
+            console.error('Group key decryption failed on startup:', e)
+          }
+        }
 
         if (meData.user) {
           try {
@@ -63,21 +71,27 @@ export function ChatApp() {
         <div className={`${activeChatId ? 'hidden' : 'flex'} md:flex w-full md:w-[360px] shrink-0`}>
           <ChatList />
         </div>
-        <div className={`${activeChatId ? 'flex' : 'hidden'} md:flex flex-1 min-w-0`}>
+        <div className={`${activeChatId ? 'flex' : 'hidden'} md:flex flex-1 min-w-0 relative`}>
           <ChatWindow />
           {infoPanelOpen && activeChatId && (
             <Suspense fallback={<PanelFallback />}>
-              <ChatInfoPanel />
+              <div className="absolute inset-0 md:relative md:inset-auto z-40 w-full md:w-[340px] flex">
+                <ChatInfoPanel />
+              </div>
             </Suspense>
           )}
           {settingsOpen && (
             <Suspense fallback={<PanelFallback />}>
-              <SettingsPanel />
+              <div className="absolute inset-0 md:relative md:inset-auto z-40 w-full md:w-[380px] flex">
+                <SettingsPanel />
+              </div>
             </Suspense>
           )}
           {connectionsPanelOpen && (
             <Suspense fallback={<PanelFallback />}>
-              <ConnectionsPanel />
+              <div className="absolute inset-0 md:relative md:inset-auto z-40 w-full md:w-[380px] flex">
+                <ConnectionsPanel />
+              </div>
             </Suspense>
           )}
         </div>

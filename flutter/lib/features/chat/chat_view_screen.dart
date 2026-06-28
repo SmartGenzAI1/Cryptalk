@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
@@ -16,6 +17,10 @@ import '../../core/crypto_service.dart';
 import '../../core/socket_service.dart';
 import '../../core/models.dart';
 import '../../core/ui/avatar.dart';
+import 'chat_info_screen.dart';
+import 'package:lottie/lottie.dart';
+import '../../core/animated_emojis.dart';
+import '../../main.dart';
 
 String _basename(String path) {
   final i = path.lastIndexOf('/');
@@ -26,8 +31,15 @@ String _basename(String path) {
 
 class ChatViewScreen extends StatefulWidget {
   final Chat chat;
+  final bool isInline;
+  final VoidCallback? onToggleInfo;
 
-  const ChatViewScreen({super.key, required this.chat});
+  const ChatViewScreen({
+    super.key,
+    required this.chat,
+    this.isInline = false,
+    this.onToggleInfo,
+  });
 
   @override
   State<ChatViewScreen> createState() => _ChatViewScreenState();
@@ -44,7 +56,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   bool _isRecording = false;
   int _recordSeconds = 0;
   Timer? _recordTimer;
-  final _record = Record();
+  final _record = AudioRecorder();
   final _imagePicker = ImagePicker();
   Message? _replyTo;
   int? _editingMessageIndex;
@@ -52,6 +64,8 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   bool _showScrollDown = false;
   List<String> _typingUsers = [];
   int? _selfDestructSeconds;
+  bool _isPinned = false;
+  bool _isMuted = false;
 
   // socket sub ids — cancelled in dispose so we only remove this screen's
   // listeners
@@ -80,13 +94,18 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     'island': '🏝️',
   };
 
-  static const _stickers = ['👍', '❤️', '🔥', '😂', '🎉', '👏', '🙏', '👋', '⭐', '🚀'];
+  static const _stickers = [
+    '👍', '❤️', '😂', '🔥', '🎉', '👏', '👋', '⭐',
+    '🚀', '🤯', '🤔', '😢', '😎', '😡', '💩', '🦄', '😍', '😉', '😱', '😘'
+  ];
   static const _reactions = ['👍', '❤️', '🔥', '😂', '😮', '🎉'];
   static const _selfDestructOptions = [10, 60, 3600, 86400, 604800];
 
   @override
   void initState() {
     super.initState();
+    _isPinned = widget.chat.pinnedAt != null;
+    _isMuted = widget.chat.muted;
     _loadDraft();
     _loadMessages();
     _joinChat();
@@ -174,12 +193,13 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
 
   void _setupSocketListeners() {
     final socket = context.read<SocketService>();
-    _socketSubIds.add(socket.onMessage((data) {
+    _socketSubIds.add(socket.onMessage((data) async {
       if (data['chatId'] == widget.chat.id && data['message'] != null) {
         // mounted check — message arriving during a navigation transition
         // would crash on a disposed State
         if (!mounted) return;
         final msg = Message.fromJson(data['message']);
+        msg.content = await CryptoService().decryptMessage(msg.content, widget.chat.id);
         setState(() => _messages.add(msg));
         _scrollToBottom();
       }
@@ -202,10 +222,11 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         setState(() => _typingUsers.remove(data['username']));
       }
     }));
-    _socketSubIds.add(socket.onMessageUpdate((data) {
+    _socketSubIds.add(socket.onMessageUpdate((data) async {
       if (data['chatId'] == widget.chat.id && data['message'] != null) {
         if (!mounted) return;
         final msg = Message.fromJson(data['message']);
+        msg.content = await CryptoService().decryptMessage(msg.content, widget.chat.id);
         setState(() {
           final idx = _messages.indexWhere((m) => m.id == msg.id);
           if (idx >= 0) {
@@ -355,7 +376,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       }
       return;
     }
-    await _record.start();
+    await _record.start(const RecordConfig(), path: 'voice.m4a');
     if (!mounted) return;
     setState(() {
       _isRecording = true;
@@ -381,8 +402,13 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     if (path == null || _recordSeconds < 1) return;
 
     try {
-      final file = File(path);
-      final bytes = await file.readAsBytes();
+      Uint8List bytes;
+      if (kIsWeb) {
+        final response = await http.get(Uri.parse(path));
+        bytes = response.bodyBytes;
+      } else {
+        bytes = await File(path).readAsBytes();
+      }
 
       if (bytes.length > kMaxAttachmentBytes) {
         if (mounted) {
@@ -460,8 +486,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   Future<void> _pickImage() async {
     final picker = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 70);
     if (picker == null) return;
-    final file = File(picker.path);
-    final bytes = await file.readAsBytes();
+    final bytes = await picker.readAsBytes();
 
     if (bytes.length > kMaxAttachmentBytes) {
       if (mounted) {
@@ -583,47 +608,140 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   void _showStickerPicker() {
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       showDragHandle: true,
-      builder: (sheetCtx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Text(
-                'Stickers',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold),
+      builder: (sheetCtx) {
+        String activeTab = 'Custom';
+
+        return StatefulBuilder(
+          builder: (sheetCtx, setSheetState) {
+            final List<dynamic> items = activeTab == 'Custom'
+                ? _stickers
+                : animatedEmojis.where((e) => e.category == activeTab).toList();
+
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.6,
               ),
-            ),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              gridDelegate:
-                  const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 5,
-                childAspectRatio: 1,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-              ),
-              itemCount: _stickers.length,
-              itemBuilder: (ctx, index) => InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () {
-                  _sendSticker(_stickers[index]);
-                  Navigator.pop(sheetCtx);
-                },
-                child: Center(
-                  child: Text(_stickers[index],
-                      style: const TextStyle(fontSize: 32)),
+              child: SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                      child: Text(
+                        'Stickers & Emojis',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    SizedBox(
+                      height: 40,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        children: [
+                          _buildTabItem(
+                            label: 'Custom',
+                            isActive: activeTab == 'Custom',
+                            onTap: () => setSheetState(() => activeTab = 'Custom'),
+                          ),
+                          ...animatedEmojiCategories.map((cat) => _buildTabItem(
+                                label: cat,
+                                isActive: activeTab == cat,
+                                onTap: () => setSheetState(() => activeTab = cat),
+                              )),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 16),
+                    Expanded(
+                      child: GridView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 5,
+                          childAspectRatio: 1,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                        ),
+                        itemCount: items.length,
+                        itemBuilder: (ctx, index) {
+                          final item = items[index];
+
+                          if (activeTab == 'Custom') {
+                            final stickerEmoji = item as String;
+                            return InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () {
+                                _sendSticker(stickerEmoji);
+                                Navigator.pop(sheetCtx);
+                              },
+                              child: Center(
+                                child: Text(stickerEmoji,
+                                    style: const TextStyle(fontSize: 32)),
+                              ),
+                            );
+                          } else {
+                            final emoji = item as AnimatedEmoji;
+                            return InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () {
+                                _sendSticker('noto-${emoji.codepoint}');
+                                Navigator.pop(sheetCtx);
+                              },
+                              child: Center(
+                                child: Image.network(
+                                  'https://fonts.gstatic.com/s/e/notoemoji/latest/${emoji.codepoint}/512.webp',
+                                  width: 44,
+                                  height: 44,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      Text(emoji.char,
+                                          style: const TextStyle(fontSize: 32)),
+                                  loadingBuilder: (context, child, loadingProgress) {
+                                    if (loadingProgress == null) return child;
+                                    return Text(emoji.char,
+                                        style: const TextStyle(fontSize: 32));
+                                  },
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildTabItem({
+    required String label,
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: isActive,
+        onSelected: (_) => onTap(),
+        selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+        labelStyle: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: isActive
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
         ),
       ),
     );
@@ -797,6 +915,49 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     super.dispose();
   }
 
+  Widget _buildBackground(AppUser? user, Color accentColor, bool isDark) {
+    final wallpaper = user?.wallpaper ?? 'dots';
+    final baseBgColor = isDark ? const Color(0xFF0F171A) : const Color(0xFFF7FCF9);
+    final patternColor = accentColor.withOpacity(isDark ? 0.05 : 0.08);
+
+    if (wallpaper == 'plain') {
+      return Container(color: baseBgColor);
+    }
+    
+    if (wallpaper == 'gradient') {
+      return Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              accentColor.withOpacity(isDark ? 0.12 : 0.18),
+              baseBgColor,
+              baseBgColor,
+            ],
+            stops: const [0.0, 0.6, 1.0],
+          ),
+        ),
+      );
+    }
+
+    CustomPainter painter;
+    if (wallpaper == 'grid') {
+      painter = GridPatternPainter(color: patternColor);
+    } else if (wallpaper == 'waves') {
+      painter = WavesPatternPainter(color: patternColor);
+    } else {
+      painter = DotPatternPainter(color: patternColor);
+    }
+
+    return Container(
+      color: baseBgColor,
+      child: CustomPaint(
+        painter: painter,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
@@ -811,43 +972,84 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
-        title: Row(
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: AvatarIcon(
-                iconKey: avatar.emoji,
-                colorName: avatar.color,
-                size: 36,
-              ),
-            ),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
+        automaticallyImplyLeading: !widget.isInline,
+        title: GestureDetector(
+          onTap: () {
+            if (widget.isInline && widget.onToggleInfo != null) {
+              widget.onToggleInfo!();
+            } else {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ChatInfoScreen(
+                    chat: widget.chat,
+                    messages: _messages,
                   ),
-                  if (typing.isNotEmpty)
-                    Text(
-                      typing,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.green[300],
-                      ),
-                    ),
-                ],
+                ),
+              );
+            }
+          },
+          behavior: HitTestBehavior.opaque,
+          child: Row(
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: AvatarIcon(
+                  iconKey: avatar.emoji,
+                  colorName: avatar.color,
+                  size: 36,
+                  seed: widget.chat.type == 'direct'
+                      ? widget.chat.members
+                          .where((m) => m.user.id != userId)
+                          .firstOrNull
+                          ?.user
+                          .id
+                      : widget.chat.id,
+                ),
               ),
-            ),
-          ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (widget.chat.type != 'saved') ...[
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.lock_outline,
+                            size: 14,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (typing.isNotEmpty)
+                      Text(
+                        typing,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.green[300],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           PopupMenuButton<String>(
@@ -856,8 +1058,8 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
             itemBuilder: (context) => [
               if (widget.chat.type != 'saved') ...[
                 const PopupMenuItem(value: 'invite', child: Text('Invite Link')),
-                const PopupMenuItem(value: 'pin', child: Text('Pin/Unpin')),
-                const PopupMenuItem(value: 'mute', child: Text('Mute/Unmute')),
+                PopupMenuItem(value: 'pin', child: Text(_isPinned ? 'Unpin chat' : 'Pin chat')),
+                PopupMenuItem(value: 'mute', child: Text(_isMuted ? 'Unmute notifications' : 'Mute notifications')),
                 const PopupMenuItem(value: 'leave', child: Text('Leave')),
                 const PopupMenuItem(value: 'delete', child: Text('Delete Chat')),
               ],
@@ -874,9 +1076,25 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
                   );
                 }
               } else if (value == 'pin') {
-                await chatService.pinChat(widget.chat.id, true);
+                try {
+                  final newPinned = !_isPinned;
+                  await chatService.pinChat(widget.chat.id, newPinned);
+                  setState(() => _isPinned = newPinned);
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+                  }
+                }
               } else if (value == 'mute') {
-                await chatService.muteChat(widget.chat.id, true);
+                try {
+                  final newMuted = !_isMuted;
+                  await chatService.muteChat(widget.chat.id, newMuted);
+                  setState(() => _isMuted = newMuted);
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+                  }
+                }
               } else if (value == 'leave') {
                 await chatService.leaveChat(widget.chat.id);
                 if (mounted) Navigator.pop(context);
@@ -944,6 +1162,13 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
           Expanded(
             child: Stack(
               children: [
+                Positioned.fill(
+                  child: _buildBackground(
+                    auth.currentUser,
+                    accentColors[auth.currentUser?.accentColor] ?? const Color(0xFF10b981),
+                    Theme.of(context).brightness == Brightness.dark,
+                  ),
+                ),
                 _loading
                     ? const Center(child: CircularProgressIndicator())
                     : _messages.isEmpty
@@ -1187,50 +1412,121 @@ class _MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isSticker = message.type == 'sticker';
+    final cleanContent = message.content.trim();
+    final isSingleAnimatedEmoji = message.type == 'text' &&
+        animatedEmojis.any((e) => e.char == cleanContent);
+    final isFloating = isSticker || isSingleAnimatedEmoji;
+
     return GestureDetector(
       onLongPress: onLongPress,
       child: Align(
         alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 2),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+          padding: isFloating
+              ? EdgeInsets.zero
+              : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.75),
           decoration: BoxDecoration(
-            color: isOwn ? const Color(0xFF10b981) : Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(16),
-              topRight: const Radius.circular(16),
-              bottomLeft: isOwn ? const Radius.circular(16) : Radius.zero,
-              bottomRight: isOwn ? Radius.zero : const Radius.circular(16),
-            ),
+            color: isFloating
+                ? Colors.transparent
+                : (isOwn
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.surface),
+            borderRadius: isFloating
+                ? null
+                : BorderRadius.only(
+                    topLeft: const Radius.circular(16),
+                    topRight: const Radius.circular(16),
+                    bottomLeft: isOwn ? const Radius.circular(16) : Radius.zero,
+                    bottomRight:
+                        isOwn ? Radius.zero : const Radius.circular(16),
+                  ),
+            boxShadow: isFloating
+                ? null
+                : (isOwn
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 2,
+                          offset: const Offset(0, 1),
+                        )
+                      ]),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (showSender)
-                Text(message.sender.name ?? 'Unknown', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue[300])),
-              _buildContent(),
+              if (showSender && !isFloating)
+                Text(message.sender.name ?? 'Unknown',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[300])),
+              _buildContent(context),
               if (reactions.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Wrap(
                     spacing: 4,
-                    children: reactions.map((r) => Text(r.emoji, style: const TextStyle(fontSize: 16))).toList(),
+                    children: reactions
+                        .map((r) =>
+                            Text(r.emoji, style: const TextStyle(fontSize: 16)))
+                        .toList(),
                   ),
                 ),
-              const SizedBox(height: 2),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (message.editedAt != null) const Text('edited ', style: TextStyle(fontSize: 9, color: Colors.grey)),
-                  if (message.expiresIn != null) const Icon(Icons.timer, size: 10, color: Colors.amber),
-                  Text(_formatTime(message.createdAt), style: TextStyle(fontSize: 10, color: isOwn ? Colors.white70 : Colors.grey)),
-                  if (isOwn) ...[
-                    const SizedBox(width: 2),
-                    Icon(message.status == 'read' ? Icons.done_all : Icons.done, size: 14, color: message.status == 'read' ? Colors.lightBlue : (isOwn ? Colors.white70 : Colors.grey)),
+              if (!isFloating) ...[
+                const SizedBox(height: 2),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (message.editedAt != null)
+                      Text(
+                        'edited ',
+                        style: TextStyle(
+                          fontSize: 9,
+                          color: isOwn
+                              ? Theme.of(context)
+                                  .colorScheme
+                                  .onPrimary
+                                  .withOpacity(0.6)
+                              : Colors.grey,
+                        ),
+                      ),
+                    if (message.expiresIn != null)
+                      const Icon(Icons.timer, size: 10, color: Colors.amber),
+                    Text(
+                      _formatTime(message.createdAt),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isOwn
+                            ? Theme.of(context)
+                                .colorScheme
+                                .onPrimary
+                                .withOpacity(0.7)
+                            : Colors.grey,
+                      ),
+                    ),
+                    if (isOwn) ...[
+                      const SizedBox(width: 2),
+                      Icon(
+                        message.status == 'read'
+                            ? Icons.done_all
+                            : Icons.done,
+                        size: 14,
+                        color: message.status == 'read'
+                            ? Colors.lightBlue[200]
+                            : Theme.of(context)
+                                .colorScheme
+                                .onPrimary
+                                .withOpacity(0.7),
+                      ),
+                    ],
                   ],
-                ],
-              ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1238,21 +1534,78 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildContent() {
+  Widget _buildContent(BuildContext context) {
     final t = message.type;
-    // e2ee attachments: content is a decrypted url, data url (dev fallback),
-    // or '[delivered]' sentinel — _AttachmentView handles fetch+decrypt+cache
     if (t == 'image' || t == 'file' || t == 'voice') {
       return _AttachmentView(message: message, isOwn: isOwn);
     }
     if (t == 'sticker') {
-      // stickers from web carry a name ('fox', 'like', 'rocket') not an emoji.
-      // map known names to emoji; anything else (emoji from another flutter
-      // client, or unknown name) renders as-is
-      final emoji = _stickerEmojiMap[message.content] ?? message.content;
+      final cleanContent = message.content.trim();
+      if (cleanContent.startsWith('noto-')) {
+        final codepoint = cleanContent.substring(5);
+        return Lottie.network(
+          'https://fonts.gstatic.com/s/e/notoemoji/latest/$codepoint/lottie.json',
+          width: 100,
+          height: 100,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) =>
+              Text(message.content, style: const TextStyle(fontSize: 48)),
+        );
+      }
+
+      // Check if it is a local Lottie sticker
+      final localStickers = {
+        'thumbs-up', 'heart', 'laughing', 'fire', 'party', 'clap', 'wave', 'star'
+      };
+      
+      final Map<String, String> emojiToStickerMap = {
+        '👍': 'thumbs-up',
+        '❤️': 'heart',
+        '😂': 'laughing',
+        '🔥': 'fire',
+        '🎉': 'party',
+        '👏': 'clap',
+        '👋': 'wave',
+        '⭐': 'star',
+      };
+      
+      final stickerKey = emojiToStickerMap[cleanContent] ?? cleanContent;
+      if (localStickers.contains(stickerKey)) {
+        return Lottie.asset(
+          'assets/lottie/$stickerKey.json',
+          width: 100,
+          height: 100,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) =>
+              Text(message.content, style: const TextStyle(fontSize: 48)),
+        );
+      }
+
+      final emoji = _ChatViewScreenState._stickerEmojiMap[cleanContent] ?? message.content;
       return Text(emoji, style: const TextStyle(fontSize: 48));
     }
-    return Text(message.content, style: TextStyle(color: isOwn ? Colors.white : null, fontSize: 15));
+
+    // Check for single animated emoji
+    final cleanContent = message.content.trim();
+    final matchedEmoji = animatedEmojis.where((e) => e.char == cleanContent).firstOrNull;
+    if (matchedEmoji != null) {
+      return Lottie.network(
+        matchedEmoji.lottieUrl,
+        width: 100,
+        height: 100,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) =>
+            Text(message.content, style: const TextStyle(fontSize: 48)),
+      );
+    }
+
+    return Text(
+      message.content,
+      style: TextStyle(
+        color: isOwn ? Theme.of(context).colorScheme.onPrimary : null,
+        fontSize: 15,
+      ),
+    );
   }
 
   String _formatTime(String iso) {
@@ -1351,7 +1704,7 @@ class _AttachmentViewState extends State<_AttachmentView> {
           return;
         }
         final cipherText = utf8.decode(res.bodyBytes);
-        final dataUrl = await CryptoService().decrypt(cipherText);
+        final dataUrl = await CryptoService().decryptMessage(cipherText, msg.chatId);
         _cache[msg.id] = dataUrl;
         if (mounted) {
           setState(() {
@@ -1571,5 +1924,109 @@ class _AttachOption extends StatelessWidget {
       ),
     );
   }
+}
+
+class DotPatternPainter extends CustomPainter {
+  final Color color;
+  const DotPatternPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeCap = StrokeCap.round;
+
+    const double spacing = 28.0;
+    for (double x = 0.0; x < size.width; x += spacing) {
+      for (double y = 0.0; y < size.height; y += spacing) {
+        canvas.drawCircle(Offset(x, y), 1.0, paint);
+      }
+    }
+    for (double x = spacing / 2; x < size.width; x += spacing) {
+      for (double y = spacing / 2; y < size.height; y += spacing) {
+        canvas.drawCircle(Offset(x, y), 1.0, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class GridPatternPainter extends CustomPainter {
+  final Color color;
+  const GridPatternPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 0.5
+      ..style = PaintingStyle.stroke;
+
+    const double spacing = 32.0;
+    for (double x = 0.0; x < size.width; x += spacing) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (double y = 0.0; y < size.height; y += spacing) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class WavesPatternPainter extends CustomPainter {
+  final Color color;
+  const WavesPatternPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+
+    final path1 = Path();
+    path1.moveTo(0, size.height * 0.35);
+    path1.quadraticBezierTo(
+      size.width * 0.25, size.height * 0.3,
+      size.width * 0.5, size.height * 0.4,
+    );
+    path1.quadraticBezierTo(
+      size.width * 0.75, size.height * 0.5,
+      size.width, size.height * 0.45,
+    );
+
+    final path2 = Path();
+    path2.moveTo(0, size.height * 0.5);
+    path2.quadraticBezierTo(
+      size.width * 0.3, size.height * 0.6,
+      size.width * 0.6, size.height * 0.48,
+    );
+    path2.quadraticBezierTo(
+      size.width * 0.85, size.height * 0.38,
+      size.width, size.height * 0.55,
+    );
+
+    final path3 = Path();
+    path3.moveTo(0, size.height * 0.75);
+    path3.quadraticBezierTo(
+      size.width * 0.2, size.height * 0.7,
+      size.width * 0.45, size.height * 0.8,
+    );
+    path3.quadraticBezierTo(
+      size.width * 0.75, size.height * 0.9,
+      size.width, size.height * 0.78,
+    );
+
+    canvas.drawPath(path1, paint);
+    canvas.drawPath(path2, paint);
+    canvas.drawPath(path3, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 

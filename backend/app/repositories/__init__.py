@@ -8,7 +8,7 @@ from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.security import now_ms
+from app.core.security import escape_like, now_ms
 from app.models import Chat, ChatMember, Message, Reaction, StarredMessage, User
 
 
@@ -35,12 +35,12 @@ class UserRepository:
         return result.scalar_one_or_none()
 
     async def search(self, query: str, exclude_id: str, limit: int = 20) -> List[User]:
-        q = f"%{query.lower()}%"
+        q = f"%{escape_like(query.lower())}%"
         result = await self.db.execute(
             select(User)
             .where(
                 User.id != exclude_id,
-                (User.username.ilike(q)) | (User.name.ilike(q)),
+                (User.username.ilike(q, escape="\\")) | (User.name.ilike(q, escape="\\")),
             )
             .limit(limit)
         )
@@ -106,15 +106,16 @@ class ChatRepository:
         return result.scalar_one_or_none()
 
     async def create(self, **kwargs) -> Chat:
-        chat = Chat(id=_id(), created_at=now_ms(), updated_at=now_ms(), **kwargs)
+        cid = kwargs.pop("id", None) or _id()
+        chat = Chat(id=cid, created_at=now_ms(), updated_at=now_ms(), **kwargs)
         self.db.add(chat)
         await self.db.flush()
         return chat
 
-    async def add_member(self, chat_id: str, user_id: str, role: str = "member") -> ChatMember:
+    async def add_member(self, chat_id: str, user_id: str, role: str = "member", chat_key: Optional[str] = None) -> ChatMember:
         member = ChatMember(
             id=_id(), chat_id=chat_id, user_id=user_id, role=role,
-            joined_at=now_ms(), last_read_at=now_ms(),
+            joined_at=now_ms(), last_read_at=now_ms(), chat_key=chat_key,
         )
         self.db.add(member)
         await self.db.flush()
@@ -182,7 +183,8 @@ class MessageRepository:
         if before is not None:
             stmt = stmt.where(Message.created_at < before)
         if query:
-            stmt = stmt.where(Message.content.ilike(f"%{query}%"))
+            escaped = escape_like(query)
+            stmt = stmt.where(Message.content.ilike(f"%{escaped}%", escape="\\"))
         stmt = stmt.order_by(Message.created_at.desc()).limit(limit)
         result = await self.db.execute(stmt)
         return list(reversed(result.scalars().all()))

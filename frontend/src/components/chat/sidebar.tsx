@@ -54,7 +54,7 @@ export function Sidebar() {
       <aside className="hidden md:flex w-[68px] shrink-0 flex-col items-center justify-between border-r bg-sidebar/80 zc-glass-sidebar py-4">
         <div className="flex flex-col items-center gap-2">
           <div className="mb-3 relative h-12 w-12">
-            <Image src="/logo.png" alt="Cryptalk" width={48} height={48} className="object-contain" priority />
+            <Image src="/logo.png" alt="Cryptalk" width={48} height={48} className="object-contain" style={{ height: 'auto' }} priority />
             <span
               className={cn(
                 'absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-sidebar',

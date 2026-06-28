@@ -134,7 +134,15 @@ export function useSocket() {
       else removeTyping(data.chatId, data.userId)
     })
 
-    socket.on('chat-updated', (data: { chat: any }) => {
+    socket.on('chat-updated', async (data: { chat: any }) => {
+      if (data.chat.chatKey) {
+        try {
+          const { decryptAndStoreChatKeys } = await import('@/lib/e2ee')
+          await decryptAndStoreChatKeys([data.chat])
+        } catch (e) {
+          console.warn('Failed to decrypt group key on chat-updated:', e)
+        }
+      }
       upsertChat({
         ...data.chat,
         lastReadAt: data.chat.lastReadAt || new Date().toISOString(),

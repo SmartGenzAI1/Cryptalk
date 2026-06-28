@@ -38,7 +38,7 @@ export function ChatWindow() {
   const chats = useChatStore((s) => s.chats)
   const currentUser = useChatStore((s) => s.currentUser)
   const onlineUserIds = useChatStore((s) => s.onlineUserIds)
-  const messages = useChatStore((s) => s.messages[activeChatId] ?? EMPTY_MESSAGES)
+  const messages = useChatStore((s) => activeChatId ? s.messages[activeChatId] : EMPTY_MESSAGES)
   const setActiveChatId = useChatStore((s) => s.setActiveChatId)
   const setActiveChat = useChatStore((s) => s.setActiveChat)
   const setInfoPanelOpen = useChatStore((s) => s.setInfoPanelOpen)
@@ -61,7 +61,7 @@ export function ChatWindow() {
       : `${activeChat.members.length} members`
     : ''
 
-  const typingUsers = useChatStore((s) => s.typingUsers[activeChatId] ?? EMPTY_TYPING)
+  const typingUsers = useChatStore((s) => activeChatId ? s.typingUsers[activeChatId] : EMPTY_TYPING)
   const typingText =
     typingUsers.length === 0
       ? ''
@@ -70,7 +70,7 @@ export function ChatWindow() {
       : `${typingUsers.length} people typing…`
 
   async function handleLeaveChat() {
-    if (!activeChatId) return
+    if (!activeChatId || !activeChat) return
     if (!confirm(`Leave ${activeChat.title}?`)) return
     try {
       await leaveChat(activeChatId)
@@ -83,7 +83,7 @@ export function ChatWindow() {
   }
 
   async function handleDeleteChat() {
-    if (!activeChatId) return
+    if (!activeChatId || !activeChat) return
     if (!confirm(`Delete "${activeChat.title}" permanently? This cannot be undone.`)) return
     try {
       await deleteChat(activeChatId)
@@ -96,10 +96,19 @@ export function ChatWindow() {
   }
 
   async function handleInviteLink() {
-    if (!activeChatId) return
+    if (!activeChatId || !activeChat) return
     try {
       const data = await generateInviteLink(activeChatId)
-      const link = `${window.location.origin}/join/${data.token}`
+      let hash = ''
+      if (activeChat.type !== 'direct' && activeChat.type !== 'saved') {
+        const { loadGroupKey } = await import('@/lib/key-store')
+        const { toBase64 } = await import('@/lib/crypto')
+        const keyBytes = await loadGroupKey(activeChatId)
+        if (keyBytes) {
+          hash = `#groupKey=${toBase64(keyBytes)}`
+        }
+      }
+      const link = `${window.location.origin}/join/${data.token}${hash}`
       navigator.clipboard.writeText(link)
       toast.success('Invite link copied!', { description: link })
     } catch (e: any) {
@@ -166,7 +175,7 @@ export function ChatWindow() {
             transition={{ type: 'spring', stiffness: 200, damping: 15 }}
             className="mx-auto mb-6 h-20 w-20 rounded-3xl overflow-hidden shadow-xl ring-1 ring-border"
           >
-            <Image src="/logo-small.png" alt="Cryptalk" width={80} height={80} className="object-contain" />
+            <Image src="/logo-small.png" alt="Cryptalk" width={80} height={80} className="object-contain" style={{ height: 'auto' }} />
           </motion.div>
           <h2 className="text-2xl font-bold mb-2 tracking-tight">Welcome to Cryptalk</h2>
           <p className="text-muted-foreground mb-6">
@@ -213,7 +222,8 @@ export function ChatWindow() {
             <div className="font-semibold truncate flex items-center gap-1.5">
               {activeChat.title}
               {e2eeEnabled && activeChat.type !== 'saved' && (
-                <svg className="h-3 w-3 text-emerald-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" title="End-to-end encrypted">
+                <svg className="h-3 w-3 text-emerald-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <title>End-to-end encrypted</title>
                   <rect x="3" y="11" width="18" height="11" rx="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>

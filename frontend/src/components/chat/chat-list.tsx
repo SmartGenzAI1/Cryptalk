@@ -27,7 +27,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import { lazy, Suspense, useCallback } from 'react'
+import { lazy, Suspense, useCallback, memo } from 'react'
 import { formatChatListTime } from '@/lib/format'
 
 const NewChatDialog = lazy(() => import('./new-chat-dialog').then(m => ({ default: m.NewChatDialog })))
@@ -37,6 +37,144 @@ import { toast } from 'sonner'
 import { motion } from 'framer-motion'
 import { apiGet, apiPost } from '@/lib/api'
 import { getSocket } from '@/hooks/use-socket'
+
+const ChatListItemView = memo(({
+  chat,
+  index,
+  active,
+  unreadCount,
+  emoji,
+  color,
+  previewText,
+  previewIcon,
+  title,
+  online,
+  currentUser,
+  onOpen,
+  onHover,
+  onLeave,
+  onPin,
+  onMute,
+  onViewInfo,
+}: {
+  chat: ChatListItem
+  index: number
+  active: boolean
+  unreadCount: number
+  emoji: string
+  color: string
+  previewText: string
+  previewIcon: React.ReactNode
+  title: string
+  online: boolean
+  currentUser: any
+  onOpen: () => void
+  onHover: () => void
+  onLeave: () => void
+  onPin: () => void
+  onMute: () => void
+  onViewInfo: () => void
+}) => {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <motion.button
+          initial={{ opacity: 0, x: -8 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.25, delay: Math.min(index * 0.02, 0.15), ease: [0.16, 1, 0.3, 1] }}
+          onClick={onOpen}
+          onMouseEnter={onHover}
+          onMouseLeave={onLeave}
+          className={cn(
+            'w-full flex items-center gap-3 p-2.5 rounded-2xl transition-all duration-200 text-left mb-0.5 zc-tap group',
+            active
+              ? 'bg-gradient-to-r from-primary/20 to-primary/5 shadow-sm'
+              : 'hover:bg-accent/70'
+          )}
+        >
+          <div className="relative">
+            <ChatAvatar emoji={emoji} color={color} size="md" online={online} userId={chat.id} eager={index < 5} />
+            {chat.muted && (
+              <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-muted-foreground flex items-center justify-center border-2 border-background">
+                <BellOff className="h-2.5 w-2.5 text-background" />
+              </span>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <span className={cn('font-semibold truncate text-[15px]', active && 'text-primary')}>
+                {title}
+              </span>
+              <div className="flex items-center gap-1 shrink-0">
+                {chat.lastMessage?.senderId === currentUser?.id && chat.lastMessage && (
+                  <CheckCheck className="h-3.5 w-3.5 text-emerald-500" />
+                )}
+                <span className={cn('text-[11px]', unreadCount ? 'text-primary font-bold' : 'text-muted-foreground')}>
+                  {chat.lastMessage ? formatChatListTime(chat.lastMessage.createdAt) : ''}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 mt-0.5">
+              <span className="text-[13px] text-muted-foreground truncate flex items-center gap-1">
+                {previewIcon}
+                <span className="truncate">{previewText}</span>
+              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {chat.pinnedAt && unreadCount === 0 && (
+                  <Pin className="h-3.5 w-3.5 text-muted-foreground rotate-45" />
+                )}
+                {unreadCount > 0 && (
+                  <span className={cn(
+                    'min-w-5 h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center',
+                    chat.muted
+                      ? 'bg-muted-foreground/40 text-background'
+                      : 'bg-primary text-primary-foreground zc-glow'
+                  )}>
+                    {unreadCount}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </motion.button>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-52">
+        <ContextMenuItem onClick={onPin}>
+          {chat.pinnedAt ? <PinOff className="h-4 w-4 mr-2" /> : <Pin className="h-4 w-4 mr-2 rotate-45" />}
+          {chat.pinnedAt ? 'Unpin chat' : 'Pin chat'}
+        </ContextMenuItem>
+        <ContextMenuItem onClick={onMute}>
+          {chat.muted ? <Volume2 className="h-4 w-4 mr-2" /> : <BellOff className="h-4 w-4 mr-2" />}
+          {chat.muted ? 'Unmute' : 'Mute notifications'}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={onViewInfo}>
+          <MoreVertical className="h-4 w-4 mr-2" /> View info
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  )
+}, (prev, next) => {
+  return (
+    prev.active === next.active &&
+    prev.index === next.index &&
+    prev.unreadCount === next.unreadCount &&
+    prev.emoji === next.emoji &&
+    prev.color === next.color &&
+    prev.previewText === next.previewText &&
+    prev.title === next.title &&
+    prev.online === next.online &&
+    prev.currentUser === next.currentUser &&
+    prev.chat.title === next.chat.title &&
+    prev.chat.avatarEmoji === next.chat.avatarEmoji &&
+    prev.chat.avatarColor === next.chat.avatarColor &&
+    prev.chat.muted === next.chat.muted &&
+    prev.chat.pinnedAt === next.chat.pinnedAt &&
+    prev.chat.lastMessage?.id === next.chat.lastMessage?.id &&
+    prev.chat.lastMessage?.content === next.chat.lastMessage?.content &&
+    prev.chat.lastMessage?.createdAt === next.chat.lastMessage?.createdAt
+  )
+})
 
 export function ChatList() {
   const chats = useChatStore((s) => s.chats)
@@ -290,91 +428,7 @@ export function ChatList() {
     }
   }
 
-  function renderChat(chat: ChatListItem, index: number) {
-    const active = chat.id === activeChatId
-    const unread = chat.unreadCount || 0
-    const { emoji, color } = getDisplayEmoji(chat)
-    const preview = getPreview(chat)
-    return (
-      <ContextMenu key={chat.id}>
-        <ContextMenuTrigger asChild>
-          <motion.button
-            initial={{ opacity: 0, x: -8 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.25, delay: Math.min(index * 0.02, 0.15), ease: [0.16, 1, 0.3, 1] }}
-            onClick={() => openChat(chat)}
-            onMouseEnter={() => schedulePrefetch(chat)}
-            onMouseLeave={() => cancelPrefetch(chat.id)}
-            className={cn(
-              'w-full flex items-center gap-3 p-2.5 rounded-2xl transition-all duration-200 text-left mb-0.5 zc-tap group',
-              active
-                ? 'bg-gradient-to-r from-primary/20 to-primary/5 shadow-sm'
-                : 'hover:bg-accent/70'
-            )}
-          >
-            <div className="relative">
-              <ChatAvatar emoji={emoji} color={color} size="md" online={isOnline(chat)} userId={chat.id} eager={index < 5} />
-              {chat.muted && (
-                <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-muted-foreground flex items-center justify-center border-2 border-background">
-                  <BellOff className="h-2.5 w-2.5 text-background" />
-                </span>
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <span className={cn('font-semibold truncate text-[15px]', active && 'text-primary')}>
-                  {getDisplayTitle(chat)}
-                </span>
-                <div className="flex items-center gap-1 shrink-0">
-                  {chat.lastMessage?.senderId === currentUser?.id && chat.lastMessage && (
-                    <CheckCheck className="h-3.5 w-3.5 text-emerald-500" />
-                  )}
-                  <span className={cn('text-[11px]', unread ? 'text-primary font-bold' : 'text-muted-foreground')}>
-                    {chat.lastMessage ? formatChatListTime(chat.lastMessage.createdAt) : ''}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between gap-2 mt-0.5">
-                <span className="text-[13px] text-muted-foreground truncate flex items-center gap-1">
-                  {preview.icon}
-                  <span className="truncate">{preview.text}</span>
-                </span>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {chat.pinnedAt && unread === 0 && (
-                    <Pin className="h-3.5 w-3.5 text-muted-foreground rotate-45" />
-                  )}
-                  {unread > 0 && (
-                    <span className={cn(
-                      'min-w-5 h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center',
-                      chat.muted
-                        ? 'bg-muted-foreground/40 text-background'
-                        : 'bg-primary text-primary-foreground zc-glow'
-                    )}>
-                      {unread}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </motion.button>
-        </ContextMenuTrigger>
-        <ContextMenuContent className="w-52">
-          <ContextMenuItem onClick={() => togglePin(chat)}>
-            {chat.pinnedAt ? <PinOff className="h-4 w-4 mr-2" /> : <Pin className="h-4 w-4 mr-2 rotate-45" />}
-            {chat.pinnedAt ? 'Unpin chat' : 'Pin chat'}
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => toggleMute(chat)}>
-            {chat.muted ? <Volume2 className="h-4 w-4 mr-2" /> : <BellOff className="h-4 w-4 mr-2" />}
-            {chat.muted ? 'Unmute' : 'Mute notifications'}
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem onClick={() => { openChat(chat); setInfoPanelOpen(true) }}>
-            <MoreVertical className="h-4 w-4 mr-2" /> View info
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
-    )
-  }
+  // renderChat function replaced by memoized ChatListItemView component
 
   return (
     <div className="w-full sm:w-[340px] md:w-[360px] shrink-0 flex flex-col border-r bg-sidebar/60 zc-glass-sidebar">
@@ -412,7 +466,28 @@ export function ChatList() {
                   <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
                     <Pin className="h-3 w-3 rotate-45" /> Pinned
                   </div>
-                  {pinned.map((c, i) => renderChat(c, i))}
+                  {pinned.map((c, i) => (
+                    <ChatListItemView
+                      key={c.id}
+                      chat={c}
+                      index={i}
+                      active={c.id === activeChatId}
+                      unreadCount={c.unreadCount || 0}
+                      emoji={getDisplayEmoji(c).emoji}
+                      color={getDisplayEmoji(c).color}
+                      previewText={getPreview(c).text}
+                      previewIcon={getPreview(c).icon}
+                      title={getDisplayTitle(c)}
+                      online={isOnline(c)}
+                      currentUser={currentUser}
+                      onOpen={() => openChat(c)}
+                      onHover={() => schedulePrefetch(c)}
+                      onLeave={() => cancelPrefetch(c.id)}
+                      onPin={() => togglePin(c)}
+                      onMute={() => toggleMute(c)}
+                      onViewInfo={() => { openChat(c); setInfoPanelOpen(true); }}
+                    />
+                  ))}
                 </div>
               )}
               {regular.length > 0 && pinned.length > 0 && (
@@ -425,7 +500,28 @@ export function ChatList() {
                       All chats
                     </div>
                   )}
-                  {regular.map((c, i) => renderChat(c, i + pinned.length))}
+                  {regular.map((c, i) => (
+                    <ChatListItemView
+                      key={c.id}
+                      chat={c}
+                      index={i + pinned.length}
+                      active={c.id === activeChatId}
+                      unreadCount={c.unreadCount || 0}
+                      emoji={getDisplayEmoji(c).emoji}
+                      color={getDisplayEmoji(c).color}
+                      previewText={getPreview(c).text}
+                      previewIcon={getPreview(c).icon}
+                      title={getDisplayTitle(c)}
+                      online={isOnline(c)}
+                      currentUser={currentUser}
+                      onOpen={() => openChat(c)}
+                      onHover={() => schedulePrefetch(c)}
+                      onLeave={() => cancelPrefetch(c.id)}
+                      onPin={() => togglePin(c)}
+                      onMute={() => toggleMute(c)}
+                      onViewInfo={() => { openChat(c); setInfoPanelOpen(true); }}
+                    />
+                  ))}
                 </div>
               )}
             </>

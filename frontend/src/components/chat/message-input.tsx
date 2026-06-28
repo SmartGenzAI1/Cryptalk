@@ -27,6 +27,8 @@ import { apiPost, apiUploadFile } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { MessageWithSender } from '@/lib/types'
 import { AnimatedStickerPicker } from './animated-sticker'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 // 25 MB — must match backend MAX_FILE_SIZE
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -47,7 +49,7 @@ export function MessageInput() {
   const activeChatId = useChatStore((s) => s.activeChatId)
   const activeChat = useChatStore((s) => s.activeChat)
   const currentUser = useChatStore((s) => s.currentUser)
-  const messages = useChatStore((s) => s.messages[activeChatId] ?? EMPTY_MESSAGES)
+  const messages = useChatStore((s) => activeChatId ? s.messages[activeChatId] : EMPTY_MESSAGES)
   const addMessage = useChatStore((s) => s.addMessage)
   const [text, setText] = useState(() => {
     if (typeof window !== 'undefined' && activeChatId) {
@@ -545,26 +547,38 @@ export function MessageInput() {
 
             <Popover open={stickerOpen} onOpenChange={setStickerOpen}>
               <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground zc-tap">
+                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground zc-tap" title="Stickers & Emojis">
                   <Sticker className="h-5 w-5" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-72 p-2" align="start">
-                <div className="text-xs font-medium text-muted-foreground mb-2 px-1">Stickers</div>
-                <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto zc-scroll">
-                  {STICKERS.map((name) => (
-                    <button
-                      key={name}
-                      onClick={() => { send(name, 'sticker'); setStickerOpen(false) }}
-                      className="aspect-square rounded-xl bg-accent hover:bg-primary/15 hover:scale-105 transition-all flex items-center justify-center zc-tap"
-                      title={name}
-                    >
-                      <img src={stickerIconUrl(name)} alt={name} width={48} height={48} loading="lazy" className="object-contain" />
-                    </button>
-                  ))}
-                </div>
-                <div className="text-xs font-medium text-muted-foreground mb-2 mt-3 px-1">Animated</div>
-                <AnimatedStickerPicker onSelect={(name) => { send(name, 'sticker'); setStickerOpen(false) }} />
+              <PopoverContent className="w-80 p-3" align="start">
+                <Tabs defaultValue="animated" className="w-full">
+                  <TabsList className="grid grid-cols-2 w-full mb-3 shrink-0">
+                    <TabsTrigger value="static" className="text-xs font-semibold zc-tap">Static Stickers</TabsTrigger>
+                    <TabsTrigger value="animated" className="text-xs font-semibold zc-tap">Animated Emojis</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="static" className="m-0">
+                    <ScrollArea className="h-72 w-full pr-1">
+                      <div className="grid grid-cols-4 gap-2 p-1">
+                        {STICKERS.map((name) => (
+                          <button
+                            key={name}
+                            onClick={() => { send(name, 'sticker'); setStickerOpen(false) }}
+                            className="aspect-square rounded-xl bg-accent/40 hover:bg-primary/10 hover:scale-105 transition-all flex items-center justify-center p-1 zc-tap"
+                            title={name}
+                          >
+                            <img src={stickerIconUrl(name)} alt={name} width={44} height={44} loading="lazy" className="object-contain" />
+                          </button>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </TabsContent>
+
+                  <TabsContent value="animated" className="m-0">
+                    <AnimatedStickerPicker onSelect={(name) => { send(name, 'sticker'); setStickerOpen(false) }} />
+                  </TabsContent>
+                </Tabs>
               </PopoverContent>
             </Popover>
 

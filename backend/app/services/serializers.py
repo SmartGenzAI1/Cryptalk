@@ -100,6 +100,7 @@ def serialize_chat(
         "role": member.role,
         "pinnedAt": ms_to_iso(member.pinned_at) if member.pinned_at else None,
         "muted": bool(member.muted),
+        "chatKey": member.chat_key,
         "unreadCount": unread_count,
         "members": [serialize_member(m) for m in (chat.members or [])],
         "lastMessage": _serialize_last_message(last_message),

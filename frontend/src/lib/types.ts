@@ -55,6 +55,8 @@ export interface MessageWithSender {
   duration?: number | null
   starred?: boolean
   pinned?: boolean
+  expiresIn?: number | null
+  status?: string | null
   sender: SafeUser
   reactions: Array<{
     id: string

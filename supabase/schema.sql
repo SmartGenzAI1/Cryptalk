@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS "ChatMember" (
     "pinnedAt" BIGINT,
     muted BOOLEAN DEFAULT false,
     "pinnedMessageId" TEXT,
+    "chatKey" TEXT,
     UNIQUE("chatId", "userId")
 );
 CREATE INDEX IF NOT EXISTS idx_chatmember_user ON "ChatMember"("userId");
@@ -73,7 +74,8 @@ CREATE TABLE IF NOT EXISTS "Message" (
     "expiresIn" INTEGER,
     status TEXT DEFAULT 'sent',
     "readBy" TEXT,
-    "deliveredTo" TEXT
+    "deliveredTo" TEXT,
+    "attachmentPath" TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_message_chat_created ON "Message"("chatId", "createdAt");
 
@@ -149,14 +151,78 @@ ALTER TABLE "UserNickname" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "ConnectionRequest" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "Report" ENABLE ROW LEVEL SECURITY;
 
+-- User Table Policies
 CREATE POLICY "users_select_own" ON "User" FOR SELECT USING (true);
 CREATE POLICY "users_update_own" ON "User" FOR UPDATE USING (id = current_setting('app.current_user_id', true));
+
+-- Chat Table Policies
 CREATE POLICY "chats_select_member" ON "Chat" FOR SELECT USING (
     id IN (SELECT "chatId" FROM "ChatMember" WHERE "userId" = current_setting('app.current_user_id', true))
 );
+
+-- Message Table Policies
 CREATE POLICY "messages_select_member" ON "Message" FOR SELECT USING (
     "chatId" IN (SELECT "chatId" FROM "ChatMember" WHERE "userId" = current_setting('app.current_user_id', true))
 );
+
+-- ChatMember Table Policies
 CREATE POLICY "chatmembers_select" ON "ChatMember" FOR SELECT USING (
     "chatId" IN (SELECT "chatId" FROM "ChatMember" cm2 WHERE cm2."userId" = current_setting('app.current_user_id', true))
+);
+
+-- Reaction Table Policies
+CREATE POLICY "reactions_select" ON "Reaction" FOR SELECT USING (
+    "messageId" IN (SELECT id FROM "Message" WHERE "chatId" IN (SELECT "chatId" FROM "ChatMember" WHERE "userId" = current_setting('app.current_user_id', true)))
+);
+CREATE POLICY "reactions_insert" ON "Reaction" FOR INSERT WITH CHECK (
+    "userId" = current_setting('app.current_user_id', true)
+);
+CREATE POLICY "reactions_delete" ON "Reaction" FOR DELETE USING (
+    "userId" = current_setting('app.current_user_id', true)
+);
+
+-- StarredMessage Table Policies
+CREATE POLICY "starred_select" ON "StarredMessage" FOR SELECT USING (
+    "userId" = current_setting('app.current_user_id', true)
+);
+CREATE POLICY "starred_insert" ON "StarredMessage" FOR INSERT WITH CHECK (
+    "userId" = current_setting('app.current_user_id', true)
+);
+CREATE POLICY "starred_delete" ON "StarredMessage" FOR DELETE USING (
+    "userId" = current_setting('app.current_user_id', true)
+);
+
+-- UserBlock Table Policies
+CREATE POLICY "blocks_select" ON "UserBlock" FOR SELECT USING (
+    "blockerId" = current_setting('app.current_user_id', true) OR "blockedId" = current_setting('app.current_user_id', true)
+);
+CREATE POLICY "blocks_insert" ON "UserBlock" FOR INSERT WITH CHECK (
+    "blockerId" = current_setting('app.current_user_id', true)
+);
+CREATE POLICY "blocks_delete" ON "UserBlock" FOR DELETE USING (
+    "blockerId" = current_setting('app.current_user_id', true)
+);
+
+-- UserNickname Table Policies
+CREATE POLICY "nicknames_select" ON "UserNickname" FOR SELECT USING (
+    "ownerId" = current_setting('app.current_user_id', true)
+);
+CREATE POLICY "nicknames_all" ON "UserNickname" FOR ALL USING (
+    "ownerId" = current_setting('app.current_user_id', true)
+);
+
+-- ConnectionRequest Table Policies
+CREATE POLICY "connections_select" ON "ConnectionRequest" FOR SELECT USING (
+    "fromUserId" = current_setting('app.current_user_id', true) OR "toUserId" = current_setting('app.current_user_id', true)
+);
+CREATE POLICY "connections_insert" ON "ConnectionRequest" FOR INSERT WITH CHECK (
+    "fromUserId" = current_setting('app.current_user_id', true)
+);
+CREATE POLICY "connections_update" ON "ConnectionRequest" FOR UPDATE USING (
+    "toUserId" = current_setting('app.current_user_id', true)
+);
+
+-- Report Table Policies
+CREATE POLICY "reports_insert" ON "Report" FOR INSERT WITH CHECK (
+    "reporterId" = current_setting('app.current_user_id', true)
 );

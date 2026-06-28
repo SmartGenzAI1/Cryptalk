@@ -95,6 +95,46 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
       return
     }
     try {
+      // Initialize libsodium and generate a secure 32-byte symmetric group key
+      const sodium = await import('libsodium-wrappers')
+      await sodium.ready
+      const groupKey = sodium.randombytes_buf(32)
+
+      const { toBase64, encryptMessage } = await import('@/lib/crypto')
+      const { loadIdentityKey, saveGroupKey } = await import('@/lib/key-store')
+      
+      const myIdentity = await loadIdentityKey()
+      if (!myIdentity) {
+        throw new Error('Please configure your identity keys before starting chats')
+      }
+      const myPublicKey = toBase64(myIdentity.encryption.publicKey)
+
+      // Encrypt the group key for ourselves
+      const encryptedKeys: Record<string, string> = {}
+      const myEncryptedPayload = await encryptMessage(
+        toBase64(groupKey),
+        myPublicKey,
+        myIdentity.encryption.privateKey
+      )
+      encryptedKeys[currentUser!.id] = JSON.stringify(myEncryptedPayload)
+
+      // Fetch recipient keys and encrypt the group key for each selected member
+      for (const uid of selected) {
+        try {
+          const keys = await apiGet<{ identity_public_key: string | null }>(`/api/keys/${uid}`)
+          if (keys.identity_public_key) {
+            const payload = await encryptMessage(
+              toBase64(groupKey),
+              keys.identity_public_key,
+              myIdentity.encryption.privateKey
+            )
+            encryptedKeys[uid] = JSON.stringify(payload)
+          }
+        } catch (e) {
+          console.warn(`Could not encrypt group key for member ${uid}:`, e)
+        }
+      }
+
       const data = await apiPost<{ chat: any }>('/api/chats', {
         type: isChannel ? 'channel' : 'group',
         title: groupName.trim(),
@@ -103,10 +143,14 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
         avatarEmoji: groupEmoji,
         avatarColor: groupColor,
         expiresInDays: expiresInDays,
+        memberKeys: encryptedKeys,
       })
+
+      // Store group key locally under the newly created chat ID
+      await saveGroupKey(data.chat.id, groupKey)
       await openChatAfterCreate(data.chat)
     } catch (e: any) {
-      toast.error(e.message || 'Failed')
+      toast.error(e.message || 'Failed to create group')
     }
   }
 

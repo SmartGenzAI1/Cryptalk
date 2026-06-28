@@ -18,7 +18,7 @@ function LoadingScreen() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-4">
-        <Image src="/logo.png" alt="Cryptalk" width={64} height={64} className="object-contain" priority />
+        <Image src="/logo.png" alt="Cryptalk" width={64} height={64} className="object-contain" style={{ height: 'auto' }} priority />
         <Loader2 className="h-5 w-5 animate-spin text-primary" />
       </div>
     </div>

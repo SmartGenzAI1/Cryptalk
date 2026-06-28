@@ -21,7 +21,8 @@ import {
 } from 'lucide-react'
 import { fetchAndDecryptAttachment } from '@/lib/attachments'
 import { useChatStore } from '@/stores/chat-store'
-import { MessageWithSender, stickerIconUrl, isLegacyEmoji } from '@/lib/icons'
+import type { MessageWithSender } from '@/lib/types'
+import { stickerIconUrl, isLegacyEmoji } from '@/lib/icons'
 import { ChatAvatar } from './chat-avatar'
 import { Button } from '@/components/ui/button'
 import {
@@ -42,7 +43,7 @@ import { toggleReaction, toggleStar } from '@/lib/actions'
 import { motion, AnimatePresence } from 'framer-motion'
 import { lazy, Suspense } from 'react'
 import { apiGet, apiPatch, apiDelete } from '@/lib/api'
-import { isAnimatedSticker } from '@/lib/animated-stickers'
+import { isAnimatedSticker, getAnimatedEmojiCodepoint, getAnimatedEmojisForText } from '@/lib/animated-stickers'
 
 const ForwardDialog = lazy(() => import('./forward-dialog').then(m => ({ default: m.ForwardDialog })))
 const AnimatedStickerDisplay = lazy(() => import('./animated-sticker').then(m => ({ default: m.AnimatedStickerDisplay })))
@@ -90,6 +91,8 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
   const isSticker = message.type === 'sticker'
   const isImage = message.type === 'image'
   const isFile = message.type === 'file'
+  const animatedEmojiCodepoints = (!isDeleted && message.type === 'text') ? getAnimatedEmojisForText(message.content) : null
+  const hasAnimatedEmojis = !!(animatedEmojiCodepoints && animatedEmojiCodepoints.length > 0)
 
   // deps limited to message.id + content + chatType (stable across re-renders)
   const chatType = activeChat?.type || 'direct'
@@ -393,9 +396,11 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                 transition={{ type: 'spring', stiffness: 380, damping: 28 }}
                 className={cn(
                   'relative rounded-2xl px-3.5 py-2 shadow-sm',
-                  isOwn
-                    ? 'bg-gradient-to-br from-primary to-primary text-primary-foreground rounded-br-md'
-                    : 'bg-background border rounded-bl-md',
+                  (isSticker || hasAnimatedEmojis)
+                    ? 'bg-transparent border-0 shadow-none px-0 py-0'
+                    : isOwn
+                      ? 'bg-gradient-to-br from-primary to-primary text-primary-foreground rounded-br-md'
+                      : 'bg-background border rounded-bl-md',
                   isDeleted && 'opacity-60 italic',
                   starred && 'ring-1 ring-amber-400/50'
                 )}
@@ -450,6 +455,23 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                       className="object-contain"
                     />
                   )
+                ) : hasAnimatedEmojis ? (
+                  <div className="flex items-center gap-2 py-1 flex-wrap">
+                    {animatedEmojiCodepoints.map((cp, idx) => (
+                      <Suspense key={idx} fallback={<span className="text-6xl leading-none">{message.content}</span>}>
+                        <AnimatedStickerDisplay
+                          name={`noto-${cp}`}
+                          size={
+                            animatedEmojiCodepoints.length === 1
+                              ? 100
+                              : animatedEmojiCodepoints.length === 2
+                              ? 85
+                              : 72
+                          }
+                        />
+                      </Suspense>
+                    ))}
+                  </div>
                 ) : isImage ? (
                   attachment.status === 'delivered' ? (
                     <AttachmentPlaceholder text="Image no longer available (delivered & wiped)" />
@@ -510,11 +532,22 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                     )}
 
                 {/* Meta */}
-                {!editing && !isVoice && !isSticker && !isImage && !isFile && (
+                {!editing && !isVoice && !isSticker && !hasAnimatedEmojis && !isImage && !isFile && (
                   <div className={cn('flex items-center gap-1 justify-end mt-0.5 -mb-0.5 text-[10px]', isOwn ? 'text-white/75' : 'text-muted-foreground')}>
                     {starred && <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400" />}
                     {message.editedAt && <span>edited</span>}
                     {message.expiresIn && <Clock className="h-2.5 w-2.5" />}
+                    <span>{formatTime(message.createdAt)}</span>
+                    {isOwn && !isDeleted && <DeliveryTicks status={message.status || 'sent'} />}
+                  </div>
+                )}
+
+                {/* Floating Meta for transparent messages (stickers & animated emojis) */}
+                {!editing && (isSticker || hasAnimatedEmojis) && (
+                  <div className={cn(
+                    'absolute bottom-0 right-0 bg-background/60 dark:bg-card/70 backdrop-blur-[2px] border border-border/10 rounded-full px-1.5 py-0.5 flex items-center gap-1 text-[9px] text-muted-foreground select-none pointer-events-none shadow-sm translate-y-2.5 translate-x-1.5 z-10'
+                  )}>
+                    {starred && <Star className="h-2 w-2 fill-amber-400 text-amber-400" />}
                     <span>{formatTime(message.createdAt)}</span>
                     {isOwn && !isDeleted && <DeliveryTicks status={message.status || 'sent'} />}
                   </div>
@@ -524,7 +557,7 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
               {/* Reactions */}
               {Object.keys(reactionGroups).length > 0 && (
                 <div className={cn('flex flex-wrap gap-1 mt-1', isOwn ? 'justify-end' : 'justify-start')}>
-                  {Object.entries(reactionGroups).map(([emoji, info]) => (
+                  {(Object.entries(reactionGroups) as [string, { count: number; mine: boolean }][]).map(([emoji, info]) => (
                     <motion.button
                       key={emoji}
                       initial={{ scale: 0 }}
