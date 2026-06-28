@@ -91,14 +91,18 @@ async def list_pending_requests(request: Request, db: AsyncSession = Depends(get
 @router.post("/connect")
 async def send_connection_request(req: SendConnectionRequest, request: Request, db: AsyncSession = Depends(get_db)):
     uid = get_current_user_id(request)
-    target_result = await db.execute(select(User).where(User.username == req.to_username.lower()))
+    to_username = (req.to_username or "").strip().lower()
+    if to_username.startswith("@"):
+        to_username = to_username[1:]
+
+    target_result = await db.execute(select(User).where(User.username == to_username))
     target = target_result.scalar_one_or_none()
     if not target:
         raise NotFoundError("User not found")
     if target.id == uid:
         raise ValidationError("Cannot connect with yourself")
 
-    existing = await db.execute(
+    existing_result = await db.execute(
         select(ConnectionRequest).where(
             or_(
                 and_(ConnectionRequest.from_user_id == uid, ConnectionRequest.to_user_id == target.id),
@@ -106,8 +110,13 @@ async def send_connection_request(req: SendConnectionRequest, request: Request, 
             )
         )
     )
-    if existing.scalar_one_or_none():
-        raise ConflictError("Request already exists or you're already connected")
+    existing = existing_result.scalar_one_or_none()
+    if existing:
+        if existing.status in ("accepted", "pending"):
+            raise ConflictError("Request already exists or you're already connected")
+        else:
+            await db.delete(existing)
+            await db.flush()
 
     conn_req = ConnectionRequest(
         id=secrets.token_hex(12),

@@ -54,7 +54,10 @@ export function ConnectionsPanel() {
   }, [])
 
   useEffect(() => {
-    if (!searchQuery.trim()) return
+    if (!searchQuery.trim()) {
+      setSearchResults([])
+      return
+    }
     let cancelled = false
     const t = setTimeout(async () => {
       try {

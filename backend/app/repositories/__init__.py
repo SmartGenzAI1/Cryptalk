@@ -26,13 +26,19 @@ class UserRepository:
         return result.scalar_one_or_none()
 
     async def get_by_username(self, username: str) -> Optional[User]:
+        username = (username or "").strip().lower()
+        if username.startswith("@"):
+            username = username[1:]
         result = await self.db.execute(
-            select(User).where(User.username == username.lower())
+            select(User).where(User.username == username)
         )
         return result.scalar_one_or_none()
 
     async def search(self, query: str, exclude_id: str, limit: int = 20) -> List[User]:
-        q = f"%{escape_like(query.lower())}%"
+        query_clean = (query or "").strip().lower()
+        if query_clean.startswith("@"):
+            query_clean = query_clean[1:]
+        q = f"%{escape_like(query_clean)}%"
         result = await self.db.execute(
             select(User)
             .where(
