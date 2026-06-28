@@ -19,7 +19,7 @@ function MessageErrorFallback() {
 
 export function MessageList() {
   const activeChatId = useChatStore((s) => s.activeChatId)
-  const messages = useChatStore((s) => activeChatId ? s.messages[activeChatId] : EMPTY_MESSAGES)
+  const messages = useChatStore((s) => activeChatId ? (s.messages[activeChatId] || EMPTY_MESSAGES) : EMPTY_MESSAGES)
   const currentUser = useChatStore((s) => s.currentUser)
   const typingUsers = useChatStore((s) => activeChatId ? s.typingUsers[activeChatId] : EMPTY_TYPING)
   const chats = useChatStore((s) => s.chats)

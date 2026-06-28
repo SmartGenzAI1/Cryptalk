@@ -49,7 +49,7 @@ export function MessageInput() {
   const activeChatId = useChatStore((s) => s.activeChatId)
   const activeChat = useChatStore((s) => s.activeChat)
   const currentUser = useChatStore((s) => s.currentUser)
-  const messages = useChatStore((s) => activeChatId ? s.messages[activeChatId] : EMPTY_MESSAGES)
+  const messages = useChatStore((s) => activeChatId ? (s.messages[activeChatId] || EMPTY_MESSAGES) : EMPTY_MESSAGES)
   const addMessage = useChatStore((s) => s.addMessage)
   const [text, setText] = useState(() => {
     if (typeof window !== 'undefined' && activeChatId) {

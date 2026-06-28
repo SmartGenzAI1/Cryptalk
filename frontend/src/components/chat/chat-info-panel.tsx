@@ -13,7 +13,7 @@ import { stickerIconUrl, isLegacyEmoji } from '@/lib/icons'
 export function ChatInfoPanel() {
   const activeChat = useChatStore((s) => s.activeChat)
   const activeChatId = useChatStore((s) => s.activeChatId)
-  const messages = useChatStore((s) => activeChatId ? s.messages[activeChatId] : EMPTY_MESSAGES)
+  const messages = useChatStore((s) => activeChatId ? (s.messages[activeChatId] || EMPTY_MESSAGES) : EMPTY_MESSAGES)
   const onlineUserIds = useChatStore((s) => s.onlineUserIds)
   const currentUser = useChatStore((s) => s.currentUser)
   const e2eeEnabled = useChatStore((s) => s.e2eeEnabled)

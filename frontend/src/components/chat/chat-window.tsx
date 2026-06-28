@@ -38,7 +38,7 @@ export function ChatWindow() {
   const chats = useChatStore((s) => s.chats)
   const currentUser = useChatStore((s) => s.currentUser)
   const onlineUserIds = useChatStore((s) => s.onlineUserIds)
-  const messages = useChatStore((s) => activeChatId ? s.messages[activeChatId] : EMPTY_MESSAGES)
+  const messages = useChatStore((s) => activeChatId ? (s.messages[activeChatId] || EMPTY_MESSAGES) : EMPTY_MESSAGES)
   const setActiveChatId = useChatStore((s) => s.setActiveChatId)
   const setActiveChat = useChatStore((s) => s.setActiveChat)
   const setInfoPanelOpen = useChatStore((s) => s.setInfoPanelOpen)
