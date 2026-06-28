@@ -95,11 +95,13 @@ class AuthService:
 
 def _set_cookie(response: Response, user_id: str) -> None:
     token = create_session_token(user_id)
+    is_prod = settings.is_postgres
     response.set_cookie(
         key=settings.COOKIE_NAME,
         value=token,
         httponly=True,
-        samesite="lax",
+        secure=is_prod,
+        samesite="none" if is_prod else "lax",
         max_age=settings.COOKIE_MAX_AGE,
         path="/",
     )
