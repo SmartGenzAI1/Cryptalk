@@ -139,7 +139,7 @@ app.add_middleware(
     },
 )
 
-_cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",")] if settings.CORS_ORIGINS != "*" else ["*"]
+_cors_origins = [o.strip().rstrip("/") for o in settings.CORS_ORIGINS.split(",")] if settings.CORS_ORIGINS != "*" else ["*"]
 
 if settings.DEBUG:
     # Always allow local development origins with credentials support in DEBUG mode
