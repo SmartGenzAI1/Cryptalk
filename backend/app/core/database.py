@@ -21,7 +21,6 @@ else:
     _connect_args = {
         "statement_cache_size": 0,
     }
-    _engine_kwargs["prepared_statement_cache_size"] = 0
     _engine_kwargs["pool_size"] = 5
     _engine_kwargs["max_overflow"] = 10
     _engine_kwargs["pool_timeout"] = 20
