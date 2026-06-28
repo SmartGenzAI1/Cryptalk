@@ -51,28 +51,9 @@ class StorageService:
 
     @classmethod
     async def _ensure_token(cls) -> Optional[str]:
-        import time
-
         if not settings.has_supabase:
             return None
-        # refresh every 50 min (tokens live ~1h)
-        if cls._token and time.time() < cls._token_expires:
-            return cls._token
-        try:
-            client = cls._get_client()
-            res = await client.post(
-                f"{settings.SUPABASE_URL}/auth/v1/token?grant_type=apikey",
-                headers={"apikey": settings.SUPABASE_KEY},
-            )
-            if res.status_code == 200:
-                data = res.json()
-                cls._token = data.get("access_token")
-                cls._token_expires = time.time() + 50 * 60
-                return cls._token
-            logger.warning("Supabase token fetch failed: %s %s", res.status_code, res.text[:200])
-        except Exception as e:
-            logger.warning("Supabase token fetch error: %s", e)
-        return None
+        return settings.SUPABASE_KEY
 
     @classmethod
     def _headers(cls, token: str, content_type: Optional[str] = None) -> dict:
