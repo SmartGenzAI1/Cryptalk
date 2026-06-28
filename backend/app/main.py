@@ -44,6 +44,19 @@ async def lifespan(app: FastAPI):
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            # Ensure pushToken and pushPlatform columns exist in User table (Postgres/SQLite)
+            try:
+                await conn.execute(text("ALTER TABLE \"User\" ADD COLUMN IF NOT EXISTS \"pushToken\" VARCHAR"))
+                await conn.execute(text("ALTER TABLE \"User\" ADD COLUMN IF NOT EXISTS \"pushPlatform\" VARCHAR"))
+            except Exception:
+                try:
+                    await conn.execute(text("ALTER TABLE \"User\" ADD COLUMN \"pushToken\" VARCHAR"))
+                except Exception:
+                    pass
+                try:
+                    await conn.execute(text("ALTER TABLE \"User\" ADD COLUMN \"pushPlatform\" VARCHAR"))
+                except Exception:
+                    pass
             await conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_chatmember_user "
                 "ON \"ChatMember\" (\"userId\")"
