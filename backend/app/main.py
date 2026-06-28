@@ -8,7 +8,6 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from sqlalchemy import create_engine
 
 from app.api.v1 import api_router
 from app.core.config import settings
@@ -40,20 +39,21 @@ if settings.has_sentry:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if settings.is_postgres:
-        sync_url = settings.database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
-    else:
-        sync_url = f"sqlite:///{settings.DB_PATH}"
-    sync_engine = create_engine(sync_url, echo=False)
-    Base.metadata.create_all(sync_engine)
-    # hot-path indexes (idempotent)
-    with sync_engine.connect() as conn:
-        from sqlalchemy import text
-        conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_chatmember_user "
-            "ON \"ChatMember\" (\"userId\")"
-        ))
-        conn.commit()
+    from app.core.database import engine
+    from sqlalchemy import text
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_chatmember_user "
+                "ON \"ChatMember\" (\"userId\")"
+            ))
+        logger.info("Database tables + indexes ensured")
+    except Exception as e:
+        logger.critical(f"FATAL: Database initialization failed: {e}")
+        if settings.is_postgres:
+            raise
+
     if settings.has_redis:
         try:
             import redis.asyncio as aioredis
@@ -67,9 +67,6 @@ async def lifespan(app: FastAPI):
                 raise RuntimeError(f"Redis connection failed in production mode: {e}")
             else:
                 logger.warning(f"Redis connection failed, continuing in development mode: {e}")
-
-    sync_engine.dispose()
-    logger.info("Database tables + indexes ensured")
 
     # start background media cleanup
     import asyncio
