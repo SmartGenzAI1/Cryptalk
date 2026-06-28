@@ -56,5 +56,5 @@ async def update_settings(
     service: ChatService = Depends(get_chat_service),
 ):
     return await service.update_settings(
-        chat_id, user_id, req.action, req.value, req.message_id,
+        chat_id, user_id, req.action, req.value,
     )

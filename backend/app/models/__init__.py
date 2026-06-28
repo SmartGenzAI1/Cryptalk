@@ -1,4 +1,6 @@
-# ORM models
+# ORM models — ephemeral architecture
+# only auth, profiles, membership, and social data live in the DB.
+# messages are relay-only (WebSocket), never persisted.
 
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -29,8 +31,11 @@ class User(Base):
     signed_prekey_public = Column("signedPreKeyPublic", String, nullable=True)
     signed_prekey_signature = Column("signedPreKeySignature", String, nullable=True)
 
+    # FCM/APNs push token for offline notifications
+    push_token = Column("pushToken", String, nullable=True)
+    push_platform = Column("pushPlatform", String, nullable=True)  # fcm | apns | web
+
     memberships = relationship("ChatMember", back_populates="user")
-    messages = relationship("Message", back_populates="sender")
     created_chats = relationship("Chat", back_populates="creator")
 
 class Chat(Base):
@@ -49,11 +54,9 @@ class Chat(Base):
     invite_token = Column("inviteToken", String, nullable=True, index=True)
 
     members = relationship("ChatMember", back_populates="chat", cascade="all, delete-orphan")
-    messages = relationship("Message", back_populates="chat", cascade="all, delete-orphan")
     creator = relationship("User", back_populates="created_chats", foreign_keys=[created_by])
 
 class ChatMember(Base):
-    # membership join table — also stores per-user chat preferences
     __tablename__ = "ChatMember"
 
     id = Column(String, primary_key=True)
@@ -64,59 +67,10 @@ class ChatMember(Base):
     last_read_at = Column("lastReadAt", Integer)
     pinned_at = Column("pinnedAt", Integer, nullable=True)
     muted = Column("muted", Boolean, default=False)
-    pinned_message_id = Column("pinnedMessageId", String, nullable=True)
     chat_key = Column("chatKey", String, nullable=True)
 
     chat = relationship("Chat", back_populates="members")
     user = relationship("User", back_populates="memberships")
-
-class Message(Base):
-    __tablename__ = "Message"
-
-    id = Column(String, primary_key=True)
-    chat_id = Column("chatId", String, ForeignKey("Chat.id", ondelete="CASCADE"), nullable=False, index=True)
-    sender_id = Column("senderId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
-    content = Column(Text, nullable=False)
-    type = Column(String, default="text")  # text | system | sticker | image | voice
-    reply_to_id = Column("replyToId", String, ForeignKey("Message.id"), nullable=True)
-    edited_at = Column("editedAt", Integer, nullable=True)
-    created_at = Column("createdAt", Integer, index=True)
-    deleted_at = Column("deletedAt", Integer, nullable=True)
-    duration = Column(Integer, nullable=True)  # voice message seconds
-    expires_in = Column("expiresIn", Integer, nullable=True)  # seconds; null = no expiration
-    status = Column("status", String, default="sent")
-    read_by = Column("readBy", Text, nullable=True)
-    delivered_to = Column("deliveredTo", Text, nullable=True)
-    # path to ciphertext blob in supabase storage ("files/{userId}/{randId}/{file}").
-    # server needs this to delete the object when the message is delivered or
-    # deleted-for-everyone. file itself is always e2ee ciphertext.
-    attachment_path = Column("attachmentPath", String, nullable=True, index=True)
-
-    chat = relationship("Chat", back_populates="messages")
-    sender = relationship("User", back_populates="messages", foreign_keys=[sender_id])
-    reply_to = relationship("Message", remote_side="Message.id", backref="replies")
-    reactions = relationship("Reaction", back_populates="message", cascade="all, delete-orphan")
-
-class Reaction(Base):
-    __tablename__ = "Reaction"
-
-    id = Column(String, primary_key=True)
-    message_id = Column("messageId", String, ForeignKey("Message.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column("userId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False)
-    emoji = Column(String, nullable=False)
-    created_at = Column("createdAt", Integer)
-
-    message = relationship("Message", back_populates="reactions")
-    user = relationship("User")
-
-class StarredMessage(Base):
-    __tablename__ = "StarredMessage"
-
-    id = Column(String, primary_key=True)
-    message_id = Column("messageId", String, ForeignKey("Message.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column("userId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False)
-    chat_id = Column("chatId", String, nullable=False)
-    created_at = Column("createdAt", Integer)
 
 class UserBlock(Base):
     __tablename__ = "UserBlock"
@@ -151,7 +105,6 @@ class Report(Base):
     reporter_id = Column("reporterId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
     reported_id = Column("reportedId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=True)
     chat_id = Column("chatId", String, nullable=True)
-    message_id = Column("messageId", String, nullable=True)
     reason = Column(String, nullable=False)
     status = Column(String, default="pending")
     created_at = Column("createdAt", Integer)

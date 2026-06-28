@@ -5,7 +5,7 @@ from typing import List
 from fastapi import APIRouter, Depends, Query
 
 from app.core.security import get_current_user_id
-from app.schemas import UserUpdate
+from app.schemas import PushTokenUpdate, UserUpdate
 from app.services.deps import get_user_service
 from app.services.user_service import UserService
 
@@ -37,3 +37,22 @@ async def search_users(
 ):
     users = await service.search(q, user_id)
     return {"users": users}
+
+
+@router.put("/me/push-token")
+async def register_push_token(
+    req: PushTokenUpdate,
+    user_id: str = Depends(get_current_user_id),
+    service: UserService = Depends(get_user_service),
+):
+    await service.update(user_id, push_token=req.token, push_platform=req.platform)
+    return {"ok": True}
+
+
+@router.delete("/me/push-token")
+async def remove_push_token(
+    user_id: str = Depends(get_current_user_id),
+    service: UserService = Depends(get_user_service),
+):
+    await service.update(user_id, push_token=None, push_platform=None)
+    return {"ok": True}

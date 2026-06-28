@@ -45,8 +45,13 @@ class Settings(BaseSettings):
     # file storage limits — sized for supabase free tier (1 GB total)
     MAX_FILE_SIZE_BYTES: int = int(os.environ.get("MAX_FILE_SIZE_BYTES", 25 * 1024 * 1024))
     STORAGE_QUOTA_BYTES: int = int(os.environ.get("STORAGE_QUOTA_BYTES", 950 * 1024 * 1024))
-    # files older than this (with no live message) are orphaned
-    FILE_RETENTION_HOURS: int = int(os.environ.get("FILE_RETENTION_HOURS", 24))
+    FILE_RETENTION_HOURS: int = int(os.environ.get("FILE_RETENTION_HOURS", 1))
+
+    MAX_GROUPS_PER_USER: int = 50
+    MAX_CHANNELS_PER_USER: int = 20
+    MAX_MEMBERS_PER_GROUP: int = 256
+
+    OFFLINE_QUEUE_TTL: int = 86400  # 24h in seconds
 
     AVATAR_COLORS: List[str] = [
         "emerald", "violet", "rose", "amber",

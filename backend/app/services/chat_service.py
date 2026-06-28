@@ -1,25 +1,17 @@
-
-
 from typing import List, Optional
 
 from app.core.config import settings
 from app.core.exceptions import ForbiddenError, ValidationError
 from app.core.security import ms_to_iso, now_ms, sanitize_text, sanitize_title
 from app.models import Chat, ChatMember
-from app.repositories import ChatRepository, MessageRepository, UserRepository
+from app.repositories import ChatRepository, UserRepository
 from app.services.serializers import serialize_chat
 
 class ChatService:
 
-    def __init__(
-        self,
-        chat_repo: ChatRepository,
-        user_repo: UserRepository,
-        message_repo: MessageRepository,
-    ):
+    def __init__(self, chat_repo: ChatRepository, user_repo: UserRepository):
         self.chats = chat_repo
         self.users = user_repo
-        self.messages = message_repo
 
     async def list_for_user(self, user_id: str) -> List[dict]:
         memberships = await self.chats.get_user_chats(user_id)
@@ -30,24 +22,16 @@ class ChatService:
         if not valid:
             return []
 
-        chat_ids = [chat.id for _, chat in valid]
-
-        # one batch query for the latest message per chat (replaces old N+1 loop)
-        last_msgs = await self.messages.last_messages_for_chats(chat_ids)
-
         result = []
         for member, chat in valid:
-            result.append((chat, member, last_msgs.get(chat.id), 0))
+            result.append((chat, member))
 
         result.sort(key=lambda item: (
             item[1].pinned_at is None,
             -(item[0].updated_at or 0),
         ))
 
-        return [
-            serialize_chat(chat, member, last_msg, unread)
-            for chat, member, last_msg, unread in result
-        ]
+        return [serialize_chat(chat, member) for chat, member in result]
 
     async def get_chat(self, chat_id: str, user_id: str) -> dict:
         chat = await self.chats.get_by_id(chat_id)
@@ -82,7 +66,6 @@ class ChatService:
             raise ValidationError("A member is required for direct chats")
         other_id = member_ids[0]
 
-        # reuse existing 1:1 chat if one exists
         existing = await self.chats.find_direct_chat(user_id, other_id)
         if existing:
             member = await self.chats.get_member(existing.id, user_id)
@@ -91,7 +74,6 @@ class ChatService:
         chat = await self.chats.create(type="direct", title="Direct", created_by=user_id)
         await self.chats.add_member(chat.id, user_id, role="owner")
         await self.chats.add_member(chat.id, other_id, role="member")
-        # reload with members eager-loaded
         chat = await self.chats.get_by_id(chat.id)
         member = await self.chats.get_member(chat.id, user_id)
         return serialize_chat(chat, member)
@@ -107,11 +89,30 @@ class ChatService:
         if not title:
             raise ValidationError("Title is required for group/channel chats")
 
+        # enforce per-user limits
+        if chat_type == "group":
+            count = await self.chats.count_user_groups(user_id)
+            if count >= settings.MAX_GROUPS_PER_USER:
+                raise ValidationError(
+                    f"You've reached the maximum of {settings.MAX_GROUPS_PER_USER} groups"
+                )
+        elif chat_type == "channel":
+            count = await self.chats.count_user_channels(user_id)
+            if count >= settings.MAX_CHANNELS_PER_USER:
+                raise ValidationError(
+                    f"You've reached the maximum of {settings.MAX_CHANNELS_PER_USER} channels"
+                )
+
+        all_members = list(dict.fromkeys([user_id] + member_ids))
+        if len(all_members) > settings.MAX_MEMBERS_PER_GROUP:
+            raise ValidationError(
+                f"Maximum {settings.MAX_MEMBERS_PER_GROUP} members per group"
+            )
+
         expires_at = None
         if expires_in_days and 1 <= expires_in_days <= 7:
             expires_at = now_ms() + (expires_in_days * 86400 * 1000)
 
-        all_members = list(dict.fromkeys([user_id] + member_ids))
         chat = await self.chats.create(
             type=chat_type,
             title=title,
@@ -135,7 +136,7 @@ class ChatService:
 
     async def update_settings(
         self, chat_id: str, user_id: str, action: str,
-        value: Optional[bool] = None, message_id: Optional[str] = None,
+        value: Optional[bool] = None,
     ) -> dict:
         member = await self.chats.get_member(chat_id, user_id)
         if not member:
@@ -149,15 +150,10 @@ class ChatService:
             mute_val = bool(value)
             await self.chats.update_member(member.id, muted=mute_val)
             member.muted = mute_val
-        elif action == "pinMessage":
-            pin_msg_val = message_id or None
-            await self.chats.update_member(member.id, pinned_message_id=pin_msg_val)
-            member.pinned_message_id = pin_msg_val
         else:
             raise ValidationError(f"Unknown action: {action}")
 
         return {
             "pinnedAt": ms_to_iso(member.pinned_at) if member.pinned_at else None,
             "muted": bool(member.muted),
-            "pinnedMessageId": member.pinned_message_id,
         }

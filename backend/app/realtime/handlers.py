@@ -1,8 +1,10 @@
-# socket.io event handlers — thin wrappers around the connection manager.
-# every identify must present a valid session token, otherwise any client
-# could claim any userId and receive their messages/presence.
+# socket.io event handlers — relay-only ephemeral messaging.
+# messages never touch the DB. they go: sender → server relay → recipient(s).
+# offline recipients get queued (encrypted) and drain on reconnect.
 
+import json
 import logging
+import secrets
 from datetime import datetime, timezone
 
 import socketio
@@ -10,29 +12,18 @@ from sqlalchemy import select, update
 
 from app.core.config import settings
 from app.core.database import async_session_factory
+from app.core.offline_queue import drain as drain_queue, enqueue as enqueue_message
 from app.core.security import now_ms, verify_session_token
 from app.models import ChatMember, User
 from app.realtime.connection_manager import manager
 
 logger = logging.getLogger("cryptalk.realtime")
 
-_MAX_RELAY_BYTES = 65_536  # 64 KB max per socket payload
-
-
-def _verify_socket_auth(data: dict) -> str | None:
-    # userId in the payload is IGNORED unless it matches the token's user_id —
-    # clients can't self-declare identity
-    token = (data.get("token") or "").strip()
-    if not token:
-        return None
-    return verify_session_token(token)
+_MAX_RELAY_BYTES = 65_536
 
 
 def _auth_from_environ(environ: dict) -> str | None:
-    # browser sends tc_session cookie automatically with withCredentials:true
-    # on the websocket handshake. cookie is httponly so JS can't read it.
     from http.cookies import SimpleCookie
-
     cookie_header = environ.get("HTTP_COOKIE", "")
     if not cookie_header:
         return None
@@ -51,18 +42,14 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
 
     @sio.event
     async def connect(sid: str, environ: dict) -> bool | None:
-        # authenticate at connection time using the cookie header — closes the
-        # impersonation hole where any client could claim any userId via identify
         user_id = _auth_from_environ(environ)
         if not user_id:
             logger.warning("Socket %s rejected: no valid session cookie", sid)
-            # emit auth-error then let the connection close — client will re-login
             await sio.emit("auth-error", {"message": "Not authenticated"}, to=sid)
-            return False  # reject the connection
+            return False
         manager.add(sid, user_id)
         logger.info("Socket connected: %s (user: %s)", sid, user_id[:8])
 
-        # mark user online and broadcast presence
         async with async_session_factory() as db:
             await db.execute(
                 update(User)
@@ -77,9 +64,15 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
             {"users": [{"userId": uid, "isOnline": True} for uid in manager.all_online_user_ids()]},
             to=sid,
         )
+
+        # drain any queued messages from while this user was offline
+        queued = drain_queue(user_id)
+        if queued:
+            await sio.emit("queued-messages", {"messages": queued}, to=sid)
+            logger.info("Delivered %d queued messages to user %s", len(queued), user_id[:8])
+
         return True
 
-    # `identify` is a no-op for backward compat — auth already happened at connect
     @sio.on("identify")
     async def on_identify(sid: str, data: dict) -> None:
         pass
@@ -90,7 +83,6 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
         chat_id = data.get("chatId")
         if not user_id or not chat_id:
             return
-        # verify membership before entering the room
         async with async_session_factory() as db:
             result = await db.execute(
                 select(ChatMember).where(
@@ -114,16 +106,41 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
             return
         chat_id = data.get("chatId")
         message = data.get("message")
-        if not chat_id or not message:
+        if not chat_id or not message or not isinstance(message, dict):
             return
-        import json
         if len(json.dumps(data, default=str)) > _MAX_RELAY_BYTES:
             return
-        await sio.emit(
-            "message",
-            {"chatId": chat_id, "message": message},
-            room=f"chat:{chat_id}",
-        )
+
+        # stamp server-generated ID and timestamp so clients can't forge them
+        message["id"] = message.get("id") or secrets.token_hex(12)
+        message["senderId"] = user_id
+        message["createdAt"] = datetime.now(timezone.utc).isoformat()
+        message["status"] = "sent"
+
+        payload = {"chatId": chat_id, "message": message}
+
+        # relay to everyone in the room
+        await sio.emit("message", payload, room=f"chat:{chat_id}")
+
+        # ack back to sender
+        await sio.emit("message-ack", {
+            "chatId": chat_id,
+            "messageId": message["id"],
+            "createdAt": message["createdAt"],
+        }, to=sid)
+
+        # queue for offline members
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(ChatMember.user_id).where(ChatMember.chat_id == chat_id)
+            )
+            all_member_ids = [row[0] for row in result.all()]
+
+        for member_id in all_member_ids:
+            if member_id == user_id:
+                continue
+            if not manager.get_sockets_for_user(member_id):
+                enqueue_message(member_id, payload)
 
     @sio.on("typing")
     async def on_typing(sid: str, data: dict) -> None:
@@ -133,7 +150,6 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
         chat_id = data.get("chatId")
         if not chat_id:
             return
-        # inject server-side identity so client can't spoof who's typing
         data["userId"] = user_id
         await sio.emit("typing", data, room=f"chat:{chat_id}", skip_sid=sid)
 
@@ -147,6 +163,16 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
             return
         data["userId"] = user_id
         await sio.emit("message-status", data, room=f"chat:{chat_id}")
+
+        # if this is a delivery confirmation for a file, trigger cleanup
+        attachment_path = data.get("attachmentPath")
+        if attachment_path and data.get("status") == "delivered":
+            try:
+                from app.core.storage import StorageService
+                await StorageService.delete_file(attachment_path)
+                logger.info("Auto-deleted delivered attachment: %s", attachment_path)
+            except Exception as e:
+                logger.warning("Failed to auto-delete attachment %s: %s", attachment_path, e)
 
     @sio.on("recording")
     async def on_recording(sid: str, data: dict) -> None:
@@ -178,9 +204,9 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
         chat_id = data.get("chatId")
         if not chat_id:
             return
-        import json
         if len(json.dumps(data, default=str)) > _MAX_RELAY_BYTES:
             return
+        data["userId"] = user_id
         await sio.emit("message-update", data, room=f"chat:{chat_id}")
 
     @sio.on("chat-updated")
@@ -190,7 +216,6 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
             return
         chat = data.get("chat")
         member_ids = data.get("memberIds", [])
-        # only relay if the sender is actually one of the members
         if user_id not in member_ids:
             return
         for member_id in member_ids:
@@ -211,6 +236,5 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
                     await db.commit()
                 await sio.emit("user-status", {"userId": offline_user, "isOnline": False})
             except Exception as e:
-                # log instead of swallowing — otherwise user is stuck is_online=True forever
                 logger.error("Failed to mark user %s offline on disconnect: %s", offline_user, e)
         logger.info("Socket disconnected: %s", sid)

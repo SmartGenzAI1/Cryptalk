@@ -13,6 +13,12 @@ def client():
     from sqlalchemy import create_engine
     from app.models import Base
     from app.core.config import settings
+    # Delete the test DB file to ensure fresh schema
+    if os.path.exists(settings.DB_PATH):
+        try:
+            os.remove(settings.DB_PATH)
+        except Exception:
+            pass
     sync_url = f"sqlite:///{settings.DB_PATH}"
     sync_engine = create_engine(sync_url, echo=False)
     Base.metadata.create_all(sync_engine)
@@ -67,12 +73,8 @@ class TestChats:
 
 
 class TestMessages:
-    def test_get_messages_unauthorized(self, client):
-        res = client.get("/api/some-chat-id/messages")
-        assert res.status_code == 401
-
-    def test_send_message_unauthorized(self, client):
-        res = client.post("/api/some-chat-id/messages", json={"content": "hello"})
+    def test_mark_read_unauthorized(self, client):
+        res = client.post("/api/messages/some-chat-id/mark-read")
         assert res.status_code == 401
 
 
@@ -108,10 +110,6 @@ class TestChatManagement:
 
     def test_delete_chat_unauthorized(self, client):
         res = client.delete("/api/chats/some-id")
-        assert res.status_code == 401
-
-    def test_cross_search_unauthorized(self, client):
-        res = client.get("/api/search?q=test")
         assert res.status_code == 401
 
     def test_report_unauthorized(self, client):

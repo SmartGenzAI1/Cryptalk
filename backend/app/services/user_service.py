@@ -38,6 +38,11 @@ class UserService:
                 raise ValidationError(f"Invalid wallpaper: {kwargs['wallpaper']}")
             patch["wallpaper"] = kwargs["wallpaper"]
 
+        if "push_token" in kwargs:
+            patch["push_token"] = kwargs["push_token"]
+        if "push_platform" in kwargs:
+            patch["push_platform"] = kwargs["push_platform"]
+
         patch["is_online"] = True
         from app.core.security import now_ms
         patch["last_seen"] = now_ms()

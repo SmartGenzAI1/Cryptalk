@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from sqlalchemy import create_engine, Index
+from sqlalchemy import create_engine
 
 from app.api.v1 import api_router
 from app.core.config import settings
@@ -18,7 +18,7 @@ from app.core.exceptions import (
     unhandled_exception_handler,
 )
 from app.core.rate_limit import RateLimitMiddleware
-from app.models import Base, Message, ChatMember, StarredMessage, UserBlock, ConnectionRequest, Report
+from app.models import Base
 from app.realtime.connection_manager import manager
 from app.realtime.handlers import register_handlers
 
@@ -50,18 +50,6 @@ async def lifespan(app: FastAPI):
     with sync_engine.connect() as conn:
         from sqlalchemy import text
         conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_message_chat_created "
-            "ON \"Message\" (\"chatId\", \"createdAt\" DESC)"
-        ))
-        conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_message_sender "
-            "ON \"Message\" (\"senderId\")"
-        ))
-        conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_starred_user "
-            "ON \"StarredMessage\" (\"userId\", \"createdAt\" DESC)"
-        ))
-        conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_chatmember_user "
             "ON \"ChatMember\" (\"userId\")"
         ))
@@ -82,8 +70,17 @@ async def lifespan(app: FastAPI):
 
     sync_engine.dispose()
     logger.info("Database tables + indexes ensured")
+
+    # start background media cleanup
+    import asyncio
+    from app.core.cleanup import start_cleanup_loop, stop_cleanup_loop
+    cleanup_task = asyncio.create_task(start_cleanup_loop())
+
     yield
-    # close pooled supabase http client on shutdown
+
+    # shutdown
+    stop_cleanup_loop()
+    cleanup_task.cancel()
     from app.core.storage import StorageService
     await StorageService.close()
     logger.info("Shutting down...")
