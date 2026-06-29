@@ -92,7 +92,8 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
     }
     try {
       // Initialize libsodium and generate a secure 32-byte symmetric group key
-      const sodium = await import('libsodium-wrappers')
+      const sodiumModule = await import('libsodium-wrappers')
+      const sodium = sodiumModule.default || sodiumModule
       await sodium.ready
       const groupKey = sodium.randombytes_buf(32)
 
