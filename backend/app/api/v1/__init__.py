@@ -4,7 +4,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.chat_management import router as chat_mgmt_router
 from app.api.v1.chats import router as chats_router
 from app.api.v1.e2ee import router as e2ee_router
-from app.api.v1.messages import router as messages_router
+from app.api.v1.messages import router as messages_router, chat_router as chat_messages_router
 from app.api.v1.social import router as social_router
 from app.api.v1.uploads import router as uploads_router
 from app.api.v1.users import router as users_router
@@ -17,4 +17,5 @@ api_router.include_router(chats_router)
 api_router.include_router(chat_mgmt_router)
 api_router.include_router(e2ee_router)
 api_router.include_router(messages_router)
+api_router.include_router(chat_messages_router)
 api_router.include_router(uploads_router)
