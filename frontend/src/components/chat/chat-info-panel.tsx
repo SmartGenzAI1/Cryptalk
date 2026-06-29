@@ -32,7 +32,7 @@ export function ChatInfoPanel() {
       try {
         const { generateSafetyNumber } = await import('@/lib/crypto')
         const { apiGet } = await import('@/lib/api')
-        const keys = await apiGet<{ identity_public_key: string }>(`/api/keys/${other.user.id}`)
+        const keys = await apiGet<{ identity_public_key: string }>(`/api/keys/${other.user.id}?t=${Date.now()}`)
         if (!cancelled && keys.identity_public_key) {
           const num = await generateSafetyNumber(keys.identity_public_key)
           if (!cancelled) setSafetyNumber(num)

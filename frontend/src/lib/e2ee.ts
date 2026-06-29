@@ -76,7 +76,7 @@ export async function encryptDirectMessage(
   if (!identityKey) throw new Error('No identity key — run initE2EE first')
 
   const recipientKeys = await apiGet<{ identity_public_key: string | null }>(
-    `/api/keys/${recipientUserId}`
+    `/api/keys/${recipientUserId}?t=${Date.now()}`
   )
   if (!recipientKeys.identity_public_key) {
     throw new Error('Recipient has not set up E2EE yet')

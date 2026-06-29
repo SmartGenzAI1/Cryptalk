@@ -118,7 +118,7 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
       // Fetch recipient keys and encrypt the group key for each selected member
       for (const uid of selected) {
         try {
-          const keys = await apiGet<{ identity_public_key: string | null }>(`/api/keys/${uid}`)
+          const keys = await apiGet<{ identity_public_key: string | null }>(`/api/keys/${uid}?t=${Date.now()}`)
           if (keys.identity_public_key) {
             const payload = await encryptMessage(
               toBase64(groupKey),
