@@ -96,20 +96,25 @@ async function deriveSharedSecret(
 
 // HKDF-SHA256 for key derivation (RFC 5869)
 async function deriveEncryptionKey(sharedSecret: Uint8Array, context: string = 'cryptalk-message'): Promise<Uint8Array> {
-  await ensureReady()
-  // HKDF-Extract: PRK = HMAC-SHA256(salt, IKM)
-  // Standard default salt is hash-length of zeros
-  const salt = new Uint8Array(32)
-  const prk = sodium.crypto_auth_hmacsha256(sharedSecret, salt)
-
-  // HKDF-Expand: OKM = HMAC-SHA256(PRK, info | 0x01)
-  const info = toUTF8(context)
-  const infoWithCounter = new Uint8Array(info.length + 1)
-  infoWithCounter.set(info, 0)
-  infoWithCounter.set([1], info.length)
-
-  const okm = sodium.crypto_auth_hmacsha256(infoWithCounter, prk)
-  return okm
+  const cryptoObj = typeof window !== 'undefined' ? window.crypto : (await import('crypto')).webcrypto
+  const key = await (cryptoObj as any).subtle.importKey(
+    'raw',
+    sharedSecret,
+    'HKDF',
+    false,
+    ['deriveBits']
+  )
+  const derivedBits = await (cryptoObj as any).subtle.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new Uint8Array(32),
+      info: toUTF8(context)
+    },
+    key,
+    256
+  )
+  return new Uint8Array(derivedBits)
 }
 
 // encryption / decryption
