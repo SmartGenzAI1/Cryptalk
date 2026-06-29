@@ -111,7 +111,14 @@ async def upload_attachment(
     path = f"files/{user_id}/{rand_id}/{safe_name}"
     content_type = file.content_type or "application/octet-stream"
 
-    url = await StorageService.upload_file(path, data, content_type)
+    try:
+        url = await StorageService.upload_file(path, data, content_type)
+    except StorageError as e:
+        logger.error("Upload failed with storage error: %s", e)
+        return JSONResponse(
+            status_code=502,
+            content={"error": "upload_failed", "message": f"Storage upload failed: {e}"},
+        )
     if not url:
         return JSONResponse(
             status_code=502,

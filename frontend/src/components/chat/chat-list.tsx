@@ -299,7 +299,7 @@ export function ChatList() {
       }
       // 2. background-fetch latest from server (no loading state, no toast)
       const data = await apiGet<{ messages: any[] }>(`/api/${chatId}/messages?limit=50`)
-      if (!data.messages) return
+      if (!data.messages || data.messages.length === 0) return
       if (switchedAway()) return
       const storeAfter = useChatStore.getState().messages[chatId]
       if (storeAfter && storeAfter.length > 0 && cached.length > 0) return
@@ -367,7 +367,7 @@ export function ChatList() {
     try {
       // 2. fetch latest from server (background sync)
       const data = await apiGet<{ messages: any[] }>(`/api/${chat.id}/messages?limit=50`)
-      if (data.messages) {
+      if (data.messages && data.messages.length > 0) {
         // e2ee: decrypt text messages before storing
         try {
           const { decryptMessageForChat } = await import('@/lib/e2ee')
