@@ -61,7 +61,7 @@ export function ChatWindow() {
       : `${activeChat.members.length} members`
     : ''
 
-  const typingUsers = useChatStore((s) => activeChatId ? s.typingUsers[activeChatId] : EMPTY_TYPING)
+  const typingUsers = useChatStore((s) => activeChatId ? (s.typingUsers[activeChatId] || EMPTY_TYPING) : EMPTY_TYPING)
   const typingText =
     typingUsers.length === 0
       ? ''
