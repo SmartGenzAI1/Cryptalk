@@ -33,17 +33,19 @@ export interface E2EEStatus {
 export async function initE2EE(userId: string): Promise<E2EEStatus> {
   let identityKey = await loadIdentityKey()
   let hasLocal = identityKey !== null
+  let forceUpload = false
 
   if (!identityKey) {
     identityKey = await generateIdentityKeyPair()
     await saveIdentityKey(identityKey)
     hasLocal = true
+    forceUpload = true
   }
 
   const serverStatus = await apiGet<{ has_keys: boolean }>('/api/keys/status/me').catch(() => ({ has_keys: false }))
 
   let keysUploaded = serverStatus.has_keys
-  if (!keysUploaded && identityKey) {
+  if ((!keysUploaded || forceUpload) && identityKey) {
     try {
       const signedPreKey = await generateSignedPreKey(identityKey.signing)
       await apiPost('/api/keys/upload', {

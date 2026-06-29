@@ -321,9 +321,8 @@ export function MessageInput() {
           throw new Error('Upload succeeded but no URL or fallback flag returned')
         }
       } catch (e: any) {
-        // 413/507/network — show server message and abort
-        toast.error(e.message || 'Failed to upload voice message')
-        return
+        console.warn('Voice upload failed, falling back to base64 inline transmission:', e)
+        useFallback = true
       }
 
       const contentToSend = useFallback ? ciphertextString : (encryptedUrl ?? ciphertextString)
@@ -432,9 +431,8 @@ export function MessageInput() {
           throw new Error('Upload succeeded but no URL or fallback flag returned')
         }
       } catch (err: any) {
-        // 413/507/network — show server message and abort
-        toast.error(err.message || 'Failed to upload file')
-        return
+        console.warn('File upload failed, falling back to base64 inline transmission:', err)
+        useFallback = true
       }
 
       const contentToSend = useFallback ? ciphertextString : (encryptedUrl ?? ciphertextString)
