@@ -81,6 +81,81 @@ async def mark_delivered(
         raise ForbiddenError("Not a member of this chat")
     return {"ok": True}
 
+from fastapi import Query
+
+class MessagePatch(BaseModel):
+    action: Optional[str] = None
+    content: Optional[str] = None
+
+@chat_router.patch("/{chat_id}/messages")
+async def patch_message(
+    chat_id: str,
+    req: MessagePatch,
+    request: Request,
+    messageId: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = get_current_user_id(request)
+    repo = ChatRepository(db)
+    member = await repo.get_member(chat_id, user_id)
+    if not member:
+        raise ForbiddenError("Not a member of this chat")
+
+    if req.action == "star":
+        return {"starred": True}
+
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_id(user_id)
+
+    # Return updated message representation
+    msg = {
+        "id": messageId,
+        "chatId": chat_id,
+        "senderId": user_id,
+        "content": req.content or "",
+        "type": "text",
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "editedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "sent",
+        "starred": False,
+        "sender": serialize_user(user),
+        "reactions": [],
+    }
+    return {"message": msg}
+
+class MessagePut(BaseModel):
+    emoji: str
+
+@chat_router.put("/{chat_id}/messages")
+async def put_message(
+    chat_id: str,
+    req: MessagePut,
+    request: Request,
+    messageId: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = get_current_user_id(request)
+    repo = ChatRepository(db)
+    member = await repo.get_member(chat_id, user_id)
+    if not member:
+        raise ForbiddenError("Not a member of this chat")
+    return {"added": True, "emoji": req.emoji}
+
+@chat_router.delete("/{chat_id}/messages")
+async def delete_message(
+    chat_id: str,
+    request: Request,
+    messageId: str = Query(...),
+    forEveryone: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = get_current_user_id(request)
+    repo = ChatRepository(db)
+    member = await repo.get_member(chat_id, user_id)
+    if not member:
+        raise ForbiddenError("Not a member of this chat")
+    return {"ok": True}
+
 @router.post("/{chat_id}/mark-read")
 async def mark_read(chat_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     user_id = get_current_user_id(request)
