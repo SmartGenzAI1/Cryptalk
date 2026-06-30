@@ -188,6 +188,8 @@ export function ChatList() {
   const setSearchQuery = useChatStore((s) => s.setSearchQuery)
   const setMessages = useChatStore((s) => s.setMessages)
   const setMessagesLoading = useChatStore((s) => s.setMessagesLoading)
+  const chatFilter = useChatStore((s) => s.chatFilter)
+  const setChatFilter = useChatStore((s) => s.setChatFilter)
   const updateChatListItem = useChatStore((s) => s.updateChatListItem)
   const [newChatOpen, setNewChatOpen] = useState(false)
 
@@ -201,6 +203,9 @@ export function ChatList() {
   }, [searchInput, searchQuery, setSearchQuery])
 
   const filtered = chats.filter((c) => {
+    if (chatFilter !== 'all' && c.type !== chatFilter) {
+      return false
+    }
     if (!searchQuery.trim()) return true
     const q = searchQuery.toLowerCase()
     if (c.title.toLowerCase().includes(q)) return true
@@ -466,6 +471,24 @@ export function ChatList() {
             className="pl-9 h-10 bg-background rounded-full border-0 focus-visible:ring-1 focus-visible:ring-primary"
           />
         </div>
+      </div>
+
+      {/* Category Tabs */}
+      <div className="flex items-center gap-1.5 px-3 pb-2 overflow-x-auto zc-scroll shrink-0 border-b bg-background/20 select-none">
+        {(['all', 'direct', 'group', 'channel', 'saved'] as const).map((filter) => (
+          <button
+            key={filter}
+            onClick={() => setChatFilter(filter)}
+            className={cn(
+              'px-3 py-1 text-xs font-medium rounded-full transition-all shrink-0 zc-tap border capitalize',
+              chatFilter === filter
+                ? 'bg-primary border-primary text-primary-foreground shadow-sm font-semibold'
+                : 'bg-background hover:bg-accent border-input text-muted-foreground'
+            )}
+          >
+            {filter === 'direct' ? 'Personal' : filter === 'saved' ? 'Saved' : filter + 's'}
+          </button>
+        ))}
       </div>
 
       <ScrollArea className="flex-1 zc-scroll">

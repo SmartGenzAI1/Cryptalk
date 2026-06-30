@@ -96,6 +96,9 @@ interface ChatState {
   connectionsPanelOpen: boolean
   setConnectionsPanelOpen: (b: boolean) => void
 
+  chatFilter: 'all' | 'direct' | 'group' | 'channel' | 'saved'
+  setChatFilter: (filter: 'all' | 'direct' | 'group' | 'channel' | 'saved') => void
+
   // chat settings (pin/mute) helpers
   updateChatListItem: (id: string, patch: Partial<ChatListItem>) => void
 }
@@ -236,6 +239,9 @@ export const useChatStore = create<ChatState>((set, _get) => ({
       connectionsPanelOpen: b,
       ...(b ? { infoPanelOpen: false, settingsOpen: false } : {}),
     })),
+
+  chatFilter: 'all',
+  setChatFilter: (filter) => set({ chatFilter: filter }),
 
   updateChatListItem: (id, patch) =>
     set((s) => ({

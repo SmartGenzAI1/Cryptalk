@@ -11,13 +11,16 @@ export function MobileNav() {
   const connectionsPanelOpen = useChatStore((s) => s.connectionsPanelOpen)
   const setActiveChatId = useChatStore((s) => s.setActiveChatId)
   const activeChatId = useChatStore((s) => s.activeChatId)
+  const chatFilter = useChatStore((s) => s.chatFilter)
+  const setChatFilter = useChatStore((s) => s.setChatFilter)
+
   if (activeChatId) return null
 
   return (
     <nav className="md:hidden flex items-center justify-around h-14 border-t bg-sidebar/80 zc-glass-sidebar shrink-0 safe-area-pb">
-      <NavBtn icon={MessageCircle} label="Chats" active={!activeChatId && !connectionsPanelOpen && !settingsOpen} onClick={() => { setActiveChatId(null); setConnectionsPanelOpen(false); setSettingsOpen(false) }} />
+      <NavBtn icon={MessageCircle} label="Chats" active={chatFilter === 'all' && !connectionsPanelOpen && !settingsOpen} onClick={() => { setChatFilter('all'); setActiveChatId(null); setConnectionsPanelOpen(false); setSettingsOpen(false) }} />
       <NavBtn icon={Users} label="People" active={connectionsPanelOpen} onClick={() => { setConnectionsPanelOpen(!connectionsPanelOpen); if (!connectionsPanelOpen) setSettingsOpen(false) }} />
-      <NavBtn icon={Megaphone} label="Channels" />
+      <NavBtn icon={Megaphone} label="Channels" active={chatFilter === 'channel' && !connectionsPanelOpen && !settingsOpen} onClick={() => { setChatFilter('channel'); setActiveChatId(null); setConnectionsPanelOpen(false); setSettingsOpen(false) }} />
       <NavBtn icon={Settings} label="Settings" active={settingsOpen} onClick={() => { setSettingsOpen(!settingsOpen); if (!settingsOpen) setConnectionsPanelOpen(false) }} />
     </nav>
   )

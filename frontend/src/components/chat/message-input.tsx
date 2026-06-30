@@ -163,18 +163,9 @@ export function MessageInput() {
         expiresIn: type === 'text' ? expiresIn : null,
       })
       if (data.message) {
-        // decrypt our own message for local display
-        if (type === 'text' && activeChat) {
-          try {
-            const { decryptMessageForChat } = await import('@/lib/e2ee')
-            data.message.content = await decryptMessageForChat(
-              data.message.content,
-              activeChatId,
-              activeChat.type
-            )
-          } catch {
-            // keep original
-          }
+        // use original plaintext for sender's local display
+        if (type === 'text') {
+          data.message.content = content.trim()
         }
         addMessage(activeChatId, data.message)
         getSocket()?.emit('send-message', { chatId: activeChatId, message: data.message })
@@ -293,6 +284,7 @@ export function MessageInput() {
       let attachmentPath: string | null = null
       let encryptedUrl: string | null = null
       let useFallback = false
+      let uploadUrl: string | null = null
       try {
         const upload = await apiUploadFile(
           '/api/uploads',
@@ -303,6 +295,7 @@ export function MessageInput() {
           // dev mode (no supabase) — embed ciphertext in content (legacy)
           useFallback = true
         } else if (upload.url && upload.path) {
+          uploadUrl = upload.url
           try {
             const { encryptMessageForChat } = await import('@/lib/e2ee')
             const recipient = activeChat?.members.find((m) => m.user.id !== currentUser?.id)
@@ -336,11 +329,8 @@ export function MessageInput() {
         attachmentPath: useFallback ? null : attachmentPath,
       })
       if (data.message) {
-        if (activeChat && data.message.type === 'voice') {
-          try {
-            const { decryptMessageForChat } = await import('@/lib/e2ee')
-            data.message.content = await decryptMessageForChat(data.message.content, activeChatId, activeChat.type)
-          } catch {}
+        if (data.message.type === 'voice') {
+          data.message.content = useFallback ? ciphertextString : (uploadUrl || ciphertextString)
         }
         addMessage(activeChatId, data.message)
         getSocket()?.emit('send-message', { chatId: activeChatId, message: data.message })
@@ -403,6 +393,7 @@ export function MessageInput() {
       let attachmentPath: string | null = null
       let encryptedUrl: string | null = null
       let useFallback = false
+      let uploadUrl: string | null = null
       try {
         const upload = await apiUploadFile(
           '/api/uploads',
@@ -413,6 +404,7 @@ export function MessageInput() {
           // dev mode (no supabase) — embed ciphertext in content (legacy)
           useFallback = true
         } else if (upload.url && upload.path) {
+          uploadUrl = upload.url
           try {
             const { encryptMessageForChat } = await import('@/lib/e2ee')
             const recipient = activeChat?.members.find((m) => m.user.id !== currentUser?.id)
@@ -446,11 +438,8 @@ export function MessageInput() {
       })
 
       if (data.message) {
-        if (activeChat && (data.message.type === 'image' || data.message.type === 'file')) {
-          try {
-            const { decryptMessageForChat } = await import('@/lib/e2ee')
-            data.message.content = await decryptMessageForChat(data.message.content, activeChatId, activeChat.type)
-          } catch {}
+        if (data.message.type === 'image' || data.message.type === 'file') {
+          data.message.content = useFallback ? ciphertextString : (uploadUrl || ciphertextString)
         }
         addMessage(activeChatId, data.message)
         getSocket()?.emit('send-message', { chatId: activeChatId, message: data.message })

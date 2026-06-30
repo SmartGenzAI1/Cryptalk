@@ -132,7 +132,7 @@ export function SettingsPanel() {
   }
 
   return (
-    <div className="w-full sm:w-[380px] shrink-0 border-l flex flex-col bg-sidebar/60 zc-glass-sidebar">
+    <div className="fixed inset-0 w-full h-full z-50 md:relative md:inset-auto md:w-[380px] md:h-auto shrink-0 md:border-l flex flex-col bg-background md:bg-sidebar/60 zc-glass-sidebar">
       {/* HEADER */}
       <div className="flex items-center gap-2 px-4 h-16 border-b shrink-0">
         {subView !== 'main' ? (
