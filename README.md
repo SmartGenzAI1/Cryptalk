@@ -12,6 +12,10 @@
 [![Flutter](https://img.shields.io/badge/Flutter-3.44+-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+<br/><br/>
+<img src="showcase/screenshot_desktop.png" width="800" alt="Cryptalk Desktop Interface" />
+<br/><br/>
+<img src="showcase/screenshot_mobile.jpg" width="300" alt="Cryptalk Mobile Interface" />
 </div>
 
 ---
