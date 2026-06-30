@@ -33,13 +33,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 // 25 MB — must match backend MAX_FILE_SIZE
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
-const EMOJIS = [
-  '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃',
-  '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙',
-  '😋', '😛', '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔',
-  '🔥', '❤️', '👍', '👎', '🎉', '👏', '🙏', '💪', '✨', '⭐',
-  '❤️‍🔥', '💯', '👀', '😅', '😎', '🤓', '🥳', '😴', '🤯', '🥺',
-]
+import { EMOJIS } from '@/lib/emojis'
 
 import { STICKER_ICONS, stickerIconUrl } from '@/lib/icons'
 
@@ -517,18 +511,20 @@ export function MessageInput() {
                   <Smile className="h-5 w-5" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-72 p-0" align="start">
-                <div className="grid grid-cols-8 gap-0.5 p-2 max-h-60 overflow-y-auto zc-scroll">
-                  {EMOJIS.map((e) => (
-                    <button
-                      key={e}
-                      onClick={() => { setText((t) => t + e); textareaRef.current?.focus() }}
-                      className="h-8 w-8 rounded hover:bg-accent hover:scale-125 transition-all flex items-center justify-center text-lg"
-                    >
-                      {e}
-                    </button>
-                  ))}
-                </div>
+              <PopoverContent className="w-72 p-2" align="start">
+                <ScrollArea className="h-60 w-full pr-1">
+                  <div className="grid grid-cols-8 gap-0.5">
+                    {EMOJIS.map((e) => (
+                      <button
+                        key={e}
+                        onClick={() => { setText((t) => t + e); textareaRef.current?.focus() }}
+                        className="h-8 w-8 rounded hover:bg-accent hover:scale-125 transition-all flex items-center justify-center text-lg"
+                      >
+                        {e}
+                      </button>
+                    ))}
+                  </div>
+                </ScrollArea>
               </PopoverContent>
             </Popover>
 

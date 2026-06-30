@@ -13,6 +13,7 @@ export interface SafeUser {
   lastSeen: string
   accentColor?: string
   wallpaper?: string
+  email?: string
 }
 
 export interface ChatWithMembers {
@@ -77,6 +78,7 @@ export function toSafeUser(u: any): SafeUser {
     lastSeen: u.lastSeen?.toISOString?.() ?? u.lastSeen ?? new Date().toISOString(),
     accentColor: u.accentColor ?? 'emerald',
     wallpaper: u.wallpaper ?? 'dots',
+    email: u.email ?? '',
   }
 }
 

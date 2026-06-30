@@ -44,6 +44,7 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
   // state initializes fresh on each mount — no reset effect needed
   const [query, setQuery] = useState('')
   const [users, setUsers] = useState<SafeUser[]>([])
+  const [connections, setConnections] = useState<SafeUser[]>([])
   const [selected, setSelected] = useState<string[]>([])
   const [groupName, setGroupName] = useState('')
   const [groupDesc, setGroupDesc] = useState('')
@@ -51,6 +52,21 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
   const [groupColor, setGroupColor] = useState('violet')
   const [isChannel, setIsChannel] = useState(false)
   const [expiresInDays, setExpiresInDays] = useState<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const data = await apiGet<{ connections: SafeUser[] }>('/api/social/connections')
+        if (!cancelled) setConnections(data.connections || [])
+      } catch (e) {
+        console.warn('Failed to load connections:', e)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -71,6 +87,8 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
       clearTimeout(t)
     }
   }, [query])
+
+  const displayUsers = query.trim() ? users : connections
 
   function toggleSelect(id: string) {
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
@@ -207,12 +225,12 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
               />
             </div>
             <div className="max-h-80 overflow-y-auto zc-scroll -mx-2">
-              {users.length === 0 ? (
+              {displayUsers.length === 0 ? (
                 <p className="text-center text-sm text-muted-foreground py-10">
-                  {query ? 'No users found' : 'Start typing to search users'}
+                  {query ? 'No users found' : 'No connections found. Find friends in the Connections tab first!'}
                 </p>
               ) : (
-                users.map((u) => (
+                displayUsers.map((u) => (
                   <button
                     key={u.id}
                     onClick={() => createDirect(u.id)}
@@ -301,7 +319,7 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
             </div>
 
             <div className="max-h-40 overflow-y-auto zc-scroll -mx-2">
-              {users.map((u) => (
+              {displayUsers.map((u) => (
                 <button
                   key={u.id}
                   onClick={() => toggleSelect(u.id)}

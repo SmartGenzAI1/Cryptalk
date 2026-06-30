@@ -203,8 +203,14 @@ export function ChatList() {
   }, [searchInput, searchQuery, setSearchQuery])
 
   const filtered = chats.filter((c) => {
-    if (chatFilter !== 'all' && c.type !== chatFilter) {
-      return false
+    // Hide Saved Messages from general lists, unless explicitly filtered by 'saved' tab
+    if (chatFilter === 'saved') {
+      if (c.type !== 'saved') return false
+    } else {
+      if (c.type === 'saved') return false
+      if (chatFilter !== 'all' && c.type !== chatFilter) {
+        return false
+      }
     }
     if (!searchQuery.trim()) return true
     const q = searchQuery.toLowerCase()

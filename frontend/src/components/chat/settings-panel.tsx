@@ -20,6 +20,7 @@ import {
   Zap,
   KeyRound,
   Bookmark,
+  LogOut,
 } from 'lucide-react'
 import { useChatStore } from '@/stores/chat-store'
 import { useTheme } from 'next-themes'
@@ -38,6 +39,16 @@ import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 
 type SettingsView = 'main' | 'privacy' | 'about' | 'delete'
+
+function maskEmail(email: string): string {
+  if (!email) return ''
+  const [localPart, domain] = email.split('@')
+  if (!domain) return email
+  if (localPart.length <= 3) {
+    return `${localPart}****@${domain}`
+  }
+  return `${localPart.slice(0, 3)}****${localPart.slice(-2)}@${domain}`
+}
 
 export function SettingsPanel() {
   const currentUser = useChatStore((s) => s.currentUser)
@@ -131,6 +142,23 @@ export function SettingsPanel() {
     }
   }
 
+  async function handleLogoutConfirm() {
+    if (confirm('Are you sure you want to sign out? Your active session will be closed.')) {
+      await handleLogout()
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await apiPost('/api/auth/logout')
+      setCurrentUser(null)
+      toast.success('Signed out')
+    } catch {
+      // Force local signout if API fails
+      setCurrentUser(null)
+    }
+  }
+
   return (
     <div className="fixed inset-0 w-full h-full z-50 md:relative md:inset-auto md:w-[380px] md:h-auto shrink-0 md:border-l flex flex-col bg-background md:bg-sidebar/60 zc-glass-sidebar">
       {/* HEADER */}
@@ -171,17 +199,12 @@ export function SettingsPanel() {
                 <ChatAvatar emoji={currentUser.avatarEmoji} color={currentUser.avatarColor} size="xl" />
                 <h2 className="text-xl font-bold mt-3">{currentUser.name}</h2>
                 <p className="text-sm text-muted-foreground">@{currentUser.username}</p>
+                {currentUser.email && (
+                  <p className="text-xs text-muted-foreground/80 mt-1 font-mono">
+                    {maskEmail(currentUser.email)}
+                  </p>
+                )}
                 {currentUser.bio && <p className="text-sm mt-2 text-center text-muted-foreground">{currentUser.bio}</p>}
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-4 flex items-center gap-2 rounded-xl px-4 zc-tap"
-                  onClick={handleOpenSaved}
-                >
-                  <Bookmark className="h-3.5 w-3.5" />
-                  Saved Messages
-                </Button>
               </div>
 
               {/* Theme Settings */}
@@ -274,6 +297,19 @@ export function SettingsPanel() {
               {/* Menu items */}
               <Section icon={<Star className="h-4 w-4" />} title="More">
                 <button
+                  onClick={handleOpenSaved}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-accent transition-colors text-left zc-tap mt-1"
+                >
+                  <div className="h-9 w-9 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-500">
+                    <Bookmark className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">Saved Messages</div>
+                    <div className="text-xs text-muted-foreground">Personal cloud & note storage</div>
+                  </div>
+                </button>
+
+                <button
                   onClick={() => setSubView('privacy')}
                   className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-accent transition-colors text-left zc-tap mt-1"
                 >
@@ -285,6 +321,7 @@ export function SettingsPanel() {
                     <div className="text-xs text-muted-foreground">Manage E2EE & your data</div>
                   </div>
                 </button>
+
                 <button
                   onClick={() => setSubView('about')}
                   className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-accent transition-colors text-left zc-tap mt-1"
@@ -295,6 +332,19 @@ export function SettingsPanel() {
                   <div className="flex-1">
                     <div className="text-sm font-medium">About Cryptalk</div>
                     <div className="text-xs text-muted-foreground">Version 2.0 • Premium Details</div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handleLogoutConfirm}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-destructive/15 text-destructive transition-colors text-left zc-tap mt-1"
+                >
+                  <div className="h-9 w-9 rounded-lg bg-destructive/15 flex items-center justify-center text-destructive">
+                    <LogOut className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">Sign out</div>
+                    <div className="text-xs text-muted-foreground">Close active session</div>
                   </div>
                 </button>
               </Section>
@@ -408,6 +458,16 @@ export function SettingsPanel() {
                   </div>
                   <p className="text-[10px] text-muted-foreground">Telegram animated emojis</p>
                 </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-amber-500/20 bg-amber-500/5 space-y-1 text-left">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  Important Disclaimer
+                </div>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  Cryptalk is currently in its early phase of development. While cryptographic and E2EE protocols are active, you may encounter bugs. Please do not use it for critical secrets or store irreplaceable data.
+                </p>
               </div>
 
               <div className="border-t pt-4 text-xs text-muted-foreground">
