@@ -46,12 +46,7 @@ export function MessageInput() {
   const currentUser = useChatStore((s) => s.currentUser)
   const messages = useChatStore((s) => activeChatId ? (s.messages[activeChatId] || EMPTY_MESSAGES) : EMPTY_MESSAGES)
   const addMessage = useChatStore((s) => s.addMessage)
-  const onlineUserIds = useChatStore((s) => s.onlineUserIds)
-
-  const otherMember = activeChat?.members.find((m) => m.user.id !== currentUser?.id)
-  const isDirect = activeChat?.type === 'direct'
-  const otherOnline = otherMember ? onlineUserIds.has(otherMember.user.id) : false
-  const directChatBlocked = isDirect && !otherOnline
+  const directChatBlocked = false
   const [text, setText] = useState(() => {
     if (typeof window !== 'undefined' && activeChatId) {
       return localStorage.getItem(`draft-${activeChatId}`) || ''
@@ -645,10 +640,9 @@ export function MessageInput() {
               onChange={handleChange}
               onKeyDown={handleKeyDown}
               onFocus={() => setActiveMobileTab(null)}
-              placeholder={directChatBlocked ? `Waiting for @${otherMember?.user.username || 'user'} to come online to chat…` : 'Type a message…'}
+              placeholder="Type a message…"
               rows={1}
-              disabled={directChatBlocked}
-              className="flex-1 resize-none min-h-[40px] max-h-40 bg-accent/40 border-0 rounded-2xl focus-visible:ring-1 focus-visible:ring-primary px-4 py-2.5 leading-snug disabled:opacity-60"
+              className="flex-1 resize-none min-h-[40px] max-h-40 bg-accent/40 border-0 rounded-2xl focus-visible:ring-1 focus-visible:ring-primary px-4 py-2.5 leading-snug"
             />
 
             <div className="flex items-center">
