@@ -93,21 +93,21 @@ export function ChatApp() {
           <ChatWindow />
           {infoPanelOpen && activeChatId && (
             <Suspense fallback={<PanelFallback />}>
-              <div className="absolute inset-0 md:relative md:inset-auto z-40 w-full md:w-[340px] flex">
+              <div className="absolute inset-0 md:relative md:inset-auto z-40 w-full md:w-[340px] h-full flex">
                 <ChatInfoPanel />
               </div>
             </Suspense>
           )}
           {settingsOpen && (
             <Suspense fallback={<PanelFallback />}>
-              <div className="absolute inset-0 md:relative md:inset-auto z-40 w-full md:w-[380px] flex">
+              <div className="absolute inset-0 md:relative md:inset-auto z-40 w-full md:w-[380px] h-full flex">
                 <SettingsPanel />
               </div>
             </Suspense>
           )}
           {connectionsPanelOpen && (
             <Suspense fallback={<PanelFallback />}>
-              <div className="absolute inset-0 md:relative md:inset-auto z-40 w-full md:w-[380px] flex">
+              <div className="absolute inset-0 md:relative md:inset-auto z-40 w-full md:w-[380px] h-full flex">
                 <ConnectionsPanel />
               </div>
             </Suspense>
