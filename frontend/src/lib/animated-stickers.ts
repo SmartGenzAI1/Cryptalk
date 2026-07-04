@@ -89,8 +89,19 @@ export function animatedStickerUrl(name: string): string {
   return `/lottie/${resolved}.json`
 }
 
+export function cleanEmoji(char: string): string {
+  if (!char) return ''
+  return char
+    .replace(/[\u{1F3FB}-\u{1F3FF}]/gu, '') // strip skin tones
+    .replace(/[\u{FE00}-\u{FE0F}]/gu, '')  // strip variation selectors
+}
+
 export function getAnimatedEmojiCodepoint(char: string): string | null {
-  const match = ANIMATED_EMOJIS.find(e => e.char === char)
+  const cleaned = cleanEmoji(char)
+  const match = ANIMATED_EMOJIS.find(e => {
+    const ec = cleanEmoji(e.char)
+    return ec === cleaned || e.char === char
+  })
   return match ? match.codepoint : null
 }
 

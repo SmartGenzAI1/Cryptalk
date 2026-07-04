@@ -130,7 +130,7 @@ export function ConnectionsPanel() {
   }
 
   return (
-    <div className="w-full h-full shrink-0 md:border-l flex flex-col bg-background md:bg-sidebar/60 zc-glass-sidebar">
+    <div className="w-full h-full shrink-0 md:border-l flex flex-col bg-background shadow-xl">
       <div className="flex items-center gap-2 px-4 h-16 border-b shrink-0">
         <UserPlus className="h-5 w-5 text-primary" />
         <span className="font-semibold flex-1 text-lg">Connections</span>

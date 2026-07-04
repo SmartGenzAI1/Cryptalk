@@ -116,30 +116,7 @@ async def send_connection_request(req: SendConnectionRequest, request: Request, 
             raise ConflictError("You're already connected")
         elif existing.status == "pending":
             if existing.to_user_id == uid:
-                # auto-accept mutual request
-                existing.status = "accepted"
-                # create direct chat
-                existing_chat = await db.execute(
-                    select(Chat).where(
-                        Chat.type == "direct",
-                        Chat.id.in_(select(ChatMember.chat_id).where(ChatMember.user_id == uid)),
-                        Chat.id.in_(select(ChatMember.chat_id).where(ChatMember.user_id == target.id)),
-                    )
-                )
-                if not existing_chat.scalar_one_or_none():
-                    chat = Chat(
-                        id=secrets.token_hex(12),
-                        type="direct",
-                        title="Direct",
-                        created_by=uid,
-                        created_at=now_ms(),
-                        updated_at=now_ms(),
-                    )
-                    db.add(chat)
-                    await db.flush()
-                    db.add(ChatMember(id=secrets.token_hex(12), chat_id=chat.id, user_id=uid, role="owner", joined_at=now_ms(), last_read_at=now_ms()))
-                    db.add(ChatMember(id=secrets.token_hex(12), chat_id=chat.id, user_id=target.id, role="member", joined_at=now_ms(), last_read_at=now_ms()))
-                return {"ok": True, "message": "Connection accepted automatically"}
+                raise ConflictError("This user has already sent you a connection request. Please accept it in the requests tab.")
             else:
                 raise ConflictError("Request already sent")
         else:
