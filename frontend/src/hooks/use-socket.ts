@@ -86,9 +86,12 @@ export function useSocket() {
       if (!data || !Array.isArray(data.messages)) return
       try {
         const { decryptMessageForChat } = await import('@/lib/e2ee')
+        const store = useChatStore.getState()
         for (const item of data.messages) {
+          if (item.message.senderId === store.currentUser?.id) {
+            continue
+          }
           try {
-            const store = useChatStore.getState()
             const chat = store.chats.find((c) => c.id === item.chatId)
             const chatType = chat?.type || store.activeChat?.type || 'direct'
             if (item.message.type === 'text' && item.message.content) {
@@ -109,10 +112,13 @@ export function useSocket() {
     })
 
     socket.on('message', async (data: { chatId: string; message: MessageWithSender }) => {
+      const store = useChatStore.getState()
+      if (data.message.senderId === store.currentUser?.id) {
+        return
+      }
       // decrypt incoming E2EE message before adding to store
       try {
         const { decryptMessageForChat } = await import('@/lib/e2ee')
-        const store = useChatStore.getState()
         const chat = store.chats.find((c) => c.id === data.chatId)
         const chatType = chat?.type || store.activeChat?.type || 'direct'
         if (data.message.type === 'text' && data.message.content) {
