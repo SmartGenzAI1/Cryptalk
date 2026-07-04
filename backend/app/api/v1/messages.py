@@ -66,6 +66,32 @@ async def send_message(
         "sender": serialize_user(user),
         "reactions": [],
     }
+
+    # Retrieve socket server and manager from app state
+    sio = request.app.state.sio
+    manager = request.app.state.sio_manager
+
+    from sqlalchemy import select
+    from app.models import ChatMember
+    from app.core.offline_queue import enqueue as enqueue_message
+
+    result = await db.execute(
+        select(ChatMember.user_id).where(ChatMember.chat_id == chat_id)
+    )
+    all_member_ids = [row[0] for row in result.all()]
+
+    payload = {"chatId": chat_id, "message": msg}
+
+    # Relay to everyone in the chat room who is online
+    await sio.emit("message", payload, room=f"chat:{chat_id}")
+
+    # Enqueue for offline members
+    for m_id in all_member_ids:
+        if m_id == user_id:
+            continue
+        if not manager.get_sockets_for_user(m_id):
+            enqueue_message(m_id, payload)
+
     return {"message": msg}
 
 @chat_router.post("/{chat_id}/messages/delivered")

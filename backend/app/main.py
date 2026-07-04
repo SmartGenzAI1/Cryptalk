@@ -302,6 +302,10 @@ if settings.has_redis:
 
 register_handlers(sio)
 
+from app.realtime.handlers import manager
+app.state.sio = sio
+app.state.sio_manager = manager
+
 asgi_app = socketio.ASGIApp(sio, app)
 
 

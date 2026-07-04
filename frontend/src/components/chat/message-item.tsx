@@ -65,6 +65,8 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
   const removeMessage = useChatStore((s) => s.removeMessage)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(message.content)
+  const [readMoreExpanded, setReadMoreExpanded] = useState(false)
+  const textContent = message.content || ''
   // sync starred state from server without useEffect (React 19 pattern)
   const [starred, setStarred] = useState(() => !!message.starred)
   const [prevStarred, setPrevStarred] = useState(message.starred)
@@ -527,9 +529,37 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                   )
                 ) : (
                   <div className="text-sm whitespace-pre-wrap break-words">
-                    {message.content}
-                      </div>
+                    {textContent.length > 250 && !readMoreExpanded ? (
+                      <>
+                        {textContent.slice(0, 250)}...{' '}
+                        <button
+                          onClick={() => setReadMoreExpanded(true)}
+                          className={cn(
+                            'text-xs font-bold hover:underline transition-all ml-1 inline-block',
+                            isOwn ? 'text-white/95 hover:text-white' : 'text-primary hover:text-primary/80'
+                          )}
+                        >
+                          Read More
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {textContent}
+                        {textContent.length > 250 && (
+                          <button
+                            onClick={() => setReadMoreExpanded(false)}
+                            className={cn(
+                              'text-xs font-bold hover:underline transition-all block mt-1',
+                              isOwn ? 'text-white/95 hover:text-white' : 'text-primary hover:text-primary/80'
+                            )}
+                          >
+                            Show Less
+                          </button>
+                        )}
+                      </>
                     )}
+                  </div>
+                )}
 
                 {/* Meta */}
                 {!editing && !isVoice && !isSticker && !hasAnimatedEmojis && !isImage && !isFile && (
