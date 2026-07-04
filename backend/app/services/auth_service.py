@@ -37,8 +37,6 @@ class AuthService:
             username=username,
             name=name,
             password_hash=hash_password(password),
-            avatar_color=secrets.choice(settings.AVATAR_COLORS),
-            avatar_emoji=secrets.choice(settings.AVATAR_ICONS),
             last_seen=now_ms(),
             is_online=True,
         )
@@ -47,8 +45,6 @@ class AuthService:
         saved = await self.chat_repo.create(
             type="saved",
             title="Saved Messages",
-            avatar_emoji=settings.CHAT_TYPE_ICONS["saved"],
-            avatar_color="emerald",
             created_by=user.id,
         )
         await self.chat_repo.add_member(saved.id, user.id, role="owner")
@@ -62,8 +58,6 @@ class AuthService:
                     type="channel",
                     title="Welcome Channel",
                     description="Welcome to Cryptalk! Say hello!",
-                    avatar_emoji="megaphone",
-                    avatar_color="emerald",
                     created_by=user.id,
                 )
                 await self.chat_repo.add_member(welcome.id, user.id, role="owner")

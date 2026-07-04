@@ -18,10 +18,6 @@ class CamelModel(BaseModel):
 class UserUpdate(CamelModel):
     name: Optional[str] = None
     bio: Optional[str] = None
-    avatar_emoji: Optional[str] = None
-    avatar_color: Optional[str] = None
-    accent_color: Optional[str] = None
-    wallpaper: Optional[str] = None
 
 
 class ChatCreate(CamelModel):
@@ -29,8 +25,6 @@ class ChatCreate(CamelModel):
     title: Optional[str] = None
     description: Optional[str] = None
     member_ids: Optional[List[str]] = None
-    avatar_emoji: Optional[str] = None
-    avatar_color: Optional[str] = None
     expires_in_days: Optional[int] = None
     member_keys: Optional[dict] = None
 

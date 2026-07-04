@@ -106,6 +106,10 @@ class Settings(BaseSettings):
         if self.is_postgres:
             if self.SENTRY_DSN and not (self.SENTRY_DSN.startswith("http://") or self.SENTRY_DSN.startswith("https://")):
                 raise RuntimeError("SENTRY_DSN must be a valid HTTP/HTTPS URL in production.")
+        else:
+            db_dir = os.path.dirname(self.DB_PATH)
+            if db_dir and not os.path.exists(db_dir):
+                os.makedirs(db_dir, exist_ok=True)
 
 
 @lru_cache

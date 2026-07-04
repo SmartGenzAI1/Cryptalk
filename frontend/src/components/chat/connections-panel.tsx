@@ -53,15 +53,20 @@ export function ConnectionsPanel() {
     return () => { cancelled = true }
   }, [])
 
-  useEffect(() => {
-    if (!searchQuery.trim()) {
+  function handleSearchChange(q: string) {
+    setSearchQuery(q)
+    if (!q.trim()) {
       setSearchResults([])
-      return
     }
+  }
+
+  useEffect(() => {
+    const q = searchQuery.trim()
+    if (!q) return
     let cancelled = false
     const t = setTimeout(async () => {
       try {
-        const data = await apiGet<{ users: SafeUser[] }>(`/api/users/search?q=${encodeURIComponent(searchQuery)}`)
+        const data = await apiGet<{ users: SafeUser[] }>(`/api/users/search?q=${encodeURIComponent(q)}`)
         if (!cancelled) setSearchResults(data.users || [])
       } catch {
         if (!cancelled) setSearchResults([])
@@ -125,7 +130,7 @@ export function ConnectionsPanel() {
   }
 
   return (
-    <div className="fixed inset-0 w-full h-full z-50 md:relative md:inset-auto md:w-[380px] md:h-auto shrink-0 md:border-l flex flex-col bg-background md:bg-sidebar/60 zc-glass-sidebar">
+    <div className="w-full h-full shrink-0 md:border-l flex flex-col bg-background md:bg-sidebar/60 zc-glass-sidebar">
       <div className="flex items-center gap-2 px-4 h-16 border-b shrink-0">
         <UserPlus className="h-5 w-5 text-primary" />
         <span className="font-semibold flex-1 text-lg">Connections</span>
@@ -158,7 +163,7 @@ export function ConnectionsPanel() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 placeholder="Search by username..."
                 className="pl-9"
               />

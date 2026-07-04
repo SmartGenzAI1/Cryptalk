@@ -45,11 +45,13 @@ function ProfileForm({ user, onSaved }: { user: SafeUser; onSaved: () => void })
   async function handleSave() {
     setSaving(true)
     try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('zc-avatarEmoji', icon)
+        localStorage.setItem('zc-avatarColor', color)
+      }
       const data = await apiPatch<{ user: any }>('/api/users/me', {
         name,
         bio,
-        avatarEmoji: icon,
-        avatarColor: color,
       })
       setCurrentUser(data.user)
       toast.success('Profile updated')

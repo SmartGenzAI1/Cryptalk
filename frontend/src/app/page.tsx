@@ -32,13 +32,35 @@ export default function Home() {
   const setCurrentUser = useChatStore((s) => s.setCurrentUser)
 
   useEffect(() => {
+    // 1. Try loading cached user instantly to bypass spinner
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem('zc-currentUser')
+      if (cached) {
+        try {
+          setCurrentUser(JSON.parse(cached))
+          setAuthLoading(false)
+        } catch {}
+      }
+    }
+
+    // 2. Fetch fresh user details in the background
     let cancelled = false
     ;(async () => {
       try {
         const data = await apiGet<{ user: any }>('/api/auth/me')
-        if (!cancelled) setCurrentUser(data.user)
+        if (!cancelled) {
+          setCurrentUser(data.user)
+          if (data.user) {
+            localStorage.setItem('zc-currentUser', JSON.stringify(data.user))
+          } else {
+            localStorage.removeItem('zc-currentUser')
+          }
+        }
       } catch {
-        if (!cancelled) setCurrentUser(null)
+        if (!cancelled) {
+          setCurrentUser(null)
+          localStorage.removeItem('zc-currentUser')
+        }
       } finally {
         if (!cancelled) setAuthLoading(false)
       }

@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import type { SafeUser, ChatWithMembers, MessageWithSender } from '@/lib/types'
+import { toSafeUser, type SafeUser, type ChatWithMembers, type MessageWithSender } from '@/lib/types'
 
 // Stable empty references to avoid useSyncExternalStore infinite loops
 export const EMPTY_MESSAGES: MessageWithSender[] = []
@@ -106,25 +106,66 @@ interface ChatState {
 export const useChatStore = create<ChatState>((set, _get) => ({
   currentUser: null,
   authLoading: true,
-  setCurrentUser: (u) => set({ currentUser: u }),
+  setCurrentUser: (u) => {
+    const safeUser = u ? toSafeUser(u) : null
+    set({ currentUser: safeUser })
+    if (typeof window !== 'undefined') {
+      if (safeUser) localStorage.setItem('zc-currentUser', JSON.stringify(safeUser))
+      else localStorage.removeItem('zc-currentUser')
+    }
+  },
   setAuthLoading: (b) => set({ authLoading: b }),
 
   chats: [],
-  setChats: (c) => set({ chats: c }),
+  setChats: (c) => {
+    const mapped = c.map((chat) => ({
+      ...chat,
+      members: chat.members.map((m: any) => ({
+        ...m,
+        user: toSafeUser(m.user),
+      })),
+    }))
+    set({ chats: mapped })
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('zc-chats', JSON.stringify(mapped))
+    }
+  },
   upsertChat: (c) =>
     set((s) => {
-      const idx = s.chats.findIndex((x) => x.id === c.id)
-      if (idx >= 0) {
-        const copy = [...s.chats]
-        copy[idx] = c
-        return { chats: copy }
+      const safeChat = {
+        ...c,
+        members: c.members.map((m: any) => ({
+          ...m,
+          user: toSafeUser(m.user),
+        })),
       }
-      return { chats: [c, ...s.chats] }
+      const idx = s.chats.findIndex((x) => x.id === safeChat.id)
+      let nextChats = [...s.chats]
+      if (idx >= 0) {
+        nextChats[idx] = safeChat
+      } else {
+        nextChats = [safeChat, ...s.chats]
+      }
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('zc-chats', JSON.stringify(nextChats))
+      }
+      return { chats: nextChats }
     }),
   activeChatId: null,
   setActiveChatId: (id) => set({ activeChatId: id }),
   activeChat: null,
-  setActiveChat: (c) => set({ activeChat: c }),
+  setActiveChat: (c) =>
+    set({
+      activeChat: c
+        ? {
+            ...c,
+            members: c.members.map((m) => ({
+              ...m,
+              user: toSafeUser(m.user),
+            })),
+          }
+        : null,
+    }),
 
   messages: {},
   setMessages: (chatId, msgs) =>
@@ -244,9 +285,13 @@ export const useChatStore = create<ChatState>((set, _get) => ({
   setChatFilter: (filter) => set({ chatFilter: filter }),
 
   updateChatListItem: (id, patch) =>
-    set((s) => ({
-      chats: s.chats.map((c) => (c.id === id ? { ...c, ...patch } : c)),
-    })),
+    set((s) => {
+      const nextChats = s.chats.map((c) => (c.id === id ? { ...c, ...patch } : c))
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('zc-chats', JSON.stringify(nextChats))
+      }
+      return { chats: nextChats }
+    }),
 }))
 
 export type { ChatListItem }

@@ -12,6 +12,7 @@ import {
   Check,
   Clock,
   Loader2,
+  Plus,
 } from 'lucide-react'
 import { useChatStore, EMPTY_MESSAGES } from '@/stores/chat-store'
 import { Button } from '@/components/ui/button'
@@ -45,6 +46,12 @@ export function MessageInput() {
   const currentUser = useChatStore((s) => s.currentUser)
   const messages = useChatStore((s) => activeChatId ? (s.messages[activeChatId] || EMPTY_MESSAGES) : EMPTY_MESSAGES)
   const addMessage = useChatStore((s) => s.addMessage)
+  const onlineUserIds = useChatStore((s) => s.onlineUserIds)
+
+  const otherMember = activeChat?.members.find((m) => m.user.id !== currentUser?.id)
+  const isDirect = activeChat?.type === 'direct'
+  const otherOnline = otherMember ? onlineUserIds.has(otherMember.user.id) : false
+  const directChatBlocked = isDirect && !otherOnline
   const [text, setText] = useState(() => {
     if (typeof window !== 'undefined' && activeChatId) {
       return localStorage.getItem(`draft-${activeChatId}`) || ''
@@ -57,6 +64,7 @@ export function MessageInput() {
   const [recording, setRecording] = useState(false)
   const [recordSeconds, setRecordSeconds] = useState(0)
   const [ expiresIn, setExpiresIn] = useState<number | null>(null)
+  const [activeMobileTab, setActiveMobileTab] = useState<'menu' | 'emoji' | 'sticker' | 'timer' | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -503,141 +511,304 @@ export function MessageInput() {
           </button>
         </div>
       ) : (
-        <div className="p-3 flex items-end gap-2">
-          <div className="flex items-center gap-1">
-            <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground zc-tap">
-                  <Smile className="h-5 w-5" />
+        <div className="flex flex-col">
+          <div className="p-3 flex items-end gap-2">
+            <div className="flex items-center gap-1">
+              {/* Mobile view: single Plus button */}
+              <div className="flex md:hidden">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "h-10 w-10 rounded-full zc-tap",
+                    activeMobileTab ? "text-primary border border-primary/20 bg-primary/5" : "text-muted-foreground"
+                  )}
+                  onClick={() => {
+                    setActiveMobileTab((prev) => (prev ? null : 'menu'))
+                  }}
+                  title="More actions"
+                  disabled={directChatBlocked}
+                >
+                  {activeMobileTab ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-72 p-2" align="start">
-                <ScrollArea className="h-60 w-full pr-1">
-                  <div className="grid grid-cols-8 gap-0.5">
-                    {EMOJIS.map((e) => (
-                      <button
-                        key={e}
-                        onClick={() => { setText((t) => t + e); textareaRef.current?.focus() }}
-                        className="h-8 w-8 rounded hover:bg-accent hover:scale-125 transition-all flex items-center justify-center text-lg"
-                      >
-                        {e}
-                      </button>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </PopoverContent>
-            </Popover>
+              </div>
 
-            <Popover open={stickerOpen} onOpenChange={setStickerOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground zc-tap" title="Stickers & Emojis">
-                  <Sticker className="h-5 w-5" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80 p-3" align="start">
-                <Tabs defaultValue="animated" className="w-full">
-                  <TabsList className="grid grid-cols-2 w-full mb-3 shrink-0">
-                    <TabsTrigger value="static" className="text-xs font-semibold zc-tap">Static Stickers</TabsTrigger>
-                    <TabsTrigger value="animated" className="text-xs font-semibold zc-tap">Animated Emojis</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="static" className="m-0">
-                    <ScrollArea className="h-72 w-full pr-1">
-                      <div className="grid grid-cols-4 gap-2 p-1">
-                        {STICKERS.map((name) => (
-                          <button
-                            key={name}
-                            onClick={() => { send(name, 'sticker'); setStickerOpen(false) }}
-                            className="aspect-square rounded-xl bg-accent/40 hover:bg-primary/10 hover:scale-105 transition-all flex items-center justify-center p-1 zc-tap"
-                            title={name}
-                          >
-                            <img src={stickerIconUrl(name)} alt={name} width={44} height={44} loading="lazy" className="object-contain" />
-                          </button>
+              {/* Desktop view: original inline buttons */}
+              <div className="hidden md:flex items-center gap-1">
+                <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground zc-tap" disabled={directChatBlocked}>
+                      <Smile className="h-5 w-5" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72 p-2" align="start">
+                    <ScrollArea className="h-60 w-full pr-1">
+                      <div className="grid grid-cols-8 gap-0.5">
+                        {EMOJIS.map((e) => (
+                           <button
+                             key={e}
+                             onClick={() => { setText((t) => t + e); textareaRef.current?.focus() }}
+                             className="h-8 w-8 rounded hover:bg-accent hover:scale-125 transition-all flex items-center justify-center text-lg"
+                           >
+                             {e}
+                           </button>
                         ))}
                       </div>
                     </ScrollArea>
-                  </TabsContent>
+                  </PopoverContent>
+                </Popover>
 
-                  <TabsContent value="animated" className="m-0">
-                    <AnimatedStickerPicker onSelect={(name) => { send(name, 'sticker'); setStickerOpen(false) }} />
-                  </TabsContent>
-                </Tabs>
-              </PopoverContent>
-            </Popover>
+                <Popover open={stickerOpen} onOpenChange={setStickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground zc-tap" title="Stickers & Emojis" disabled={directChatBlocked}>
+                      <Sticker className="h-5 w-5" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-3" align="start">
+                    <Tabs defaultValue="animated" className="w-full">
+                      <TabsList className="grid grid-cols-2 w-full mb-3 shrink-0">
+                        <TabsTrigger value="static" className="text-xs font-semibold zc-tap">Static Stickers</TabsTrigger>
+                        <TabsTrigger value="animated" className="text-xs font-semibold zc-tap">Animated Emojis</TabsTrigger>
+                      </TabsList>
 
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className={cn('h-10 w-10 rounded-full zc-tap', expiresIn ? 'text-amber-500' : 'text-muted-foreground')} title="Self-destruct timer">
-                  <Clock className="h-5 w-5" />
+                      <TabsContent value="static" className="m-0">
+                        <ScrollArea className="h-72 w-full pr-1">
+                          <div className="grid grid-cols-4 gap-2 p-1">
+                            {STICKERS.map((name) => (
+                              <button
+                                key={name}
+                                onClick={() => { send(name, 'sticker'); setStickerOpen(false) }}
+                                className="aspect-square rounded-xl bg-accent/40 hover:bg-primary/10 hover:scale-105 transition-all flex items-center justify-center p-1 zc-tap"
+                                title={name}
+                              >
+                                <img src={stickerIconUrl(name)} alt={name} width={44} height={44} loading="lazy" className="object-contain" />
+                              </button>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </TabsContent>
+
+                      <TabsContent value="animated" className="m-0">
+                        <AnimatedStickerPicker onSelect={(name) => { send(name, 'sticker'); setStickerOpen(false) }} />
+                      </TabsContent>
+                    </Tabs>
+                  </PopoverContent>
+                </Popover>
+
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className={cn('h-10 w-10 rounded-full zc-tap', expiresIn ? 'text-amber-500' : 'text-muted-foreground')} title="Self-destruct timer" disabled={directChatBlocked}>
+                      <Clock className="h-5 w-5" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-48 p-2" align="start">
+                    <div className="text-xs font-medium text-muted-foreground mb-2 px-1">Self-destruct after</div>
+                    {[
+                      { label: 'Off', value: null },
+                      { label: '10 seconds', value: 10 },
+                      { label: '1 minute', value: 60 },
+                      { label: '1 hour', value: 3600 },
+                      { label: '1 day', value: 86400 },
+                      { label: '1 week', value: 604800 },
+                    ].map((opt) => (
+                      <button
+                        key={String(opt.value)}
+                        onClick={() => { setExpiresIn(opt.value); }}
+                        className={cn(
+                          'w-full text-left px-2 py-1.5 rounded-lg text-sm transition-colors zc-tap',
+                          expiresIn === opt.value ? 'bg-primary/15 text-primary font-medium' : 'hover:bg-accent'
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+
+                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground zc-tap" onClick={() => !fileUploading && fileInputRef.current?.click()} title="Attach file" disabled={fileUploading || directChatBlocked}>
+                  {fileUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Paperclip className="h-5 w-5" />}
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-48 p-2" align="start">
-                <div className="text-xs font-medium text-muted-foreground mb-2 px-1">Self-destruct after</div>
-                {[
-                  { label: 'Off', value: null },
-                  { label: '10 seconds', value: 10 },
-                  { label: '1 minute', value: 60 },
-                  { label: '1 hour', value: 3600 },
-                  { label: '1 day', value: 86400 },
-                  { label: '1 week', value: 604800 },
-                ].map((opt) => (
-                  <button
-                    key={String(opt.value)}
-                    onClick={() => { setExpiresIn(opt.value); }}
-                    className={cn(
-                      'w-full text-left px-2 py-1.5 rounded-lg text-sm transition-colors zc-tap',
-                      expiresIn === opt.value ? 'bg-primary/15 text-primary font-medium' : 'hover:bg-accent'
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </PopoverContent>
-            </Popover>
+              </div>
 
-            <input
-              type="file"
-              ref={fileInputRef}
-              className="hidden"
-              onChange={handleFileSelect}
-              accept="image/*,video/*,application/pdf,audio/*,.zip,.doc,.docx,.txt"
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                onChange={handleFileSelect}
+                accept="image/*,video/*,application/pdf,audio/*,.zip,.doc,.docx,.txt"
+              />
+            </div>
+
+            <Textarea
+              ref={textareaRef}
+              value={text}
+              onChange={handleChange}
+              onKeyDown={handleKeyDown}
+              onFocus={() => setActiveMobileTab(null)}
+              placeholder={directChatBlocked ? `Waiting for @${otherMember?.user.username || 'user'} to come online to chat…` : 'Type a message…'}
+              rows={1}
+              disabled={directChatBlocked}
+              className="flex-1 resize-none min-h-[40px] max-h-40 bg-accent/40 border-0 rounded-2xl focus-visible:ring-1 focus-visible:ring-primary px-4 py-2.5 leading-snug disabled:opacity-60"
             />
-            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground zc-tap" onClick={() => !fileUploading && fileInputRef.current?.click()} title="Attach file" disabled={fileUploading}>
-              {fileUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Paperclip className="h-5 w-5" />}
-            </Button>
+
+            <div className="flex items-center">
+              {text.trim() ? (
+                <Button
+                  onClick={() => { send(text); setActiveMobileTab(null); }}
+                  size="icon"
+                  disabled={directChatBlocked}
+                  className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-primary hover:brightness-110 shadow-md zc-tap"
+                >
+                  <Send className="h-5 w-5" />
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={directChatBlocked}
+                  className="h-10 w-10 rounded-full text-muted-foreground hover:text-red-500 zc-tap"
+                  onClick={startRecording}
+                  title="Record voice message"
+                >
+                  <Mic className="h-5 w-5" />
+                </Button>
+              )}
+            </div>
           </div>
 
-          <Textarea
-            ref={textareaRef}
-            value={text}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a message…"
-            rows={1}
-            className="flex-1 resize-none min-h-[40px] max-h-40 bg-accent/40 border-0 rounded-2xl focus-visible:ring-1 focus-visible:ring-primary px-4 py-2.5 leading-snug"
-          />
+          {/* Mobile Expandable Drawer Panel */}
+          {activeMobileTab && (
+            <div className="border-t bg-background p-3 md:hidden zc-fade-in">
+              {activeMobileTab === 'menu' && (
+                <div className="grid grid-cols-4 gap-4 py-2">
+                  <button
+                    onClick={() => { fileInputRef.current?.click(); setActiveMobileTab(null); }}
+                    className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground zc-tap"
+                  >
+                    <div className="h-12 w-12 rounded-full bg-blue-500/15 text-blue-500 flex items-center justify-center">
+                      <Paperclip className="h-5 w-5" />
+                    </div>
+                    <span className="text-xs">Document</span>
+                  </button>
 
-          <div className="flex items-center">
-            {text.trim() ? (
-              <Button
-                onClick={() => send(text)}
-                size="icon"
-                className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-primary hover:brightness-110 shadow-md zc-tap"
-              >
-                <Send className="h-5 w-5" />
-              </Button>
-            ) : (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 rounded-full text-muted-foreground hover:text-red-500 zc-tap"
-                onClick={startRecording}
-                title="Record voice message"
-              >
-                <Mic className="h-5 w-5" />
-              </Button>
-            )}
-          </div>
+                  <button
+                    onClick={() => setActiveMobileTab('emoji')}
+                    className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground zc-tap"
+                  >
+                    <div className="h-12 w-12 rounded-full bg-emerald-500/15 text-emerald-500 flex items-center justify-center">
+                      <Smile className="h-5 w-5" />
+                    </div>
+                     <span className="text-xs">Emoji</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveMobileTab('sticker')}
+                    className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground zc-tap"
+                  >
+                    <div className="h-12 w-12 rounded-full bg-purple-500/15 text-purple-500 flex items-center justify-center">
+                      <Sticker className="h-5 w-5" />
+                    </div>
+                    <span className="text-xs">Stickers</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveMobileTab('timer')}
+                    className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground zc-tap"
+                  >
+                    <div className={cn("h-12 w-12 rounded-full flex items-center justify-center", expiresIn ? "bg-amber-500 text-white" : "bg-amber-500/15 text-amber-500")}>
+                      <Clock className="h-5 w-5" />
+                    </div>
+                    <span className="text-xs">{expiresIn ? `${expiresIn}s` : 'Timer'}</span>
+                  </button>
+                </div>
+              )}
+
+              {activeMobileTab === 'emoji' && (
+                <div>
+                  <div className="flex items-center justify-between border-b pb-2 mb-2">
+                    <span className="text-xs font-semibold text-muted-foreground">Emojis</span>
+                    <button onClick={() => setActiveMobileTab('menu')} className="text-xs text-primary font-semibold">Back</button>
+                  </div>
+                  <ScrollArea className="h-48 w-full">
+                    <div className="grid grid-cols-8 gap-1">
+                      {EMOJIS.map((e) => (
+                        <button
+                          key={e}
+                          onClick={() => { setText((t) => t + e); textareaRef.current?.focus() }}
+                          className="h-9 w-9 rounded flex items-center justify-center text-xl hover:bg-accent active:scale-125 transition-transform"
+                        >
+                          {e}
+                        </button>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+              )}
+
+              {activeMobileTab === 'sticker' && (
+                <div>
+                  <div className="flex items-center justify-between border-b pb-2 mb-2">
+                    <span className="text-xs font-semibold text-muted-foreground">Stickers</span>
+                    <button onClick={() => setActiveMobileTab('menu')} className="text-xs text-primary font-semibold">Back</button>
+                  </div>
+                  <Tabs defaultValue="animated" className="w-full">
+                    <TabsList className="grid grid-cols-2 w-full mb-2">
+                      <TabsTrigger value="static" className="text-xs font-semibold">Static Stickers</TabsTrigger>
+                      <TabsTrigger value="animated" className="text-xs font-semibold">Animated Emojis</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="static" className="m-0">
+                      <ScrollArea className="h-48 w-full">
+                        <div className="grid grid-cols-4 gap-2">
+                          {STICKERS.map((name) => (
+                            <button
+                              key={name}
+                              onClick={() => { send(name, 'sticker'); setActiveMobileTab(null); }}
+                              className="aspect-square rounded-xl bg-accent/40 flex items-center justify-center p-1"
+                            >
+                              <img src={stickerIconUrl(name)} alt={name} width={44} height={44} loading="lazy" />
+                            </button>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </TabsContent>
+                    <TabsContent value="animated" className="m-0">
+                      <AnimatedStickerPicker onSelect={(name) => { send(name, 'sticker'); setActiveMobileTab(null); }} />
+                    </TabsContent>
+                  </Tabs>
+                </div>
+              )}
+
+              {activeMobileTab === 'timer' && (
+                <div>
+                  <div className="flex items-center justify-between border-b pb-2 mb-2">
+                    <span className="text-xs font-semibold text-muted-foreground">Self-Destruct Timer</span>
+                    <button onClick={() => setActiveMobileTab('menu')} className="text-xs text-primary font-semibold">Back</button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 py-1">
+                    {[
+                      { label: 'Off', value: null },
+                      { label: '10 seconds', value: 10 },
+                      { label: '1 minute', value: 60 },
+                      { label: '1 hour', value: 3600 },
+                      { label: '1 day', value: 86400 },
+                      { label: '1 week', value: 604800 },
+                    ].map((opt) => (
+                      <button
+                        key={String(opt.value)}
+                        onClick={() => { setExpiresIn(opt.value); setActiveMobileTab(null); }}
+                        className={cn(
+                          'px-3 py-2.5 rounded-xl text-center text-xs font-semibold border transition-colors',
+                          expiresIn === opt.value ? 'bg-primary border-primary text-primary-foreground' : 'bg-accent/40 hover:bg-accent'
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

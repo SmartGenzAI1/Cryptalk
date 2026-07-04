@@ -78,6 +78,9 @@ async def delete_chat(chat_id: str, request: Request = None, db: AsyncSession = 
     if chat.type == "saved":
         raise ValidationError("Cannot delete Saved Messages")
 
+    if chat.type in ("group", "channel") and member.role != "owner":
+        raise ForbiddenError("Only the chat owner can delete a group or channel")
+
     await db.execute(delete(Chat).where(Chat.id == chat_id))
     return {"ok": True}
 

@@ -67,17 +67,56 @@ export interface MessageWithSender {
 }
 
 export function toSafeUser(u: any): SafeUser {
+  const seed = u.username || u.id || 'default'
+  let hash = 0
+  for (let i = 0; i < seed.length; i++) {
+    hash = seed.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  const colorKeys = Object.keys(AVATAR_COLORS)
+  const colorIndex = Math.abs(hash) % colorKeys.length
+  
+  const iconFallback = [
+    "fox", "cat", "dog", "bird", "fish", "lion", "panda", "unicorn",
+    "giraffe", "elephant", "rabbit", "owl", "bear", "frog", "turtle",
+    "dolphin", "butterfly", "dragon", "dinosaur", "hedgehog", "parrot",
+    "horse", "cow", "chicken", "duck", "crab", "octopus", "jellyfish",
+  ]
+  const emojiIndex = Math.abs(hash + 1) % iconFallback.length
+  
+  const detColor = colorKeys[colorIndex]
+  const detEmoji = iconFallback[emojiIndex]
+
+  let avatarColor = u.avatarColor || detColor
+  let avatarEmoji = u.avatarEmoji || detEmoji
+  let accentColor = u.accentColor || 'emerald'
+  let wallpaper = u.wallpaper || 'dots'
+
+  if (typeof window !== 'undefined') {
+    const currentUserStr = localStorage.getItem('zc-currentUser')
+    if (currentUserStr) {
+      try {
+        const curUser = JSON.parse(currentUserStr)
+        if (curUser && curUser.id === u.id) {
+          avatarColor = localStorage.getItem('zc-avatarColor') || avatarColor
+          avatarEmoji = localStorage.getItem('zc-avatarEmoji') || avatarEmoji
+          accentColor = localStorage.getItem('zc-accentColor') || accentColor
+          wallpaper = localStorage.getItem('zc-wallpaper') || wallpaper
+        }
+      } catch (e) {}
+    }
+  }
+
   return {
     id: u.id,
     username: u.username,
     name: u.name,
     bio: u.bio ?? '',
-    avatarColor: u.avatarColor ?? 'emerald',
-    avatarEmoji: u.avatarEmoji ?? 'fox',
+    avatarColor,
+    avatarEmoji,
     isOnline: u.isOnline ?? false,
     lastSeen: u.lastSeen?.toISOString?.() ?? u.lastSeen ?? new Date().toISOString(),
-    accentColor: u.accentColor ?? 'emerald',
-    wallpaper: u.wallpaper ?? 'dots',
+    accentColor,
+    wallpaper,
     email: u.email ?? '',
   }
 }

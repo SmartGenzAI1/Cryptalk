@@ -78,23 +78,21 @@ export function SettingsPanel() {
   async function applyAccent(c: string) {
     setAccent(c)
     document.documentElement.style.setProperty('--accent-hex', ACCENT_HEX[c] || ACCENT_HEX.emerald)
-    await save({ accentColor: c })
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('zc-accentColor', c)
+    }
+    if (currentUser) {
+      setCurrentUser({ ...currentUser, accentColor: c })
+    }
   }
 
   async function applyWallpaper(w: string) {
     setWallpaper(w)
-    await save({ wallpaper: w })
-  }
-
-  async function save(patch: any) {
-    setSaving(true)
-    try {
-      const data = await updateUserSettings(patch)
-      if (data.user) setCurrentUser(data.user)
-    } catch (e: any) {
-      toast.error('Failed to save')
-    } finally {
-      setSaving(false)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('zc-wallpaper', w)
+    }
+    if (currentUser) {
+      setCurrentUser({ ...currentUser, wallpaper: w })
     }
   }
 
@@ -160,7 +158,7 @@ export function SettingsPanel() {
   }
 
   return (
-    <div className="fixed inset-0 w-full h-full z-50 md:relative md:inset-auto md:w-[380px] md:h-auto shrink-0 md:border-l flex flex-col bg-background md:bg-sidebar/60 zc-glass-sidebar">
+    <div className="w-full h-full shrink-0 md:border-l flex flex-col bg-background md:bg-sidebar/60 zc-glass-sidebar">
       {/* HEADER */}
       <div className="flex items-center gap-2 px-4 h-16 border-b shrink-0">
         {subView !== 'main' ? (
@@ -458,6 +456,16 @@ export function SettingsPanel() {
                   </div>
                   <p className="text-[10px] text-muted-foreground">Telegram animated emojis</p>
                 </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-primary/20 bg-primary/5 text-left space-y-1">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                  <Info className="h-3.5 w-3.5 shrink-0" />
+                  About Us (SmartGenzAI)
+                </div>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  SmartGenzAI is dedicated to building next-generation secure, private, and surveillance-free communication platforms. We believe privacy is a fundamental human right, not a luxury.
+                </p>
               </div>
 
               <div className="p-3.5 rounded-xl border border-amber-500/20 bg-amber-500/5 space-y-1 text-left">

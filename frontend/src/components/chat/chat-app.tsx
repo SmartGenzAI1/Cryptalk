@@ -31,6 +31,24 @@ export function ChatApp() {
   const setE2eeEnabled = useChatStore(s => s.setE2eeEnabled)
 
   useEffect(() => {
+    // 1. Try loading cached chats instantly from cache
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem('zc-chats')
+      if (cached) {
+        try {
+          const chatsList = JSON.parse(cached)
+          setChats(chatsList)
+          // Attempt instant decryption of keys with cached chats
+          import('@/lib/e2ee').then(({ decryptAndStoreChatKeys }) => {
+            void decryptAndStoreChatKeys(chatsList).catch(err => {
+              console.warn('Initial key decryption failed:', err)
+            })
+          }).catch(() => {})
+        } catch {}
+      }
+    }
+
+    // 2. Fetch fresh chats and user info from the server
     let mounted = true
     ;(async () => {
       try {

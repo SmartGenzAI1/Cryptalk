@@ -21,8 +21,6 @@ class ChatService:
                 saved = await self.chats.create(
                     type="saved",
                     title="Saved Messages",
-                    avatar_emoji="bookmark",
-                    avatar_color="emerald",
                     created_by=user_id,
                 )
                 await self.chats.add_member(saved.id, user_id, role="owner")
@@ -65,8 +63,6 @@ class ChatService:
         title: Optional[str] = None,
         description: Optional[str] = None,
         member_ids: Optional[List[str]] = None,
-        avatar_emoji: Optional[str] = None,
-        avatar_color: Optional[str] = None,
         expires_in_days: Optional[int] = None,
         member_keys: Optional[dict] = None,
     ) -> dict:
@@ -74,7 +70,7 @@ class ChatService:
             return await self._create_direct(user_id, member_ids or [])
         return await self._create_group(
             user_id, chat_type, title, description, member_ids or [],
-            avatar_emoji, avatar_color, expires_in_days, member_keys,
+            expires_in_days, member_keys,
         )
 
     async def _create_direct(self, user_id: str, member_ids: List[str]) -> dict:
@@ -97,7 +93,6 @@ class ChatService:
     async def _create_group(
         self, user_id: str, chat_type: str, title: Optional[str],
         description: Optional[str], member_ids: List[str],
-        avatar_emoji: Optional[str], avatar_color: Optional[str],
         expires_in_days: Optional[int] = None,
         member_keys: Optional[dict] = None,
     ) -> dict:
@@ -133,11 +128,6 @@ class ChatService:
             type=chat_type,
             title=title,
             description=sanitize_text(description or "", max_length=300),
-            avatar_emoji=avatar_emoji or (
-                settings.CHAT_TYPE_ICONS.get("channel") if chat_type == "channel"
-                else settings.CHAT_TYPE_ICONS.get("group")
-            ),
-            avatar_color=avatar_color or "violet",
             created_by=user_id,
             expires_at=expires_at,
         )

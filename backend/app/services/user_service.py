@@ -23,21 +23,6 @@ class UserService:
             patch["name"] = sanitize_text(kwargs["name"], max_length=50)
         if kwargs.get("bio") is not None:
             patch["bio"] = sanitize_bio(kwargs["bio"])
-        if kwargs.get("avatar_emoji") is not None:
-            patch["avatar_emoji"] = kwargs["avatar_emoji"]
-        if kwargs.get("avatar_color") is not None:
-            if kwargs["avatar_color"] not in settings.AVATAR_COLORS:
-                raise ValidationError(f"Invalid avatar color: {kwargs['avatar_color']}")
-            patch["avatar_color"] = kwargs["avatar_color"]
-        if kwargs.get("accent_color") is not None:
-            if kwargs["accent_color"] not in settings.AVATAR_COLORS:
-                raise ValidationError(f"Invalid accent color: {kwargs['accent_color']}")
-            patch["accent_color"] = kwargs["accent_color"]
-        if kwargs.get("wallpaper") is not None:
-            if kwargs["wallpaper"] not in settings.WALLPAPERS:
-                raise ValidationError(f"Invalid wallpaper: {kwargs['wallpaper']}")
-            patch["wallpaper"] = kwargs["wallpaper"]
-
         if "push_token" in kwargs:
             patch["push_token"] = kwargs["push_token"]
         if "push_platform" in kwargs:
