@@ -29,6 +29,8 @@ import {
 import { toast } from 'sonner'
 import { formatLastSeen } from '@/lib/format'
 import { searchInChat, leaveChat, deleteChat, generateInviteLink } from '@/lib/actions'
+import { VoiceCallModal } from './voice-call-modal'
+import { getSocket } from '@/hooks/use-socket'
 import { motion, AnimatePresence } from 'framer-motion'
 import Image from 'next/image'
 
@@ -48,6 +50,36 @@ export function ChatWindow() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [searchIndex, setSearchIndex] = useState(0)
+
+  const [callModalOpen, setCallModalOpen] = useState(false)
+  const [isIncomingCall, setIsIncomingCall] = useState(false)
+  const [incomingCallOffer, setIncomingCallOffer] = useState<any>(null)
+
+  useEffect(() => {
+    const socket = getSocket()
+    if (!socket) return
+
+    const handleCallOffer = (data: any) => {
+      setIncomingCallOffer(data)
+      setIsIncomingCall(true)
+      setCallModalOpen(true)
+    }
+
+    socket.on('call-offer', handleCallOffer)
+    return () => {
+      socket.off('call-offer', handleCallOffer)
+    }
+  }, [])
+
+  function handleStartVoiceCall() {
+    if (!activeChat || activeChat.type !== 'direct') {
+      toast.info('Voice calls supported in direct chats')
+      return
+    }
+    setIsIncomingCall(false)
+    setIncomingCallOffer(null)
+    setCallModalOpen(true)
+  }
 
   const otherMember = activeChat?.members.find((m) => m.user.id !== currentUser?.id)
   const otherOnline = otherMember ? onlineUserIds.has(otherMember.user.id) : false
@@ -289,7 +321,7 @@ export function ChatWindow() {
         </button>
 
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" className="h-9 w-9 hidden sm:flex zc-tap" title="Voice call" onClick={() => toast.info('Voice calls coming soon')}>
+          <Button variant="ghost" size="icon" className="h-9 w-9 hidden sm:flex zc-tap" title="Voice call" onClick={handleStartVoiceCall}>
             <Phone className="h-[18px] w-[18px]" />
           </Button>
           <Button variant="ghost" size="icon" className="h-9 w-9 hidden sm:flex zc-tap" title="Video call" onClick={() => toast.info('Video calls coming soon')}>
@@ -398,6 +430,16 @@ export function ChatWindow() {
 
       {/* Input */}
       <MessageInput />
+
+      {/* Voice Call Modal */}
+      <VoiceCallModal
+        open={callModalOpen}
+        onClose={() => setCallModalOpen(false)}
+        chat={activeChat}
+        currentUser={currentUser}
+        isIncoming={isIncomingCall}
+        incomingOfferData={incomingCallOffer}
+      />
     </div>
   )
 }

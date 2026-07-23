@@ -235,6 +235,54 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
             for target_sid in manager.get_sockets_for_user(member_id):
                 await sio.emit("chat-updated", {"chat": chat}, to=target_sid)
 
+    @sio.on("call-offer")
+    async def on_call_offer(sid: str, data: dict) -> None:
+        user_id = manager.get_user_id(sid)
+        if not user_id or not isinstance(data, dict):
+            return
+        target_user_id = data.get("targetUserId")
+        if not target_user_id:
+            return
+        data["callerUserId"] = user_id
+        for target_sid in manager.get_sockets_for_user(target_user_id):
+            await sio.emit("call-offer", data, to=target_sid)
+
+    @sio.on("call-answer")
+    async def on_call_answer(sid: str, data: dict) -> None:
+        user_id = manager.get_user_id(sid)
+        if not user_id or not isinstance(data, dict):
+            return
+        caller_user_id = data.get("callerUserId")
+        if not caller_user_id:
+            return
+        data["answerUserId"] = user_id
+        for target_sid in manager.get_sockets_for_user(caller_user_id):
+            await sio.emit("call-answer", data, to=target_sid)
+
+    @sio.on("ice-candidate")
+    async def on_ice_candidate(sid: str, data: dict) -> None:
+        user_id = manager.get_user_id(sid)
+        if not user_id or not isinstance(data, dict):
+            return
+        target_user_id = data.get("targetUserId")
+        if not target_user_id:
+            return
+        data["senderUserId"] = user_id
+        for target_sid in manager.get_sockets_for_user(target_user_id):
+            await sio.emit("ice-candidate", data, to=target_sid)
+
+    @sio.on("call-hangup")
+    async def on_call_hangup(sid: str, data: dict) -> None:
+        user_id = manager.get_user_id(sid)
+        if not user_id or not isinstance(data, dict):
+            return
+        target_user_id = data.get("targetUserId")
+        if not target_user_id:
+            return
+        data["senderUserId"] = user_id
+        for target_sid in manager.get_sockets_for_user(target_user_id):
+            await sio.emit("call-hangup", data, to=target_sid)
+
     @sio.event
     async def disconnect(sid: str) -> None:
         offline_user = manager.remove(sid)
