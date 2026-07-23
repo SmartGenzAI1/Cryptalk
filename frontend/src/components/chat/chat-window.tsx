@@ -54,6 +54,7 @@ export function ChatWindow() {
   const [callModalOpen, setCallModalOpen] = useState(false)
   const [isIncomingCall, setIsIncomingCall] = useState(false)
   const [incomingCallOffer, setIncomingCallOffer] = useState<any>(null)
+  const [isVideoCall, setIsVideoCall] = useState(false)
 
   useEffect(() => {
     const socket = getSocket()
@@ -62,6 +63,7 @@ export function ChatWindow() {
     const handleCallOffer = (data: any) => {
       setIncomingCallOffer(data)
       setIsIncomingCall(true)
+      setIsVideoCall(!!data.isVideoCall)
       setCallModalOpen(true)
     }
 
@@ -76,6 +78,18 @@ export function ChatWindow() {
       toast.info('Voice calls supported in direct chats')
       return
     }
+    setIsVideoCall(false)
+    setIsIncomingCall(false)
+    setIncomingCallOffer(null)
+    setCallModalOpen(true)
+  }
+
+  function handleStartVideoCall() {
+    if (!activeChat || activeChat.type !== 'direct') {
+      toast.info('Video calls supported in direct chats')
+      return
+    }
+    setIsVideoCall(true)
     setIsIncomingCall(false)
     setIncomingCallOffer(null)
     setCallModalOpen(true)
@@ -324,7 +338,7 @@ export function ChatWindow() {
           <Button variant="ghost" size="icon" className="h-9 w-9 hidden sm:flex zc-tap" title="Voice call" onClick={handleStartVoiceCall}>
             <Phone className="h-[18px] w-[18px]" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-9 w-9 hidden sm:flex zc-tap" title="Video call" onClick={() => toast.info('Video calls coming soon')}>
+          <Button variant="ghost" size="icon" className="h-9 w-9 hidden sm:flex zc-tap" title="Video call" onClick={handleStartVideoCall}>
             <Video className="h-[18px] w-[18px]" />
           </Button>
           <Button
@@ -439,6 +453,7 @@ export function ChatWindow() {
         currentUser={currentUser}
         isIncoming={isIncomingCall}
         incomingOfferData={incomingCallOffer}
+        isVideoCall={isVideoCall}
       />
     </div>
   )

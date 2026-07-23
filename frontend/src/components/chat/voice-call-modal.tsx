@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Phone, PhoneOff, Mic, MicOff, Volume2, VolumeX, ShieldCheck, Clock } from 'lucide-react'
+import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, ShieldCheck, Clock } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChatAvatar } from './chat-avatar'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ interface VoiceCallModalProps {
   currentUser: SafeUser | null
   isIncoming?: boolean
   incomingOfferData?: any
+  isVideoCall?: boolean
 }
 
 export function VoiceCallModal({
@@ -25,22 +26,53 @@ export function VoiceCallModal({
   currentUser,
   isIncoming = false,
   incomingOfferData = null,
+  isVideoCall: initialIsVideo = false,
 }: VoiceCallModalProps) {
+  const isVideoCall = incomingOfferData?.isVideoCall ?? initialIsVideo
+
   const [callState, setCallState] = useState<'calling' | 'incoming' | 'connected' | 'ended'>(
     isIncoming ? 'incoming' : 'calling'
   )
   const [muted, setMuted] = useState(false)
+  const [videoOff, setVideoOff] = useState(false)
   const [duration, setDuration] = useState(0)
   const [otherUser, setOtherUser] = useState<SafeUser | null>(null)
 
   const peerRef = useRef<RTCPeerConnection | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null)
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null)
+  const localVideoRef = useRef<HTMLVideoElement | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pendingCandidatesRef = useRef<any[]>([])
 
   // Maximum call limit: 10 minutes (600 seconds)
   const MAX_CALL_SECONDS = 600
+
+  // Repeat incoming ringtone 3 times for incoming calls
+  useEffect(() => {
+    if (open && callState === 'incoming') {
+      let count = 0
+      let cancelled = false
+      const playRingtone = () => {
+        if (cancelled || count >= 3) return
+        count++
+        try {
+          const audio = new Audio('/sounds/income-messaage.mp3')
+          audio.onended = () => {
+            if (!cancelled && count < 3) {
+              setTimeout(playRingtone, 400)
+            }
+          }
+          audio.play().catch(() => {})
+        } catch (_) {}
+      }
+      playRingtone()
+      return () => {
+        cancelled = true
+      }
+    }
+  }, [open, callState])
 
   useEffect(() => {
     if (!chat || !currentUser) return
@@ -137,8 +169,16 @@ export function VoiceCallModal({
       ],
     })
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: isVideoCall ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false,
+    })
     localStreamRef.current = stream
+
+    if (isVideoCall && localVideoRef.current) {
+      localVideoRef.current.srcObject = stream
+    }
+
     stream.getTracks().forEach((track) => pc.addTrack(track, stream))
 
     pc.onicecandidate = (event) => {
@@ -152,8 +192,9 @@ export function VoiceCallModal({
     }
 
     pc.ontrack = (event) => {
-      if (remoteAudioRef.current && event.streams[0]) {
-        remoteAudioRef.current.srcObject = event.streams[0]
+      if (event.streams[0]) {
+        if (remoteAudioRef.current) remoteAudioRef.current.srcObject = event.streams[0]
+        if (isVideoCall && remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0]
       }
     }
 
@@ -173,9 +214,10 @@ export function VoiceCallModal({
         chatId: chat.id,
         targetUserId: otherUser.id,
         sdp: offer,
+        isVideoCall,
       })
     } catch (e) {
-      toast.error('Microphone access required for voice calls')
+      toast.error(isVideoCall ? 'Camera/microphone access required for video call' : 'Microphone access required for voice call')
       onClose()
     }
   }
@@ -208,6 +250,13 @@ export function VoiceCallModal({
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = muted))
       setMuted(!muted)
+    }
+  }
+
+  function toggleVideo() {
+    if (localStreamRef.current) {
+      localStreamRef.current.getVideoTracks().forEach((t) => (t.enabled = videoOff))
+      setVideoOff(!videoOff)
     }
   }
 
@@ -251,7 +300,7 @@ export function VoiceCallModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xl flex items-center justify-center p-4"
+        className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-3 sm:p-6"
       >
         <audio ref={remoteAudioRef} autoPlay />
 
@@ -260,58 +309,84 @@ export function VoiceCallModal({
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.9, opacity: 0 }}
           transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-          className="relative max-w-sm w-full bg-card/90 border border-border/80 rounded-3xl p-6 shadow-2xl flex flex-col items-center text-center overflow-hidden"
+          className={`relative w-full ${isVideoCall ? 'max-w-4xl h-[85vh]' : 'max-w-sm'} bg-card/90 border border-border/80 rounded-3xl p-6 shadow-2xl flex flex-col items-center justify-between overflow-hidden`}
         >
+          {/* Video Stream Container */}
+          {isVideoCall && callState === 'connected' ? (
+            <div className="absolute inset-0 z-0 bg-black rounded-3xl overflow-hidden">
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                className="w-full h-full object-cover"
+              />
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="absolute top-4 right-4 w-28 h-40 rounded-2xl border-2 border-emerald-500/80 object-cover shadow-2xl bg-black/60"
+              />
+            </div>
+          ) : null}
+
           {/* E2EE Security Badge */}
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-500 text-xs font-medium mb-6">
+          <div className="relative z-10 flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-semibold backdrop-blur-md border border-emerald-500/30">
             <ShieldCheck className="h-4 w-4" />
-            <span>End-to-End Encrypted Call</span>
+            <span>Encrypted {isVideoCall ? 'Video' : 'Voice'} Call</span>
           </div>
 
-          {/* User Avatar */}
-          <div className="relative mb-4">
-            <ChatAvatar
-              emoji={otherUser.avatarEmoji}
-              color={otherUser.avatarColor}
-              size="lg"
-              userId={otherUser.id}
-            />
-            {callState === 'connected' && (
-              <span className="absolute -bottom-1 -right-1 flex h-4 w-4">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-4 w-4 bg-emerald-500" />
-              </span>
-            )}
-          </div>
+          {/* User Avatar & Info (shown in voice mode or when video not connected) */}
+          {(!isVideoCall || callState !== 'connected') && (
+            <div className="relative z-10 flex flex-col items-center my-auto">
+              <div className="relative mb-4">
+                <ChatAvatar
+                  emoji={otherUser.avatarEmoji}
+                  color={otherUser.avatarColor}
+                  size="lg"
+                  userId={otherUser.id}
+                />
+                {callState === 'connected' && (
+                  <span className="absolute -bottom-1 -right-1 flex h-4 w-4">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-4 w-4 bg-emerald-500" />
+                  </span>
+                )}
+              </div>
 
-          {/* User Name */}
-          <h3 className="text-xl font-bold tracking-tight mb-1">{otherUser.name}</h3>
-          <p className="text-xs text-muted-foreground mb-6">@{otherUser.username}</p>
+              <h3 className="text-xl font-bold tracking-tight mb-1">{otherUser.name}</h3>
+              <p className="text-xs text-muted-foreground mb-4">@{otherUser.username}</p>
+            </div>
+          )}
 
           {/* Status / Live Duration */}
-          <div className="mb-8">
+          <div className="relative z-10 my-4 bg-black/40 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/10">
             {callState === 'calling' ? (
-              <p className="text-sm font-medium text-amber-500 animate-pulse">Calling…</p>
+              <p className="text-sm font-medium text-amber-400 animate-pulse">
+                Calling {otherUser.name} ({isVideoCall ? 'Video' : 'Voice'})…
+              </p>
             ) : callState === 'incoming' ? (
-              <p className="text-sm font-medium text-emerald-500 animate-pulse">Incoming Voice Call</p>
+              <p className="text-sm font-semibold text-emerald-400 animate-pulse">
+                Incoming {isVideoCall ? 'Video' : 'Voice'} Call
+              </p>
             ) : callState === 'connected' ? (
-              <div className="flex items-center gap-1.5 text-lg font-mono font-bold text-emerald-500">
-                <Clock className="h-4 w-4 animate-spin text-emerald-500/70" />
+              <div className="flex items-center gap-1.5 text-base font-mono font-bold text-emerald-400">
+                <Clock className="h-4 w-4 animate-spin text-emerald-400/80" />
                 <span>{formatTimer(duration)}</span>
-                <span className="text-[10px] font-sans font-normal text-muted-foreground ml-1">/ 10:00 max</span>
+                <span className="text-[10px] font-sans font-normal text-white/70 ml-1">/ 10:00 max</span>
               </div>
             ) : (
               <p className="text-sm font-medium text-muted-foreground">Call Ended</p>
             )}
           </div>
 
-          {/* Controls */}
+          {/* Controls Bar */}
           {callState === 'incoming' ? (
-            <div className="flex items-center justify-center gap-6 w-full">
+            <div className="relative z-10 flex items-center justify-center gap-6 w-full pb-2">
               <Button
                 size="icon"
                 onClick={() => endCall('Call declined')}
-                className="h-14 w-14 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-lg zc-tap"
+                className="h-14 w-14 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-xl zc-tap"
                 title="Decline"
               >
                 <PhoneOff className="h-6 w-6" />
@@ -319,28 +394,42 @@ export function VoiceCallModal({
               <Button
                 size="icon"
                 onClick={acceptIncomingCall}
-                className="h-14 w-14 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg zc-tap animate-bounce"
+                className="h-14 w-14 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl zc-tap animate-bounce"
                 title="Accept"
               >
                 <Phone className="h-6 w-6" />
               </Button>
             </div>
           ) : (
-            <div className="flex items-center justify-center gap-4 w-full">
+            <div className="relative z-10 flex items-center justify-center gap-4 w-full pb-2">
               <Button
                 size="icon"
                 variant="secondary"
                 onClick={toggleMute}
                 disabled={callState !== 'connected'}
-                className="h-12 w-12 rounded-full zc-tap"
-                title={muted ? 'Unmute' : 'Mute'}
+                className="h-12 w-12 rounded-full zc-tap bg-white/20 hover:bg-white/30 text-white backdrop-blur"
+                title={muted ? 'Unmute Mic' : 'Mute Mic'}
               >
-                {muted ? <MicOff className="h-5 w-5 text-red-500" /> : <Mic className="h-5 w-5" />}
+                {muted ? <MicOff className="h-5 w-5 text-red-400" /> : <Mic className="h-5 w-5" />}
               </Button>
+
+              {isVideoCall && (
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  onClick={toggleVideo}
+                  disabled={callState !== 'connected'}
+                  className="h-12 w-12 rounded-full zc-tap bg-white/20 hover:bg-white/30 text-white backdrop-blur"
+                  title={videoOff ? 'Turn Video On' : 'Turn Video Off'}
+                >
+                  {videoOff ? <VideoOff className="h-5 w-5 text-red-400" /> : <Video className="h-5 w-5" />}
+                </Button>
+              )}
+
               <Button
                 size="icon"
                 onClick={() => endCall()}
-                className="h-14 w-14 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-lg zc-tap"
+                className="h-14 w-14 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-xl zc-tap"
                 title="Hang Up"
               >
                 <PhoneOff className="h-6 w-6" />
