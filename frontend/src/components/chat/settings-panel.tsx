@@ -21,6 +21,7 @@ import {
   KeyRound,
   Bookmark,
   LogOut,
+  Heart,
 } from 'lucide-react'
 import { useChatStore } from '@/stores/chat-store'
 import { useTheme } from 'next-themes'
@@ -538,8 +539,16 @@ export function SettingsPanel() {
             </div>
           )}
 
-          <div className="text-center text-xs text-muted-foreground py-2">
-            {saving && 'Saving…'}Cryptalk · Made with ✨
+          <div className="text-center text-xs text-muted-foreground py-3 flex flex-col items-center gap-2">
+            <a
+              href="https://razorpay.me/@CodeChap?amount=kXxURMaXFk%2Bmrv%2B9uGrYpg%3D%3D"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-pink-500/10 hover:bg-pink-500/20 text-pink-500 font-semibold text-xs transition-colors zc-tap shadow-sm border border-pink-500/20"
+            >
+              <Heart className="h-3.5 w-3.5 fill-pink-500" /> Support & Sponsor Cryptalk
+            </a>
+            <span>{saving && 'Saving… '}Cryptalk · Made with ✨</span>
           </div>
         </div>
       </ScrollArea>

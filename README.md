@@ -13,6 +13,18 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 <br/><br/>
+
+<a href="https://razorpay.me/@CodeChap?amount=kXxURMaXFk%2Bmrv%2B9uGrYpg%3D%3D" target="_blank">
+  <img src="https://img.shields.io/badge/💖%20Support%20%26%20Sponsor%20Cryptalk-Donate%20via%20Razorpay-ff69b4?style=for-the-badge&logo=razorpay&logoColor=white" alt="Support & Sponsor Cryptalk" />
+</a>
+
+<br/>
+
+<a href="https://razorpay.me/@CodeChap?amount=kXxURMaXFk%2Bmrv%2B9uGrYpg%3D%3D" target="_blank">
+  <img src="https://img.shields.io/badge/💳%20Sponsor%20Development-Razorpay-02042B?style=for-the-badge&logo=razorpay&logoColor=3399CC" alt="Donate on Razorpay" />
+</a>
+
+<br/><br/>
 <img src="showcase/screenshot_desktop.png" width="800" alt="Cryptalk Desktop Interface" />
 <br/><br/>
 <img src="showcase/screenshot_mobile.jpg" width="300" alt="Cryptalk Mobile Interface" />
