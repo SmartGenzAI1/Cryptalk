@@ -196,6 +196,9 @@ async def delete_message(
     return {"ok": True}
 
 @router.post("/{chat_id}/mark-read")
+@router.post("/{chat_id}/messages/read")
+@chat_router.post("/{chat_id}/mark-read")
+@chat_router.post("/{chat_id}/messages/read")
 async def mark_read(chat_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     user_id = get_current_user_id(request)
     repo = ChatRepository(db)

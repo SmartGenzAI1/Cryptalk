@@ -18,6 +18,13 @@ import {
   FileIcon,
   Loader2,
   FileWarning,
+  Eye,
+  Download,
+  FileText,
+  Video,
+  Music,
+  Maximize2,
+  X,
 } from 'lucide-react'
 import { fetchAndDecryptAttachment } from '@/lib/attachments'
 import { useChatStore } from '@/stores/chat-store'
@@ -80,6 +87,8 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
   const playTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const [previewModal, setPreviewModal] = useState<{ url: string; name: string; type: 'image' | 'video' | 'pdf' | 'file' } | null>(null)
 
   // content may be an encrypted URL, encrypted data URL, or "[delivered]" placeholder
   const [attachment, setAttachment] = useState<{
@@ -494,14 +503,23 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                     <AttachmentLoading label="Loading image…" />
                   ) : attachment.status === 'error' ? (
                     <AttachmentPlaceholder text="Failed to load image" isError />
-                  ) : attachment.dataUrl && attachment.dataUrl.startsWith('data:image') ? (
-                    <img
-                      src={attachment.dataUrl}
-                      alt="shared"
-                      loading="lazy"
-                      className="rounded-lg max-w-[280px] max-h-[280px] object-contain cursor-pointer"
-                      onClick={() => attachment.dataUrl && window.open(attachment.dataUrl, '_blank')}
-                    />
+                  ) : attachment.dataUrl ? (
+                    <div className="relative group/img">
+                      <img
+                        src={attachment.dataUrl}
+                        alt="shared image"
+                        loading="lazy"
+                        className="rounded-xl max-w-[280px] max-h-[280px] object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                        onClick={() => setPreviewModal({ url: attachment.dataUrl!, name: 'Image', type: 'image' })}
+                      />
+                      <button
+                        onClick={() => setPreviewModal({ url: attachment.dataUrl!, name: 'Image', type: 'image' })}
+                        className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 text-white opacity-0 group-hover/img:opacity-100 transition-opacity"
+                        title="Expand Image"
+                      >
+                        <Maximize2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   ) : (
                     <AttachmentPlaceholder text="Unsupported image format" isError />
                   )
@@ -512,17 +530,109 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                     <AttachmentLoading label="Loading file…" />
                   ) : attachment.status === 'error' ? (
                     <AttachmentPlaceholder text="Failed to load file" isError />
+                  ) : attachment.dataUrl ? (
+                    (() => {
+                      const url = attachment.dataUrl
+                      const isPdf = url.includes('application/pdf') || url.toLowerCase().includes('.pdf')
+                      const isVid = url.startsWith('data:video') || url.match(/\.(mp4|webm|mov|mkv|avi)/i)
+                      const isAud = url.startsWith('data:audio') || url.match(/\.(mp3|wav|ogg|m4a|aac)/i)
+                      const isImg = url.startsWith('data:image') || url.match(/\.(png|jpg|jpeg|gif|webp|svg)/i)
+
+                      if (isVid) {
+                        return (
+                          <div className="flex flex-col gap-1.5">
+                            <video src={url} controls className="rounded-xl max-w-[280px] sm:max-w-[340px] max-h-[300px] bg-black" />
+                            <div className="flex justify-end">
+                              <button
+                                onClick={() => setPreviewModal({ url, name: 'Video', type: 'video' })}
+                                className="text-[11px] font-medium flex items-center gap-1 hover:underline text-muted-foreground"
+                              >
+                                <Maximize2 className="h-3 w-3" /> Fullscreen
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      }
+                      if (isImg) {
+                        return (
+                          <div className="relative group/img">
+                            <img
+                              src={url}
+                              alt="shared file"
+                              className="rounded-xl max-w-[280px] max-h-[280px] object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                              onClick={() => setPreviewModal({ url, name: 'Image', type: 'image' })}
+                            />
+                            <button
+                              onClick={() => setPreviewModal({ url, name: 'Image', type: 'image' })}
+                              className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 text-white opacity-0 group-hover/img:opacity-100 transition-opacity"
+                            >
+                              <Maximize2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )
+                      }
+                      if (isAud) {
+                        return <audio src={url} controls className="max-w-[260px] h-10" />
+                      }
+                      if (isPdf) {
+                        return (
+                          <div className="flex flex-col gap-2 p-2.5 rounded-xl bg-black/10 dark:bg-white/10 min-w-[240px]">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-lg bg-red-500/20 text-red-500 flex items-center justify-center font-bold text-xs">
+                                PDF
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold truncate">PDF Document</p>
+                                <p className="text-[10px] text-muted-foreground">Click preview to read</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="h-7 text-xs flex-1 gap-1"
+                                onClick={() => setPreviewModal({ url, name: 'Document.pdf', type: 'pdf' })}
+                              >
+                                <Eye className="h-3.5 w-3.5" /> Preview PDF
+                              </Button>
+                              <a
+                                href={url}
+                                download="Document.pdf"
+                                className="p-1.5 rounded-md hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                                title="Download PDF"
+                              >
+                                <Download className="h-4 w-4" />
+                              </a>
+                            </div>
+                          </div>
+                        )
+                      }
+
+                      return (
+                        <div className="flex flex-col gap-2 p-2.5 rounded-xl bg-black/10 dark:bg-white/10 min-w-[220px]">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-lg bg-emerald-500/20 text-emerald-500 flex items-center justify-center font-bold text-xs uppercase">
+                              FILE
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold truncate">Attachment File</p>
+                              <p className="text-[10px] text-muted-foreground">Document file</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <a
+                              href={url}
+                              download="attachment"
+                              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium transition-colors"
+                            >
+                              <Download className="h-3.5 w-3.5" /> Download File
+                            </a>
+                          </div>
+                        </div>
+                      )
+                    })()
                   ) : (
-                    <div className="flex items-center gap-2 min-w-[200px]">
-                      <a
-                        href={attachment.dataUrl || '#'}
-                        download={attachment.dataUrl ? 'file' : undefined}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/10 hover:bg-black/20 transition-colors"
-                      >
-                        <FileIcon className="h-5 w-5" />
-                        <span className="text-sm">Download file</span>
-                      </a>
-                    </div>
+                    <AttachmentPlaceholder text="File empty or missing" isError />
                   )
                 ) : isVoice ? (
                   attachment.status === 'delivered' ? (
@@ -683,6 +793,76 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
           />
         </Suspense>
       )}
+
+      {/* Full-screen Media Preview Modal (PDF, Video, Lightbox Image) */}
+      <AnimatePresence>
+        {previewModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6"
+            onClick={() => setPreviewModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+              className="relative max-w-5xl w-full max-h-[92vh] bg-card border border-border/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <FileText className="h-5 w-5 text-emerald-500 shrink-0" />
+                  <span className="font-medium text-sm truncate max-w-[280px] sm:max-w-[450px]">
+                    {previewModal.name}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href={previewModal.url}
+                    download={previewModal.name}
+                    className="p-2 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                    title="Download file"
+                  >
+                    <Download className="h-5 w-5" />
+                  </a>
+                  <button
+                    onClick={() => setPreviewModal(null)}
+                    className="p-2 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                    title="Close"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-auto flex items-center justify-center p-2 sm:p-4 min-h-[350px] bg-black/40">
+                {previewModal.type === 'pdf' ? (
+                  <iframe src={previewModal.url} className="w-full h-[78vh] rounded-xl border-0 bg-white" />
+                ) : previewModal.type === 'image' ? (
+                  <img src={previewModal.url} alt="Preview" className="max-w-full max-h-[78vh] object-contain rounded-xl shadow-lg" />
+                ) : previewModal.type === 'video' ? (
+                  <video src={previewModal.url} controls autoPlay className="max-w-full max-h-[78vh] rounded-xl bg-black shadow-lg" />
+                ) : (
+                  <div className="p-6 text-center flex flex-col items-center gap-3">
+                    <FileIcon className="h-12 w-12 text-emerald-500" />
+                    <p className="text-sm text-muted-foreground">Direct document preview not available for this file type.</p>
+                    <a
+                      href={previewModal.url}
+                      download={previewModal.name}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium text-sm transition-colors shadow-md"
+                    >
+                      <Download className="h-4 w-4" /> Download Attachment
+                    </a>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   )
 }

@@ -75,7 +75,7 @@ export function ChatWindow() {
   useEffect(() => {
     if (!activeChatId || !currentUser) return
     import('@/lib/api').then(({ apiPost }) => {
-      apiPost(`/api/${activeChatId}/mark-read`).catch(() => {})
+      apiPost(`/api/chats/${activeChatId}/mark-read`).catch(() => {})
     })
     import('@/hooks/use-socket').then(({ getSocket }) => {
       getSocket()?.emit('message-status', { chatId: activeChatId, status: 'read' })

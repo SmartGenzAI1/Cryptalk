@@ -57,10 +57,10 @@ class SocketService {
 
     _socket = io.io(ApiConfig.wsUrl, {
       'transports': ['websocket', 'polling'],
-      'forceNew': true,
       'reconnection': true,
       'reconnectionAttempts': -1,
       'reconnectionDelay': 1000,
+      'reconnectionDelayMax': 5000,
     });
 
     void handleConnect() {

@@ -113,13 +113,13 @@ async def upload_attachment(
     except StorageError as e:
         logger.error("Upload failed with storage error: %s", e)
         return JSONResponse(
-            status_code=502,
-            content={"error": "upload_failed", "message": f"Storage upload failed: {e}"},
+            status_code=200,
+            content={"fallback": True, "message": f"Storage upload failed ({e}) — fall back to base64"},
         )
     if not url:
         return JSONResponse(
-            status_code=502,
-            content={"error": "upload_failed", "message": "Could not upload file to storage"},
+            status_code=200,
+            content={"fallback": True, "message": "Storage unreachable — fall back to base64"},
         )
 
     logger.info("Uploaded %d bytes to %s for user %s", size, path, user_id)

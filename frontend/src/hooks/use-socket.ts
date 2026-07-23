@@ -44,11 +44,11 @@ export function useSocket() {
       transports: ['websocket', 'polling'],
       auth: token ? { token } : undefined,
       withCredentials: true,
-      forceNew: true,
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      timeout: 10000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
     })
 
     socket.on('connect', () => {

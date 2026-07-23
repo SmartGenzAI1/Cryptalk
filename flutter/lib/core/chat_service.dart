@@ -271,7 +271,7 @@ class ChatService {
       await _api.post('/api/$chatId/messages/read?messageId=$messageId');
     } catch (_) {
       try {
-        await _api.post('/api/$chatId/mark-read');
+        await _api.post('/api/chats/$chatId/mark-read');
       } catch (_) {
         // Graceful error handling for offline/network issues
       }
