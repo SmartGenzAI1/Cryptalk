@@ -31,7 +31,9 @@ export const STICKER_ICONS = [
 // url resolvers
 
 export function avatarIconUrl(key: string): string {
-  if (isLegacyEmoji(key)) return avatarIconUrl('fox') // fallback
+  if (!key || isLegacyEmoji(key) || !(AVATAR_ICONS as readonly string[]).includes(key)) {
+    return `/icons/avatars/fox.png`
+  }
   return `/icons/avatars/${key}.png`
 }
 

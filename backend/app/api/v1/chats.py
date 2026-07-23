@@ -56,3 +56,40 @@ async def update_settings(
     return await service.update_settings(
         chat_id, user_id, req.action, req.value,
     )
+
+
+from fastapi import Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.database import get_db
+from app.repositories import ChatRepository
+from app.core.security import now_ms
+
+@router.post("/{chat_id}/mark-read")
+@router.post("/{chat_id}/messages/read")
+async def mark_chat_read(
+    chat_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = get_current_user_id(request)
+    repo = ChatRepository(db)
+    member = await repo.get_member(chat_id, user_id)
+    if not member:
+        return {"ok": True}
+    read_timestamp = now_ms()
+    await repo.update_member(member.id, last_read_at=read_timestamp)
+
+    sio = getattr(request.app.state, "sio", None)
+    if sio:
+        await sio.emit(
+            "message-status",
+            {
+                "chatId": chat_id,
+                "userId": user_id,
+                "status": "read",
+                "lastReadAt": read_timestamp,
+            },
+            room=f"chat:{chat_id}",
+        )
+
+    return {"ok": True}

@@ -20,15 +20,44 @@ function PanelFallback() {
   return <div className="w-full sm:w-[380px] shrink-0 border-l bg-sidebar/60" />
 }
 
+import { useState } from 'react'
+import { VoiceCallModal } from './voice-call-modal'
+import { getSocket } from '@/hooks/use-socket'
+
 export function ChatApp() {
   useSocket()
   const infoPanelOpen = useChatStore(s => s.infoPanelOpen)
   const settingsOpen = useChatStore(s => s.settingsOpen)
   const connectionsPanelOpen = useChatStore(s => s.connectionsPanelOpen)
   const activeChatId = useChatStore(s => s.activeChatId)
+  const chats = useChatStore(s => s.chats)
+  const currentUser = useChatStore(s => s.currentUser)
   const setChats = useChatStore(s => s.setChats)
   const setCurrentUser = useChatStore(s => s.setCurrentUser)
   const setE2eeEnabled = useChatStore(s => s.setE2eeEnabled)
+
+  const [globalCallModalOpen, setGlobalCallModalOpen] = useState(false)
+  const [globalIncomingCallOffer, setGlobalIncomingCallOffer] = useState<any>(null)
+  const [globalCallChat, setGlobalCallChat] = useState<any>(null)
+
+  useEffect(() => {
+    const socket = getSocket()
+    if (!socket) return
+
+    const handleCallOffer = (data: any) => {
+      const matchChat = chats.find(c => c.id === data.chatId)
+      if (matchChat) {
+        setGlobalCallChat(matchChat)
+        setGlobalIncomingCallOffer(data)
+        setGlobalCallModalOpen(true)
+      }
+    }
+
+    socket.on('call-offer', handleCallOffer)
+    return () => {
+      socket.off('call-offer', handleCallOffer)
+    }
+  }, [chats])
 
   useEffect(() => {
     // 1. Try loading cached chats instantly from cache
@@ -130,6 +159,16 @@ export function ChatApp() {
       </div>
       <MobileNav />
       <Toaster />
+
+      {/* Global Incoming Voice Call Modal */}
+      <VoiceCallModal
+        open={globalCallModalOpen}
+        onClose={() => setGlobalCallModalOpen(false)}
+        chat={globalCallChat}
+        currentUser={currentUser}
+        isIncoming={true}
+        incomingOfferData={globalIncomingCallOffer}
+      />
     </div>
   )
 }

@@ -76,8 +76,10 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str:
         raw = os.environ.get("DATABASE_URL", "")
-        if raw.startswith("postgresql"):
-            if raw.startswith("postgresql://") and not raw.startswith("postgresql+"):
+        if raw.startswith("postgres"):
+            if raw.startswith("postgres://"):
+                return raw.replace("postgres://", "postgresql+asyncpg://", 1)
+            elif raw.startswith("postgresql://") and not raw.startswith("postgresql+"):
                 return raw.replace("postgresql://", "postgresql+asyncpg://", 1)
             return raw
         return f"sqlite+aiosqlite:///{self.DB_PATH}"
