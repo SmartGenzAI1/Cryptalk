@@ -173,6 +173,11 @@ export function MessageInput() {
 
     addMessage(activeChatId, optimisticMessage)
 
+    try {
+      const sendAudio = new Audio('/sounds/message-send.mp3')
+      sendAudio.play().catch(() => {})
+    } catch (_) {}
+
     const rawContent = content.trim()
     setText('')
     setReplyTo(null)

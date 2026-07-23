@@ -150,6 +150,13 @@ export function useSocket() {
         // e2ee not ready or decryption failed — show ciphertext
       }
       addMessage(data.chatId, data.message)
+
+      if (data.message.senderId !== store.currentUser?.id) {
+        try {
+          const incomingAudio = new Audio('/sounds/income-messaage.mp3')
+          incomingAudio.play().catch(() => {})
+        } catch (_) {}
+      }
     })
 
     socket.on('message-update', (data: { chatId: string; message: MessageWithSender; action: 'edit' | 'delete' }) => {
