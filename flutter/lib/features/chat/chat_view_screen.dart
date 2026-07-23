@@ -404,7 +404,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         return;
       }
       setState(() => _recordSeconds++);
-      if (_recordSeconds >= 60) _stopAndSendVoice();
+      if (_recordSeconds >= 600) _stopAndSendVoice();
     });
   }
 

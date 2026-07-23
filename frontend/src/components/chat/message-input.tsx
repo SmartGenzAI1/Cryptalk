@@ -247,7 +247,7 @@ export function MessageInput() {
       setRecordSeconds(0)
       recordTimer.current = setInterval(() => {
         setRecordSeconds((s) => {
-          if (s >= 60) {
+          if (s >= 600) {
             sendVoice()
             return 0
           }
@@ -539,7 +539,7 @@ export function MessageInput() {
                 />
               ))}
             </div>
-            <span className="text-xs text-muted-foreground">Recording…</span>
+            <span className="text-xs text-muted-foreground">Recording… (max 10m)</span>
           </div>
           <button
             onClick={sendVoice}
