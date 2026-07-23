@@ -139,31 +139,25 @@ app.add_middleware(
     },
 )
 
-_cors_origins = [o.strip().rstrip("/") for o in settings.CORS_ORIGINS.split(",")] if settings.CORS_ORIGINS != "*" else ["*"]
+_cors_origins_raw = settings.CORS_ORIGINS.strip() if settings.CORS_ORIGINS else "*"
 
-if settings.DEBUG:
-    # Always allow local development origins with credentials support in DEBUG mode
-    for local_origin in [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:54321",
-        "http://127.0.0.1:54321",
-    ]:
-        if local_origin not in _cors_origins:
-            if _cors_origins == ["*"]:
-                _cors_origins = [local_origin]
-            else:
-                _cors_origins.append(local_origin)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=_cors_origins != ["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if _cors_origins_raw == "*":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"https?://.*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    _cors_origins = [o.strip().rstrip("/") for o in _cors_origins_raw.split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 @app.middleware("http")
 async def limit_request_body(request: Request, call_next):
