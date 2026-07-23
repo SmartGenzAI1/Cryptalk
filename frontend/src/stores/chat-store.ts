@@ -177,8 +177,47 @@ export const useChatStore = create<ChatState>((set, _get) => ({
   addMessage: (chatId, msg) =>
     set((s) => {
       const existing = s.messages[chatId] || []
-      if (existing.some((m) => m.id === msg.id)) return s
-      return { messages: { ...s.messages, [chatId]: [...existing, msg] } }
+      const isDuplicate = existing.some((m) => m.id === msg.id)
+      const nextMessages = isDuplicate
+        ? existing.map((m) => (m.id === msg.id ? { ...m, ...msg } : m))
+        : [...existing, msg]
+
+      const isIncoming = msg.senderId !== s.currentUser?.id
+      const isInactive = s.activeChatId !== chatId
+
+      // Update chat list item lastMessage, unreadCount, and sort to top
+      const chatIndex = s.chats.findIndex((c) => c.id === chatId)
+      let nextChats = [...s.chats]
+
+      if (chatIndex >= 0) {
+        const targetChat = { ...nextChats[chatIndex] }
+        targetChat.lastMessage = {
+          id: msg.id,
+          content: msg.content,
+          type: msg.type,
+          createdAt: msg.createdAt,
+          senderId: msg.senderId,
+          senderName: msg.sender?.name || 'User',
+          status: msg.status || 'sent',
+        }
+        if (isIncoming && isInactive && !isDuplicate) {
+          targetChat.unreadCount = (targetChat.unreadCount || 0) + 1
+        }
+        targetChat.updatedAt = msg.createdAt
+
+        // Move to top of chat list
+        nextChats.splice(chatIndex, 1)
+        nextChats.unshift(targetChat)
+      }
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('zc-chats', JSON.stringify(nextChats))
+      }
+
+      return {
+        messages: { ...s.messages, [chatId]: nextMessages },
+        chats: nextChats,
+      }
     }),
   replaceMessage: (chatId, tempId, realMsg) =>
     set((s) => {

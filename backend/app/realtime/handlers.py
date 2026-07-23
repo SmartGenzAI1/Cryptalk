@@ -148,7 +148,11 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
         for member_id in all_member_ids:
             if member_id == user_id:
                 continue
-            if not manager.get_sockets_for_user(member_id):
+            member_sids = manager.get_sockets_for_user(member_id)
+            if member_sids:
+                for target_sid in member_sids:
+                    await sio.emit("message", payload, to=target_sid)
+            else:
                 enqueue_message(member_id, payload)
 
     @sio.on("typing")

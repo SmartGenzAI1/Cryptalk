@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { UserPlus, Check, X, Search, UserCheck, Ban, Pencil } from 'lucide-react'
+import { UserPlus, Check, X, Search, UserCheck, Ban, Pencil, MessageCircle } from 'lucide-react'
+import { apiPost } from '@/lib/api'
 import { useChatStore } from '@/stores/chat-store'
 import { ChatAvatar } from './chat-avatar'
 import { Button } from '@/components/ui/button'
@@ -129,6 +130,26 @@ export function ConnectionsPanel() {
     }
   }
 
+  async function handleStartChat(otherUserId: string) {
+    try {
+      const data = await apiPost<{ chat: any }>('/api/chats', { type: 'direct', memberIds: [otherUserId] })
+      const listItem = {
+        ...data.chat,
+        updatedAt: data.chat.createdAt,
+        lastReadAt: new Date().toISOString(),
+        role: 'owner',
+        lastMessage: null,
+      }
+      useChatStore.getState().upsertChat(listItem)
+      useChatStore.getState().setActiveChatId(data.chat.id)
+      useChatStore.getState().setActiveChat(data.chat)
+      useChatStore.getState().setConnectionsPanelOpen(false)
+      toast.success('Direct chat opened!')
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to start chat')
+    }
+  }
+
   return (
     <div className="w-full h-full shrink-0 md:border-l flex flex-col bg-background shadow-xl">
       <div className="flex items-center gap-2 px-4 h-16 border-b shrink-0">
@@ -186,7 +207,14 @@ export function ConnectionsPanel() {
                       <div className="font-medium text-sm truncate">{u.name}</div>
                       <div className="text-xs text-muted-foreground truncate">@{u.username}</div>
                     </div>
-                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0 zc-tap" onClick={() => handleConnect(u.username)}>
+                    <Button
+                      size="sm"
+                      className="h-8 gap-1 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white zc-tap"
+                      onClick={() => handleStartChat(u.id)}
+                    >
+                      <MessageCircle className="h-3.5 w-3.5" /> Message
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0 zc-tap" title="Send Connection Request" onClick={() => handleConnect(u.username)}>
                       <UserPlus className="h-4 w-4" />
                     </Button>
                   </motion.div>
@@ -233,6 +261,13 @@ export function ConnectionsPanel() {
                     <div className="font-medium text-sm truncate">{u.name}</div>
                     <div className="text-xs text-muted-foreground truncate">@{u.username}</div>
                   </div>
+                  <Button
+                    size="sm"
+                    className="h-8 gap-1 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white zc-tap"
+                    onClick={() => handleStartChat(u.id)}
+                  >
+                    <MessageCircle className="h-3.5 w-3.5" /> Message
+                  </Button>
                   <Button size="sm" variant="ghost" className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 zc-tap" onClick={() => handleNickname(u.id, u.name)}>
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
