@@ -37,6 +37,7 @@ export function VoiceCallModal({
   const localStreamRef = useRef<MediaStream | null>(null)
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pendingCandidatesRef = useRef<any[]>([])
 
   // Maximum call limit: 10 minutes (600 seconds)
   const MAX_CALL_SECONDS = 600
@@ -47,6 +48,20 @@ export function VoiceCallModal({
     if (recipient) setOtherUser(recipient.user)
   }, [chat, currentUser])
 
+  async function flushPendingCandidates() {
+    if (!peerRef.current || !peerRef.current.remoteDescription) return
+    while (pendingCandidatesRef.current.length > 0) {
+      const cand = pendingCandidatesRef.current.shift()
+      if (cand) {
+        try {
+          await peerRef.current.addIceCandidate(new RTCIceCandidate(cand))
+        } catch (e) {
+          console.warn('Failed adding queued ICE candidate:', e)
+        }
+      }
+    }
+  }
+
   useEffect(() => {
     if (!open) return
     const socket = getSocket()
@@ -56,6 +71,7 @@ export function VoiceCallModal({
       if (peerRef.current && data.sdp) {
         try {
           await peerRef.current.setRemoteDescription(new RTCSessionDescription(data.sdp))
+          await flushPendingCandidates()
           setCallState('connected')
           startDurationTimer()
         } catch (e) {
@@ -65,11 +81,15 @@ export function VoiceCallModal({
     }
 
     const handleIceCandidate = async (data: any) => {
-      if (peerRef.current && data.candidate) {
-        try {
-          await peerRef.current.addIceCandidate(new RTCIceCandidate(data.candidate))
-        } catch (e) {
-          console.warn('Failed to add ICE candidate:', e)
+      if (data.candidate) {
+        if (peerRef.current && peerRef.current.remoteDescription) {
+          try {
+            await peerRef.current.addIceCandidate(new RTCIceCandidate(data.candidate))
+          } catch (e) {
+            console.warn('Failed to add ICE candidate:', e)
+          }
+        } else {
+          pendingCandidatesRef.current.push(data.candidate)
         }
       }
     }
@@ -165,6 +185,7 @@ export function VoiceCallModal({
     try {
       const pc = await createPeerConnection(incomingOfferData.callerUserId)
       await pc.setRemoteDescription(new RTCSessionDescription(incomingOfferData.sdp))
+      await flushPendingCandidates()
 
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
