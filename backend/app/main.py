@@ -86,9 +86,7 @@ async def lifespan(app: FastAPI):
             ))
         logger.info("Database tables + indexes ensured")
     except Exception as e:
-        logger.critical(f"FATAL: Database initialization failed: {e}")
-        if settings.is_postgres:
-            raise
+        logger.error(f"Database startup initialization skipped (will retry on demand): {e}")
 
     if settings.has_redis:
         try:
