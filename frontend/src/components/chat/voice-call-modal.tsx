@@ -169,13 +169,25 @@ export function VoiceCallModal({
       ],
     })
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: isVideoCall ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false,
-    })
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: isVideoCall ? true : false,
+      })
+    } catch (err: any) {
+      if (isVideoCall) {
+        console.warn('Video stream acquisition failed, falling back to audio:', err)
+        toast.info('Camera unavailable; connecting voice call')
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      } else {
+        throw err
+      }
+    }
+
     localStreamRef.current = stream
 
-    if (isVideoCall && localVideoRef.current) {
+    if (isVideoCall && localVideoRef.current && stream.getVideoTracks().length > 0) {
       localVideoRef.current.srcObject = stream
     }
 
