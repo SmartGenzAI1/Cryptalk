@@ -105,18 +105,19 @@ class _NewChatScreenState extends State<NewChatScreen> with SingleTickerProvider
   }
 
   Future<void> _startChat(AppUser user) async {
+    final chatService = context.read<ChatService>();
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
     try {
-      await context.read<ChatService>().createDirectChat(user.id);
-      if (context.mounted) Navigator.pop(context);
+      await chatService.createDirectChat(user.id);
+      navigator.pop();
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed: ${e.toString().replaceFirst('Exception: ', '')}'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Failed: ${e.toString().replaceFirst('Exception: ', '')}'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -135,6 +136,8 @@ class _NewChatScreenState extends State<NewChatScreen> with SingleTickerProvider
     try {
       final chatService = context.read<ChatService>();
       final cryptoService = context.read<CryptoService>();
+      final auth = context.read<AuthService>();
+      final myId = auth.currentUser?.id;
 
       // 1. Generate secure random 32-byte group key
       final random = math.Random.secure();
@@ -149,7 +152,6 @@ class _NewChatScreenState extends State<NewChatScreen> with SingleTickerProvider
       final myEncryptedPayload = await cryptoService.encrypt(groupKeyB64, myPubKeyB64);
       
       final Map<String, String> memberKeys = {};
-      final myId = context.read<AuthService>().currentUser?.id;
       if (myId != null) {
         memberKeys[myId] = myEncryptedPayload;
       }
@@ -254,7 +256,7 @@ class _NewChatScreenState extends State<NewChatScreen> with SingleTickerProvider
                           decoration: BoxDecoration(
                             color: selected
                                 ? AvatarIcon.colorFor(_groupColor)
-                                    .withOpacity(0.18)
+                                    .withValues(alpha: 0.18)
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(8),
                             border: selected
@@ -458,7 +460,7 @@ class _NewChatScreenState extends State<NewChatScreen> with SingleTickerProvider
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5),
+                      color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5),
                       width: 2,
                     ),
                   ),
@@ -660,7 +662,7 @@ class _NewChatScreenState extends State<NewChatScreen> with SingleTickerProvider
                 borderRadius: BorderRadius.circular(26),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF10b981).withOpacity(0.3),
+                    color: const Color(0xFF10b981).withValues(alpha: 0.3),
                     blurRadius: 8,
                     offset: const Offset(0, 4),
                   ),

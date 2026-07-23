@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'api_config.dart';
 
 // singleton realtime socket. subscriptions are tracked per-caller via int
@@ -13,14 +13,20 @@ class SocketService {
   factory SocketService() => _instance;
   SocketService._internal();
 
-  IO.Socket? _socket;
+  io.Socket? _socket;
   bool _connected = false;
   String? _currentUserId;
+  String? _currentToken;
+  String? _activeChatId;
 
-  // Track online user IDs
+  // Track online user IDs matching web app presence model
   final Set<String> _onlineUserIds = {};
 
+  Set<String> get onlineUserIds => Set.unmodifiable(_onlineUserIds);
   bool isUserOnline(String userId) => _onlineUserIds.contains(userId);
+
+  // Receiver-side typing timers: '${chatId}:${userId}' -> Timer
+  final Map<String, Timer> _typingTimers = {};
 
   // subscription maps: subId → callback. Map (not List) so removal is O(1)
   int _nextSubId = 0;
@@ -28,9 +34,12 @@ class SocketService {
   final Map<int, void Function(Map<String, dynamic>)> _userStatusCallbacks = {};
   final Map<int, void Function(Map<String, dynamic>)> _typingCallbacks = {};
   final Map<int, void Function(Map<String, dynamic>)> _messageUpdateCallbacks = {};
+  final Map<int, void Function(Map<String, dynamic>)> _messageStatusCallbacks = {};
 
   bool get isConnected => _connected;
-  IO.Socket? get socket => _socket;
+  io.Socket? get socket => _socket;
+  String? get currentToken => _currentToken;
+  String? get activeChatId => _activeChatId;
 
   // connect (or reconnect) for userId, authenticated via session token.
   // no-op if already connected as same user; tears down + reconnects if the
@@ -44,8 +53,9 @@ class SocketService {
       disconnect();
     }
     _currentUserId = userId;
+    _currentToken = token;
 
-    _socket = IO.io(ApiConfig.wsUrl, {
+    _socket = io.io(ApiConfig.wsUrl, {
       'transports': ['websocket', 'polling'],
       'forceNew': true,
       'reconnection': true,
@@ -53,15 +63,23 @@ class SocketService {
       'reconnectionDelay': 1000,
     });
 
-    _socket!.onConnect((_) {
+    void handleConnect() {
       _connected = true;
       // send session token so backend authenticates the socket. userId here
       // is just for client-side diagnostics, server derives it from the token
       _socket!.emit('identify', {'userId': userId, 'token': token});
+
+      // Automatic room re-joining on connect/reconnect
+      if (_activeChatId != null) {
+        _socket!.emit('join-chat', {'chatId': _activeChatId});
+      }
       for (final cb in _userStatusCallbacks.values.toList()) {
         cb({'connected': true});
       }
-    });
+    }
+
+    _socket!.onConnect((_) => handleConnect());
+    _socket!.on('reconnect', (_) => handleConnect());
 
     _socket!.onDisconnect((_) {
       _connected = false;
@@ -71,10 +89,11 @@ class SocketService {
     });
 
     _socket!.on('message', (data) {
-      // snapshot to a list so a callback that cancels during iteration
-      // doesn't ConcurrentModificationError us
-      for (final cb in _messageCallbacks.values.toList()) {
-        cb(data as Map<String, dynamic>);
+      if (data is Map) {
+        final mapData = Map<String, dynamic>.from(data);
+        for (final cb in _messageCallbacks.values.toList()) {
+          cb(mapData);
+        }
       }
     });
 
@@ -87,46 +106,116 @@ class SocketService {
             _onlineUserIds.add(u['userId'].toString());
           }
         }
+        final mapData = Map<String, dynamic>.from(data);
         for (final cb in _userStatusCallbacks.values.toList()) {
-          cb({'userId': '', 'isOnline': true});
+          cb(mapData);
         }
       }
     });
 
     _socket!.on('user-status', (data) {
-      if (data is Map && data['userId'] != null && data['isOnline'] != null) {
+      if (data is Map && data['userId'] != null) {
         final uid = data['userId'].toString();
-        final online = data['isOnline'] as bool;
+        final online = data['isOnline'] == true;
         if (online) {
           _onlineUserIds.add(uid);
         } else {
           _onlineUserIds.remove(uid);
         }
+        final mapData = Map<String, dynamic>.from(data);
         for (final cb in _userStatusCallbacks.values.toList()) {
-          cb(Map<String, dynamic>.from(data));
+          cb(mapData);
         }
       }
     });
 
-    _socket!.on('typing', (data) {
-      for (final cb in _typingCallbacks.values.toList()) {
-        cb(data as Map<String, dynamic>);
+    _socket!.on('typing', (data) => _handleTypingOrRecording(data));
+    _socket!.on('recording', (data) => _handleTypingOrRecording(data));
+
+    _socket!.on('message-update', (data) {
+      if (data is Map) {
+        final mapData = Map<String, dynamic>.from(data);
+        for (final cb in _messageUpdateCallbacks.values.toList()) {
+          cb(mapData);
+        }
       }
     });
 
-    _socket!.on('message-update', (data) {
-      for (final cb in _messageUpdateCallbacks.values.toList()) {
-        cb(data as Map<String, dynamic>);
+    _socket!.on('message-status', (data) {
+      if (data is Map) {
+        final mapData = Map<String, dynamic>.from(data);
+        for (final cb in _messageStatusCallbacks.values.toList()) {
+          cb(mapData);
+        }
       }
     });
   }
 
+  void _handleTypingOrRecording(dynamic data) {
+    if (data is! Map) return;
+    final mapData = Map<String, dynamic>.from(data);
+    final chatId = mapData['chatId']?.toString();
+    final userId = mapData['userId']?.toString() ?? mapData['username']?.toString();
+    final isTyping = mapData['isTyping'] == true || mapData['isRecording'] == true;
+
+    if (chatId != null && userId != null) {
+      final key = '$chatId:$userId';
+      _typingTimers[key]?.cancel();
+      _typingTimers.remove(key);
+
+      if (isTyping) {
+        // receiver-side 3.5s safety typing auto-clear timeout
+        _typingTimers[key] = Timer(const Duration(milliseconds: 3500), () {
+          _typingTimers.remove(key);
+          final clearedData = Map<String, dynamic>.from(mapData)
+            ..['isTyping'] = false
+            ..['isRecording'] = false;
+          for (final cb in _typingCallbacks.values.toList()) {
+            cb(clearedData);
+          }
+        });
+      }
+    }
+
+    for (final cb in _typingCallbacks.values.toList()) {
+      cb(mapData);
+    }
+  }
+
   void joinChat(String chatId) {
+    if (_activeChatId != null && _activeChatId != chatId) {
+      leaveChat(chatId: _activeChatId);
+    }
+    _activeChatId = chatId;
     _socket?.emit('join-chat', {'chatId': chatId});
+  }
+
+  void leaveChat({String? chatId}) {
+    final targetId = chatId ?? _activeChatId;
+    if (targetId != null) {
+      _socket?.emit('leave-chat', {'chatId': targetId});
+    }
+    if (chatId == null || _activeChatId == chatId) {
+      _activeChatId = null;
+    }
   }
 
   void sendMessage(String chatId, Map<String, dynamic> message) {
     _socket?.emit('send-message', {'chatId': chatId, 'message': message});
+  }
+
+  void sendMessageStatus(
+    String chatId,
+    String status, {
+    String? messageId,
+    String? attachmentPath,
+  }) {
+    _socket?.emit('message-status', {
+      'chatId': chatId,
+      'status': status,
+      if (messageId != null) 'messageId': messageId,
+      if (attachmentPath != null) 'attachmentPath': attachmentPath,
+    });
   }
 
   void sendTyping(String chatId, String userId, String username, bool isTyping) {
@@ -135,6 +224,15 @@ class SocketService {
       'userId': userId,
       'username': username,
       'isTyping': isTyping,
+    });
+  }
+
+  void sendRecording(String chatId, String userId, String username, bool isRecording) {
+    _socket?.emit('recording', {
+      'chatId': chatId,
+      'userId': userId,
+      'username': username,
+      'isRecording': isRecording,
     });
   }
 
@@ -164,13 +262,20 @@ class SocketService {
     return id;
   }
 
+  int onMessageStatus(void Function(Map<String, dynamic>) callback) {
+    final id = _nextSubId++;
+    _messageStatusCallbacks[id] = callback;
+    return id;
+  }
+
   // remove a single subscription. no-op if id unknown. looks up across all
-  // four event maps so callers don't track which event they subscribed to.
+  // event maps so callers don't track which event they subscribed to.
   void cancelSubscription(int id) {
     _messageCallbacks.remove(id);
     _userStatusCallbacks.remove(id);
     _typingCallbacks.remove(id);
     _messageUpdateCallbacks.remove(id);
+    _messageStatusCallbacks.remove(id);
   }
 
   // tear down socket + clear ALL subscriptions. only call on logout / account
@@ -183,6 +288,8 @@ class SocketService {
     _socket = null;
     _connected = false;
     _currentUserId = null;
+    _currentToken = null;
+    _activeChatId = null;
   }
 
   void _clearAllForLogout() {
@@ -190,6 +297,13 @@ class SocketService {
     _userStatusCallbacks.clear();
     _typingCallbacks.clear();
     _messageUpdateCallbacks.clear();
+    _messageStatusCallbacks.clear();
     _onlineUserIds.clear();
+
+    for (final timer in _typingTimers.values) {
+      timer.cancel();
+    }
+    _typingTimers.clear();
   }
 }
+

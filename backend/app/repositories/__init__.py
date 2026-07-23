@@ -5,9 +5,7 @@
 import secrets
 from typing import List, Optional
 
-from sqlalchemy import and_, func, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy import and_, delete, func, select, update
 
 from app.core.security import escape_like, now_ms
 from app.models import Chat, ChatMember, User
@@ -62,6 +60,26 @@ class UserRepository:
         )
         await self.db.flush()
         return await self.get_by_id(user_id)
+
+    async def delete_inactive_users(self, days: int = 90) -> List[str]:
+        cutoff_ms = now_ms() - (days * 24 * 60 * 60 * 1000)
+        result = await self.db.execute(
+            select(User).where(
+                (User.last_seen < cutoff_ms) | ((User.last_seen.is_(None)) & (User.created_at < cutoff_ms))
+            )
+        )
+        inactive_users = list(result.scalars().all())
+        deleted_ids = []
+
+        for user in inactive_users:
+            uid = user.id
+            await self.db.execute(delete(ChatMember).where(ChatMember.user_id == uid))
+            await self.db.execute(delete(Chat).where((Chat.created_by == uid) & (Chat.type.in_(["saved", "direct"]))))
+            await self.db.execute(delete(User).where(User.id == uid))
+            deleted_ids.append(uid)
+
+        await self.db.flush()
+        return deleted_ids
 
 
 class ChatRepository:

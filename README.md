@@ -22,104 +22,115 @@
 
 ## Features
 
-- **End-to-end encryption** — X25519 + ChaCha20-Poly1305. Server is zero-knowledge.
-- **Real-time messaging** — instant delivery via WebSockets (Socket.IO)
-- **Email authentication** — no phone number required
-- **Voice messages** — real recording with Web Audio API, encrypted before send
-- **File sharing** — images, docs, voice up to 25MB, E2EE ciphertext stored in Supabase, auto-deleted on delivery
-- **Message reactions, replies, edit, delete for everyone**
-- **Self-destructing messages** — set expiration timer (10s to 1 week)
-- **Delivery states** — ✓ sent, ✓✓ delivered, ✓✓ read (blue)
-- **Groups & channels** — with admin controls, kick, promote, transfer ownership
-- **Expiring groups** — auto-delete after 1-7 days (perfect for events)
-- **Invite links** — shareable token URLs for group joins
-- **Connections** — find users by username, send/accept requests
-- **Blocking & nicknames** — block users, set custom display names
-- **Cross-chat search** — search across all conversations
-- **Report system** — report users or content for abuse
-- **Account deletion** — permanently wipe all user data
-- **Draft messages** — saved per chat, restored on switch
-- **Unread divider** — "New Messages" separator line
-- **Animated stickers** — Lottie-based animated emoji
-- **Custom SVG avatars** — 8 unique geometric patterns
-- **Dark/light theme** — 8 accent colors, 5 chat wallpapers
-- **Fully responsive** — mobile bottom-nav, desktop three-column
-- **Flutter app** — iOS, Android, macOS, Windows, Linux from one codebase
+- **End-to-End Encryption** — X25519 + ChaCha20-Poly1305. Server is zero-knowledge.
+- **3-Stage Delivery Engine** — ✓ sent, ✓✓ delivered, ✓✓ read (emerald) real-time state tracking.
+- **Auto-Rejoining Socket Lifecycle** — Automatic room re-joining on connect/reconnect and offline queue draining.
+- **Constant-Time Password Verification** — scrypt hashing + dummy salt execution for non-existent users + `hmac.compare_digest` timing attack protection.
+- **Email Authentication** — Cookie-authenticated sessions without phone number requirements.
+- **Voice Messages** — Real recording with Web Audio API, encrypted client-side before transmission.
+- **File Sharing** — Images, docs, voice up to 25MB, E2EE ciphertext stored in Supabase, auto-deleted on delivery.
+- **Message Reactions, Replies, Edit, Delete for Everyone**
+- **Self-Destructing Messages** — Set expiration timer (10s to 1 week).
+- **Groups & Channels** — Admin controls, kick, promote, transfer ownership.
+- **Expiring Groups** — Auto-delete after 1-7 days.
+- **Invite Links** — Shareable token URLs for group joins.
+- **Connections** — Find users by username, send/accept requests.
+- **Blocking & Nicknames** — Block users, set custom display names.
+- **Cross-Chat Search** — Search across all conversations.
+- **Report System** — Report users or content for abuse.
+- **Account Deletion** — Permanently wipe user data.
+- **Draft Messages** — Saved per chat, restored on switch.
+- **Unread Divider** — "New Messages" separator line.
+- **Animated Stickers** — Lottie-based animated emoji.
+- **Custom SVG Avatars** — Unique geometric patterns.
+- **Dark/Light Theme** — 8 accent colors, 5 chat wallpapers.
+- **Fully Responsive** — Mobile bottom-nav, desktop three-column layout.
+- **Cross-Platform Flutter App** — iOS, Android, macOS, Windows, Linux.
+
+---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                    Client (Browser / App)              │
+┌────────────────────────────────────────────────────────┐
+│                   Client (Browser / App)               │
 │  Next.js Web · Flutter Mobile · WebSocket · E2EE      │
-└────────────────────────┬─────────────────────────────┘
-                         │ HTTPS / WSS
-                         ▼
-┌──────────────────────────────────────────────────────┐
-│                     Caddy / Render                      │
-│              TLS termination · CORS                    │
-└─────────┬─────────────────────────────┬───────────────┘
+└───────────────────────────┬────────────────────────────┘
+                            │ HTTPS / WSS (Cookie Auth)
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│                    Caddy / Render                      │
+│             TLS termination · CORS Gateway             │
+└─────────┬─────────────────────────────┬────────────────┘
           │                             │
           ▼ :3000 (Vercel)              ▼ :8001 (Render)
 ┌──────────────────────┐     ┌──────────────────────────┐
-│  Frontend (Next.js)   │     │  Backend (FastAPI+SIO)    │
+│  Frontend (Next.js)  │     │  Backend (FastAPI+SIO)   │
 │  ──────────────────  │     │  ──────────────────────  │
-│  • UI components      │     │  • Clean architecture     │
-│  • Zustand store      │     │  • API → Service → Repo   │
-│  • E2EE client-side   │     │  • Socket.IO realtime     │
-│  • Lottie stickers    │     │  • Brute-force lockout    │
+│  • UI components     │     │  • Clean architecture    │
+│  • Zustand store     │     │  • API → Service → Repo  │
+│  • E2EE client-side  │     │  • Socket.IO realtime    │
+│  • Room auto-rejoin  │     │  • Brute-force lockout   │
 └──────────────────────┘     └───────────┬──────────────┘
                                          │
-                              ┌──────────┴──────────┐
-                              ▼                     ▼
-                     ┌──────────────┐    ┌──────────────┐
-                     │  SQLite (dev) │    │ Supabase PG  │
-                     │  / PostgreSQL │    │  (prod)      │
-                     └──────────────┘    └──────────────┘
+                               ┌─────────┴─────────┐
+                               ▼                   ▼
+                      ┌──────────────┐    ┌──────────────┐
+                      │ SQLite (dev) │    │ Supabase PG  │
+                      │ / PostgreSQL │    │  (prod)      │
+                      └──────────────┘    └──────────────┘
 ```
 
-### Backend — Clean Architecture (Python)
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed flow diagrams.
 
-```
-backend/app/
-├── main.py              # ASGI app + middleware + security headers
-├── core/                # config, database, security, rate limiting, brute force, cache, storage
-├── models/              # SQLAlchemy ORM entities
-├── schemas/             # Pydantic DTOs (camelCase + snake_case)
-├── repositories/        # Data access layer (batch queries, no N+1)
-├── services/            # Business logic + DI
-├── api/v1/              # HTTP controllers
-│   ├── auth.py          #   email auth + onboarding + brute-force lockout
-│   ├── chats.py         #   chat CRUD + settings
-│   ├── chat_management.py # leave, delete, kick, invite, search, reports
-│   ├── messages.py      #   messages + reactions + delivery + auto-purge
-│   ├── social.py        #   connections, blocks, nicknames
-│   ├── e2ee.py          #   public key distribution
-│   ├── uploads.py       #   E2EE file upload + quota + storage
-│   └── users.py         #   profile + search
-└── realtime/            # Socket.IO (cookie-auth at connect time)
-```
+---
 
-### Frontend — Feature-Modular (Next.js)
+## Technical Deep Dives
 
-```
-frontend/src/
-├── app/                 # Next.js App Router
-├── components/chat/     # All chat UI components
-├── hooks/               # use-socket, use-mobile
-├── stores/              # Zustand global state
-└── lib/                 # api client, E2EE, icons, cache, types
-```
+### Real-Time 3-Stage Delivery Engine
 
-### Flutter — Cross-Platform
+Cryptalk tracks message lifecycle progression across socket rooms and local UI stores:
 
-```
-flutter/lib/
-├── main.dart            # App entry + Supabase init
-├── app_router.dart      # Auth gate
-├── core/                # api, auth, chat, crypto, socket, supabase
-└── features/            # auth, chat screens
-```
+1. **Sent (`✓`)**: Broadcasted via `send-message` Socket.IO event and acknowledged with `message-ack`.
+2. **Delivered (`✓✓`)**: Triggered when recipient client receives message or drains offline queue. Automatically triggers server deletion of single-use encrypted file blobs.
+3. **Read (`✓✓` Emerald)**: Triggered when recipient views active conversation window (`mark-read`). Updates sender UI bubble status and unread counters.
+
+### Automatic Socket Room Re-joining
+
+- Client `useSocket` hook configures Socket.IO with `reconnection: true` and listens to `connect`, `window.focus`, and `window.online`.
+- Upon connection/reconnection, client reads `useChatStore.getState().activeChatId` and automatically emits `join-chat` with `{ chatId }`.
+- Backend validates room membership (`ChatMember`) and joins socket to `chat:{chatId}`. Offline queued messages are drained immediately.
+
+### Constant-Time Password Verification
+
+- Password verification in `app/core/security.py` uses `scrypt` (`N=16384`, `r=8`, `p=1`, `dklen=64`).
+- **Dummy Salt Protection**: Non-existent user logins or invalid stored hashes trigger dummy `scrypt` hashing with `_DUMMY_SALT` (`"00" * 16`), enforcing equal CPU execution time and mitigating user enumeration.
+- **Constant-Time String Comparison**: Verified using `hmac.compare_digest` to prevent byte extraction side-channel attacks.
+
+---
+
+## Production Environment Configuration
+
+### Backend Environment Variables
+
+| Variable | Required | Description | Example / Recommended Value |
+|---|---|---|---|
+| `SESSION_SECRET` | Yes | 64-character hex secret for signing session HMAC cookies | `openssl rand -hex 32` |
+| `DATABASE_URL` | Yes | Async PostgreSQL connection string | `postgresql+asyncpg://postgres:pass@db.xxx.supabase.co:5432/postgres` |
+| `CORS_ORIGINS` | Yes | Allowed frontend origin URLs | `https://cryptalk.vercel.app` |
+| `COOKIE_SECURE` | Yes | Enforces `Secure` flag on HTTP-only cookies | `true` in production |
+| `REDIS_URL` | Optional | Upstash Redis connection string for Socket.IO multi-node scaling | `rediss://default:pass@redis-xxx.upstash.io:6379` |
+| `SUPABASE_URL` | Yes | Supabase API endpoint for file storage | `https://xxx.supabase.co` |
+| `SUPABASE_KEY` | Yes | Supabase service role key for storage uploads | `eyJhbGciOi...` |
+
+### Frontend Environment Variables
+
+| Variable | Required | Description | Example / Recommended Value |
+|---|---|---|---|
+| `NEXT_PUBLIC_BACKEND_URL` | Yes | Absolute URL to production backend service | `https://cryptalk-backend.onrender.com` |
+| `NEXT_PUBLIC_BACKEND_PORT` | Dev | Fallback local port for development proxy | `8001` |
+
+---
 
 ## Quick Start
 
@@ -128,7 +139,7 @@ flutter/lib/
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env  # set SESSION_SECRET
+cp .env.example .env  # set SESSION_SECRET & DATABASE_URL
 uvicorn app.main:asgi_app --host 0.0.0.0 --port 8001 --reload
 ```
 
@@ -137,7 +148,7 @@ uvicorn app.main:asgi_app --host 0.0.0.0 --port 8001 --reload
 ```bash
 cd frontend
 bun install
-cp .env.example .env.local
+cp .env.example .env.local  # set NEXT_PUBLIC_BACKEND_URL
 bun run dev
 ```
 
@@ -150,92 +161,53 @@ cp .env.example .env  # set BACKEND_URL
 flutter run
 ```
 
-### Supabase (Production Database)
-
-1. Create a project at [supabase.com](https://supabase.com)
-2. Run `supabase/schema.sql` in the SQL Editor
-3. Set `DATABASE_URL` in your backend env to the Supabase connection string
-
-See [`supabase/README.md`](supabase/README.md) for detailed setup.
+---
 
 ## Deployment
 
 ### Backend → Render
 
-1. Push this repo to GitHub
-2. Go to [render.com](https://render.com) → New → Blueprint
-3. Select this repo — Render reads `render.yaml` automatically
-4. Set the secret env vars when prompted:
-   - `SESSION_SECRET` — `openssl rand -hex 32`
-   - `DATABASE_URL` — your Supabase Postgres connection string
-   - `CORS_ORIGINS` — your Vercel frontend URL (e.g. `https://cryptalk.vercel.app`)
-   - `REDIS_URL` — optional, Upstash Redis for multi-instance Socket.IO
-   - `SUPABASE_URL` / `SUPABASE_KEY` — for file storage
-5. Deploy — Render runs `pip install -r requirements.txt` in `backend/` and starts `uvicorn` on `$PORT`
+1. Push repository to GitHub.
+2. Create New Blueprint project on [Render.com](https://render.com) — Render auto-detects `render.yaml`.
+3. Set environment variables (`SESSION_SECRET`, `DATABASE_URL`, `CORS_ORIGINS`, `COOKIE_SECURE=true`, `SUPABASE_URL`, `SUPABASE_KEY`).
+4. Render deploys `uvicorn app.main:asgi_app --host 0.0.0.0 --port $PORT`.
 
 ### Frontend → Vercel
 
-1. Go to [vercel.com](https://vercel.com) → New Project → import this repo
-2. **Set Root Directory to `frontend`** (critical — this is a monorepo)
-3. Vercel auto-detects Next.js and reads `frontend/vercel.json`
-4. Set env vars in Vercel dashboard → Settings → Environment Variables:
-   - `NEXT_PUBLIC_BACKEND_URL` — your Render backend URL (e.g. `https://cryptalk-backend.onrender.com`)
-5. Deploy — Vercel runs `bun install` + `next build` automatically
+1. Import project on [Vercel.com](https://vercel.com).
+2. Set **Root Directory** to `frontend`.
+3. Add environment variable `NEXT_PUBLIC_BACKEND_URL`.
+4. Deploy — Vercel runs `bun install` and `next build`.
 
-### Flutter APK → GitHub Actions
+---
 
-Push a `v*` tag to trigger the build workflow:
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-The APK is uploaded as a GitHub Release artifact.
+## Security Audit Summary
 
-## Security
-
-| Feature | Implementation |
+| Feature | Implementation Details |
 |---|---|
-| Password hashing | scrypt (N=16384, r=8, p=1) |
-| Session tokens | HMAC-SHA256 signed cookies (HTTP-only, Secure, SameSite=Lax) |
-| Rate limiting | Per-user + per-IP (10 logins/min, 120 API/min) |
-| Brute-force lockout | 5 failed logins → 15-min account lock |
-| Socket auth | Cookie-verified at connection time (no self-declared userId) |
-| Input validation | Pydantic + regex on all inputs |
-| Content sanitization | HTML escaping, control char stripping, length limits |
-| E2EE | X25519 + ChaCha20-Poly1305 (zero-knowledge server) |
-| Ephemeral storage | Content + Supabase blob wiped after delivery |
-| SQL injection | SQLAlchemy parameterized queries |
-| Path traversal | Rejected on upload paths (`..`, null bytes) |
-| Security headers | X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy |
-| Row Level Security | Supabase RLS policies on all tables |
-| File sharing | 25MB/file, 950MB total quota, E2EE ciphertext, auto-deleted |
+| Password Hashing | scrypt (N=16384, r=8, p=1, dklen=64) |
+| Password Verification | Constant-time execution via `_DUMMY_SALT` on invalid user + `hmac.compare_digest` |
+| Session Tokens | HMAC-SHA256 signed HTTP-only cookies (`SameSite=Lax`, `Secure` in prod) |
+| Rate Limiting | Per-user + per-IP limiting (10 logins/min, 120 API/min) |
+| Brute-Force Protection | 5 failed logins trigger 15-minute account lock |
+| Socket Security | Cookie authentication at handshake (no self-declared `userId`) |
+| Input Sanitization | Pydantic validation + HTML escaping + control char stripping |
+| E2EE Messaging | X25519 + ChaCha20-Poly1305 (zero-knowledge server) |
+| Ephemeral Storage | Attachment files wiped automatically from storage on delivery |
+| SQL Injection Defense | SQLAlchemy parameterized queries |
+| Security Headers | X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy |
 
-## Project Structure
-
-```
-Cryptalk/
-├── backend/              # Python FastAPI backend
-├── frontend/             # Next.js web client
-├── flutter/              # Flutter mobile/desktop client
-├── supabase/             # PostgreSQL schema + setup guide
-├── prisma/               # Shared schema (for seeding)
-├── scripts/              # Database seed script
-├── .github/workflows/    # CI + Flutter APK build
-├── CONTRIBUTING.md
-└── LICENSE
-```
+---
 
 ## Documentation
 
-- [Backend README](backend/README.md) — API reference, endpoints
-- [Frontend README](frontend/README.md) — Components, features
-- [Flutter README](flutter/README.md) — Mobile app setup
-- [Supabase Setup](supabase/README.md) — Database configuration
-- **Swagger UI** — `http://localhost:8001/docs`
+- [ARCHITECTURE.md](ARCHITECTURE.md) — System architecture, flow diagrams, security design
+- [Backend README](backend/README.md) — API endpoints, Socket.IO handlers, backend security
+- [Frontend README](frontend/README.md) — UI components, Zustand state, socket hooks
+- [Flutter README](flutter/README.md) — Cross-platform client setup
+- [Supabase Setup](supabase/README.md) — PostgreSQL schema & RLS policies
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome.
+---
 
 ## License
 

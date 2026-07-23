@@ -9,10 +9,16 @@ const DB_VERSION = 1
 let dbPromise: Promise<IDBDatabase> | null = null
 
 function openDB(): Promise<IDBDatabase> {
+  if (typeof window === 'undefined' || typeof indexedDB === 'undefined') {
+    return Promise.reject(new Error('IndexedDB is not available in this environment'))
+  }
   if (dbPromise) return dbPromise
   dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
-    request.onerror = () => reject(request.error)
+    request.onerror = () => {
+      dbPromise = null
+      reject(request.error)
+    }
     request.onsuccess = () => resolve(request.result)
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result
@@ -57,8 +63,12 @@ const IDENTITY_KEY = 'identity-keypair'
 const GROUP_KEYS_PREFIX = 'group-key-'
 
 export async function hasIdentityKey(): Promise<boolean> {
-  const key = await get<IdentityKeyPair>(IDENTITY_KEY)
-  return key !== null
+  try {
+    const key = await get<IdentityKeyPair>(IDENTITY_KEY)
+    return key !== null
+  } catch {
+    return false
+  }
 }
 
 export async function saveIdentityKey(keyPair: IdentityKeyPair): Promise<void> {
@@ -66,18 +76,27 @@ export async function saveIdentityKey(keyPair: IdentityKeyPair): Promise<void> {
 }
 
 export async function loadIdentityKey(): Promise<IdentityKeyPair | null> {
-  return get<IdentityKeyPair>(IDENTITY_KEY)
+  try {
+    return await get<IdentityKeyPair>(IDENTITY_KEY)
+  } catch {
+    return null
+  }
 }
 
 // wipes all keys — past messages become permanently undecryptable
 export async function clearAllKeys(): Promise<void> {
-  await del(IDENTITY_KEY)
-  const db = await openDB()
-  const tx = db.transaction(STORE_NAME, 'readwrite')
-  return new Promise((resolve) => {
-    tx.objectStore(STORE_NAME).clear()
-    tx.oncomplete = () => resolve()
-  })
+  try {
+    await del(IDENTITY_KEY)
+    const db = await openDB()
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    return new Promise((resolve) => {
+      tx.objectStore(STORE_NAME).clear()
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => resolve()
+    })
+  } catch {
+    // silent catch if storage is unavailable
+  }
 }
 
 export async function saveGroupKey(chatId: string, key: Uint8Array): Promise<void> {
@@ -85,12 +104,20 @@ export async function saveGroupKey(chatId: string, key: Uint8Array): Promise<voi
 }
 
 export async function loadGroupKey(chatId: string): Promise<Uint8Array | null> {
-  const arr = await get<number[]>(`${GROUP_KEYS_PREFIX}${chatId}`)
-  if (!arr) return null
-  return new Uint8Array(arr)
+  try {
+    const arr = await get<number[]>(`${GROUP_KEYS_PREFIX}${chatId}`)
+    if (!arr) return null
+    return new Uint8Array(arr)
+  } catch {
+    return null
+  }
 }
 
 export async function hasGroupKey(chatId: string): Promise<boolean> {
-  const arr = await get<number[]>(`${GROUP_KEYS_PREFIX}${chatId}`)
-  return arr !== null
+  try {
+    const arr = await get<number[]>(`${GROUP_KEYS_PREFIX}${chatId}`)
+    return arr !== null
+  } catch {
+    return false
+  }
 }

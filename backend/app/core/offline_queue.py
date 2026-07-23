@@ -43,6 +43,7 @@ def enqueue(user_id: str, message: dict) -> None:
         try:
             key = f"oq:{user_id}"
             rc.rpush(key, json.dumps(message, default=str))
+            rc.ltrim(key, -500, -1)
             rc.expire(key, settings.OFFLINE_QUEUE_TTL)
             return
         except Exception as e:

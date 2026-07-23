@@ -31,6 +31,7 @@ interface ChatListItem {
     senderId: string
     senderName: string
     duration?: number | null
+    status?: string | null
   } | null
 }
 
@@ -54,7 +55,10 @@ interface ChatState {
   messages: Record<string, MessageWithSender[]>
   setMessages: (chatId: string, msgs: MessageWithSender[]) => void
   addMessage: (chatId: string, msg: MessageWithSender) => void
+  replaceMessage: (chatId: string, tempId: string, realMsg: MessageWithSender) => void
   updateMessage: (chatId: string, msg: MessageWithSender) => void
+  updateMessageStatus: (chatId: string, status: string, messageId?: string) => void
+  markChatMessagesRead: (chatId: string, readerUserId: string) => void
   removeMessage: (chatId: string, messageId: string) => void
 
   // presence
@@ -176,6 +180,18 @@ export const useChatStore = create<ChatState>((set, _get) => ({
       if (existing.some((m) => m.id === msg.id)) return s
       return { messages: { ...s.messages, [chatId]: [...existing, msg] } }
     }),
+  replaceMessage: (chatId, tempId, realMsg) =>
+    set((s) => {
+      const existing = s.messages[chatId] || []
+      const idx = existing.findIndex((m) => m.id === tempId)
+      if (idx >= 0) {
+        const next = [...existing]
+        next[idx] = realMsg
+        return { messages: { ...s.messages, [chatId]: next } }
+      }
+      if (existing.some((m) => m.id === realMsg.id)) return s
+      return { messages: { ...s.messages, [chatId]: [...existing, realMsg] } }
+    }),
   updateMessage: (chatId, msg) =>
     set((s) => {
       const existing = s.messages[chatId] || []
@@ -185,6 +201,49 @@ export const useChatStore = create<ChatState>((set, _get) => ({
           [chatId]: existing.map((m) => (m.id === msg.id ? msg : m)),
         },
       }
+    }),
+  updateMessageStatus: (chatId, status, messageId) =>
+    set((s) => {
+      const existing = s.messages[chatId] || []
+      const updatedMsgs = existing.map((m) => {
+        if (messageId) {
+          if (m.id === messageId) return { ...m, status }
+          return m
+        }
+        // if no messageId specified, update status of sent messages
+        if (m.senderId === s.currentUser?.id && m.status !== 'read') {
+          return { ...m, status }
+        }
+        return m
+      })
+      // Also update lastMessage status in chat list preview if matching
+      const updatedChats = s.chats.map((c) => {
+        if (c.id === chatId && c.lastMessage) {
+          if (!messageId || c.lastMessage.id === messageId) {
+            return { ...c, lastMessage: { ...c.lastMessage, status } as any }
+          }
+        }
+        return c
+      })
+      return { messages: { ...s.messages, [chatId]: updatedMsgs }, chats: updatedChats }
+    }),
+  markChatMessagesRead: (chatId, readerUserId) =>
+    set((s) => {
+      const existing = s.messages[chatId] || []
+      const updatedMsgs = existing.map((m) => {
+        if (m.senderId !== readerUserId) {
+          return { ...m, status: 'read' }
+        }
+        return m
+      })
+      const updatedChats = s.chats.map((c) => {
+        if (c.id === chatId) {
+          const lm = c.lastMessage ? { ...c.lastMessage, status: 'read' } : null
+          return { ...c, unreadCount: 0, lastMessage: lm as any }
+        }
+        return c
+      })
+      return { messages: { ...s.messages, [chatId]: updatedMsgs }, chats: updatedChats }
     }),
   removeMessage: (chatId, messageId) =>
     set((s) => {

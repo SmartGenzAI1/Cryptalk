@@ -21,10 +21,10 @@ else:
     _connect_args = {
         "statement_cache_size": 0,
     }
-    _engine_kwargs["pool_size"] = 5
-    _engine_kwargs["max_overflow"] = 10
-    _engine_kwargs["pool_timeout"] = 20
-    _engine_kwargs["pool_recycle"] = 600
+    _engine_kwargs["pool_size"] = 10
+    _engine_kwargs["max_overflow"] = 20
+    _engine_kwargs["pool_timeout"] = 30
+    _engine_kwargs["pool_recycle"] = 300
 
 engine = create_async_engine(
     settings.database_url,

@@ -60,9 +60,8 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   final _imagePicker = ImagePicker();
   Message? _replyTo;
   int? _editingMessageIndex;
-  String? _lastReadAt;
   bool _showScrollDown = false;
-  List<String> _typingUsers = [];
+  final List<String> _typingUsers = [];
   int? _selfDestructSeconds;
   bool _isPinned = false;
   bool _isMuted = false;
@@ -99,7 +98,6 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     '🚀', '🤯', '🤔', '😢', '😎', '😡', '💩', '🦄', '😍', '😉', '😱', '😘'
   ];
   static const _reactions = ['👍', '❤️', '🔥', '😂', '😮', '🎉'];
-  static const _selfDestructOptions = [10, 60, 3600, 86400, 604800];
 
   @override
   void initState() {
@@ -144,37 +142,42 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     try {
       final chatService = context.read<ChatService>();
       final messages = await chatService.getMessages(widget.chat.id);
-      if (mounted)
-      setState(() {
-        _messages = messages;
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _messages = messages;
+          _loading = false;
+        });
+      }
       _scrollToBottom();
       await chatService.markDelivered(widget.chat.id);
     } catch (_) {
-      if (mounted)
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
   Future<void> _loadMore() async {
     if (_loadingMore || _messages.isEmpty) return;
-    if (mounted)
-    setState(() => _loadingMore = true);
+    if (mounted) {
+      setState(() => _loadingMore = true);
+    }
     try {
       final chatService = context.read<ChatService>();
       final firstMsg = _messages.first;
       final older = await chatService.getMessages(widget.chat.id, before: firstMsg.createdAt);
       if (older.isNotEmpty) {
-        if (mounted)
-        setState(() {
-          _messages.insertAll(0, older.reversed);
-        });
+        if (mounted) {
+          setState(() {
+            _messages.insertAll(0, older.reversed);
+          });
+        }
       }
     } catch (e) { debugPrint('Error: $e'); } finally {
       // guard setState after the async getMessages call
-      if (mounted)
-      setState(() => _loadingMore = false);
+      if (mounted) {
+        setState(() => _loadingMore = false);
+      }
     }
   }
 
@@ -234,6 +237,33 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
           }
         });
       }
+    }));
+    _socketSubIds.add(socket.onMessageStatus((data) {
+      if (data['chatId'] != widget.chat.id) return;
+      if (!mounted) return;
+      final status = data['status'] as String?;
+      final msgId = data['messageId'] as String?;
+      final readerUserId = data['userId'] as String?;
+      if (status != null) {
+        setState(() {
+          for (var i = 0; i < _messages.length; i++) {
+            if (msgId != null && _messages[i].id == msgId) {
+              _messages[i] = _messages[i].copyWith(status: status);
+            } else if (msgId == null && status == 'read' && readerUserId != null) {
+              if (_messages[i].senderId != readerUserId) {
+                _messages[i] = _messages[i].copyWith(status: 'read');
+              }
+            } else if (msgId == null && status == 'delivered') {
+              if (_messages[i].status == 'sent') {
+                _messages[i] = _messages[i].copyWith(status: 'delivered');
+              }
+            }
+          }
+        });
+      }
+    }));
+    _socketSubIds.add(socket.onUserStatus((data) {
+      if (mounted) setState(() {});
     }));
   }
 
@@ -302,23 +332,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   }
 
   Map<String, dynamic> _messageToJson(Message msg) {
-    return {
-      'id': msg.id,
-      'chatId': msg.chatId,
-      'senderId': msg.senderId,
-      'content': msg.content,
-      'type': msg.type,
-      'createdAt': msg.createdAt,
-      if (msg.duration != null) 'duration': msg.duration,
-      if (msg.attachmentPath != null) 'attachmentPath': msg.attachmentPath,
-      'sender': {
-        'id': msg.sender.id,
-        'name': msg.sender.name,
-        'username': msg.sender.username,
-        'avatarColor': msg.sender.avatarColor,
-        'avatarEmoji': msg.sender.avatarEmoji,
-      },
-    };
+    return msg.toJson();
   }
 
   Future<void> _saveEdit() async {
@@ -328,11 +342,12 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     try {
       final chatService = context.read<ChatService>();
       final edited = await chatService.editMessage(widget.chat.id, msg.id, text);
-      if (mounted)
-      setState(() {
-        _messages[_editingMessageIndex!] = edited;
-        _editingMessageIndex = null;
-      });
+      if (mounted) {
+        setState(() {
+          _messages[_editingMessageIndex!] = edited;
+          _editingMessageIndex = null;
+        });
+      }
       _inputController.clear();
       _clearDraft();
     } catch (e) { debugPrint('Error: $e'); }
@@ -395,10 +410,14 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
 
   Future<void> _stopAndSendVoice() async {
     if (!_isRecording) return;
+    final chatService = context.read<ChatService>();
+    final socket = context.read<SocketService>();
+    final messenger = ScaffoldMessenger.of(context);
     final path = await _record.stop();
     _recordTimer?.cancel();
-    if (mounted)
-    setState(() => _isRecording = false);
+    if (mounted) {
+      setState(() => _isRecording = false);
+    }
     if (path == null || _recordSeconds < 1) return;
 
     try {
@@ -411,14 +430,10 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       }
 
       if (bytes.length > kMaxAttachmentBytes) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Voice file exceeds 25MB limit')));
-        }
+        messenger.showSnackBar(const SnackBar(content: Text('Voice file exceeds 25MB limit')));
         return;
       }
 
-      final chatService = context.read<ChatService>();
-      final socket = context.read<SocketService>();
       final msg = await chatService.sendFileMessage(
         widget.chat.id,
         bytes,
@@ -429,25 +444,25 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         chatType: widget.chat.type,
         recipientUserId: _recipientUserId(),
       );
-      if (mounted)
-      setState(() => _messages.add(msg));
+      if (mounted) {
+        setState(() => _messages.add(msg));
+      }
       socket.sendMessage(widget.chat.id, _messageToJson(msg));
       _scrollToBottom();
     } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-      }
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) { debugPrint('Error: $e'); }
   }
 
   void _cancelRecording() async {
     if (_isRecording) await _record.stop();
     _recordTimer?.cancel();
-    if (mounted)
-    setState(() {
-      _isRecording = false;
-      _recordSeconds = 0;
-    });
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _recordSeconds = 0;
+      });
+    }
   }
 
   Future<void> _sendSticker(String emoji) async {
@@ -461,8 +476,9 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         chatType: widget.chat.type,
         recipientUserId: _recipientUserId(),
       );
-      if (mounted)
-      setState(() => _messages.add(msg));
+      if (mounted) {
+        setState(() => _messages.add(msg));
+      }
       socket.sendMessage(widget.chat.id, _messageToJson(msg));
       _scrollToBottom();
     } catch (e) { debugPrint('Error: $e'); }
@@ -478,26 +494,26 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     final msg = _messages[index];
     try {
       await context.read<ChatService>().deleteMessage(msg.chatId, msg.id, forEveryone: forEveryone);
-      if (mounted)
-      setState(() => _messages.removeAt(index));
+      if (mounted) {
+        setState(() => _messages.removeAt(index));
+      }
     } catch (e) { debugPrint('Error: $e'); }
   }
 
   Future<void> _pickImage() async {
+    final chatService = context.read<ChatService>();
+    final socket = context.read<SocketService>();
+    final messenger = ScaffoldMessenger.of(context);
     final picker = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 70);
     if (picker == null) return;
     final bytes = await picker.readAsBytes();
 
     if (bytes.length > kMaxAttachmentBytes) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('File exceeds 25MB limit')));
-      }
+      messenger.showSnackBar(const SnackBar(content: Text('File exceeds 25MB limit')));
       return;
     }
 
     try {
-      final chatService = context.read<ChatService>();
-      final socket = context.read<SocketService>();
       final msg = await chatService.sendFileMessage(
         widget.chat.id,
         bytes,
@@ -507,14 +523,13 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         chatType: widget.chat.type,
         recipientUserId: _recipientUserId(),
       );
-      if (mounted)
-      setState(() => _messages.add(msg));
+      if (mounted) {
+        setState(() => _messages.add(msg));
+      }
       socket.sendMessage(widget.chat.id, _messageToJson(msg));
       _scrollToBottom();
     } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-      }
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) { debugPrint('Error: $e'); }
   }
 
@@ -735,13 +750,13 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         label: Text(label),
         selected: isActive,
         onSelected: (_) => onTap(),
-        selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+        selectedColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
         labelStyle: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.bold,
           color: isActive
               ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
         ),
       ),
     );
@@ -897,6 +912,107 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     return '${_typingUsers.length} people are typing…';
   }
 
+  Widget _buildHeaderSubtitle(BuildContext context, AppUser? me) {
+    final socket = context.read<SocketService>();
+
+    if (widget.chat.type == 'saved') {
+      return Text(
+        'Encrypted Storage',
+        style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+      );
+    }
+
+    if (_isRecording) {
+      return const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedPresencePulse(color: Color(0xFFEF4444)),
+          SizedBox(width: 6),
+          Text(
+            'recording voice...',
+            style: TextStyle(
+              fontSize: 12,
+              color: Color(0xFFEF4444),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final typingText = _typingLabel();
+    if (typingText.isNotEmpty) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const AnimatedPresencePulse(color: Color(0xFF10B981)),
+          const SizedBox(width: 6),
+          Text(
+            typingText,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF10B981),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (widget.chat.type == 'direct') {
+      final other = widget.chat.members.where((m) => m.user.id != me?.id).firstOrNull;
+      final otherId = other?.user.id;
+      final isOnline = otherId != null && (socket.isUserOnline(otherId) || (other?.user.isOnline ?? false));
+
+      if (isOnline) {
+        return const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedPresencePulse(color: Color(0xFF10B981)),
+            SizedBox(width: 6),
+            Text(
+              'Online',
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFF10B981),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        );
+      } else {
+        return Text(
+          'Offline',
+          style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+        );
+      }
+    }
+
+    final onlineMembers = widget.chat.members.where((m) => socket.isUserOnline(m.user.id)).length;
+    if (onlineMembers > 0) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const AnimatedPresencePulse(color: Color(0xFF10B981)),
+          const SizedBox(width: 6),
+          Text(
+            '$onlineMembers online',
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF10B981),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Text(
+      '${widget.chat.members.length} members',
+      style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+    );
+  }
+
   @override
   void dispose() {
     _inputController.dispose();
@@ -918,7 +1034,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   Widget _buildBackground(AppUser? user, Color accentColor, bool isDark) {
     final wallpaper = user?.wallpaper ?? 'dots';
     final baseBgColor = isDark ? const Color(0xFF0F171A) : const Color(0xFFF7FCF9);
-    final patternColor = accentColor.withOpacity(isDark ? 0.05 : 0.08);
+    final patternColor = accentColor.withValues(alpha: isDark ? 0.05 : 0.08);
 
     if (wallpaper == 'plain') {
       return Container(color: baseBgColor);
@@ -931,7 +1047,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              accentColor.withOpacity(isDark ? 0.12 : 0.18),
+              accentColor.withValues(alpha: isDark ? 0.12 : 0.18),
               baseBgColor,
               baseBgColor,
             ],
@@ -966,7 +1082,6 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
 
     final avatar = _resolveAvatar();
     final title = _resolveTitle();
-    final typing = _typingLabel();
     final hasText = _inputController.text.trim().isNotEmpty;
 
     return Scaffold(
@@ -1035,16 +1150,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
                         ],
                       ],
                     ),
-                    if (typing.isNotEmpty)
-                      Text(
-                        typing,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.green[300],
-                        ),
-                      ),
+                    _buildHeaderSubtitle(context, auth.currentUser),
                   ],
                 ),
               ),
@@ -1065,42 +1171,38 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
               ],
             ],
             onSelected: (value) async {
+              final messenger = ScaffoldMessenger.of(context);
+              final navigator = Navigator.of(context);
               if (value == 'invite') {
                 final token = await chatService.generateInviteLink(widget.chat.id);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('cryptalk.app/join/$token'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                }
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text('cryptalk.app/join/$token'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
               } else if (value == 'pin') {
                 try {
                   final newPinned = !_isPinned;
                   await chatService.pinChat(widget.chat.id, newPinned);
-                  setState(() => _isPinned = newPinned);
+                  if (mounted) setState(() => _isPinned = newPinned);
                 } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
-                  }
+                  messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
                 }
               } else if (value == 'mute') {
                 try {
                   final newMuted = !_isMuted;
                   await chatService.muteChat(widget.chat.id, newMuted);
-                  setState(() => _isMuted = newMuted);
+                  if (mounted) setState(() => _isMuted = newMuted);
                 } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
-                  }
+                  messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
                 }
               } else if (value == 'leave') {
                 await chatService.leaveChat(widget.chat.id);
-                if (mounted) Navigator.pop(context);
+                navigator.pop();
               } else if (value == 'delete') {
                 await chatService.deleteChat(widget.chat.id);
-                if (mounted) Navigator.pop(context);
+                navigator.pop();
               }
             },
           ),
@@ -1135,7 +1237,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
           if (_editingMessageIndex != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              color: Colors.blue.withOpacity(0.1),
+              color: Colors.blue.withValues(alpha: 0.1),
               child: Row(
                 children: [
                   const Icon(Icons.edit, size: 18, color: Colors.blue),
@@ -1253,7 +1355,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
           if (_isRecording)
             Container(
               padding: const EdgeInsets.all(12),
-              color: Colors.red.withOpacity(0.1),
+              color: Colors.red.withValues(alpha: 0.1),
               child: Row(
                 children: [
                   const Icon(Icons.mic, color: Colors.red),
@@ -1450,7 +1552,7 @@ class _MessageBubble extends StatelessWidget {
                     ? null
                     : [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.04),
+                          color: Colors.black.withValues(alpha: 0.04),
                           blurRadius: 2,
                           offset: const Offset(0, 1),
                         )
@@ -1491,7 +1593,7 @@ class _MessageBubble extends StatelessWidget {
                               ? Theme.of(context)
                                   .colorScheme
                                   .onPrimary
-                                  .withOpacity(0.6)
+                                  .withValues(alpha: 0.6)
                               : Colors.grey,
                         ),
                       ),
@@ -1505,24 +1607,13 @@ class _MessageBubble extends StatelessWidget {
                             ? Theme.of(context)
                                 .colorScheme
                                 .onPrimary
-                                .withOpacity(0.7)
+                                .withValues(alpha: 0.7)
                             : Colors.grey,
                       ),
                     ),
                     if (isOwn) ...[
-                      const SizedBox(width: 2),
-                      Icon(
-                        message.status == 'read'
-                            ? Icons.done_all
-                            : Icons.done,
-                        size: 14,
-                        color: message.status == 'read'
-                            ? Colors.lightBlue[200]
-                            : Theme.of(context)
-                                .colorScheme
-                                .onPrimary
-                                .withOpacity(0.7),
-                      ),
+                      const SizedBox(width: 4),
+                      _buildDeliveryCheckmark(context, message.status, isOwn),
                     ],
                   ],
                 ),
@@ -1532,6 +1623,46 @@ class _MessageBubble extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildDeliveryCheckmark(BuildContext context, String status, bool isOwn) {
+    final defaultColor = isOwn
+        ? Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.75)
+        : Colors.grey;
+
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return Icon(
+          Icons.access_time_rounded,
+          size: 13,
+          color: defaultColor,
+        );
+      case 'failed':
+        return const Icon(
+          Icons.error_outline_rounded,
+          size: 14,
+          color: Colors.redAccent,
+        );
+      case 'delivered':
+        return Icon(
+          Icons.done_all,
+          size: 15,
+          color: defaultColor,
+        );
+      case 'read':
+        return const Icon(
+          Icons.done_all,
+          size: 15,
+          color: Color(0xFF10B981), // Emerald green
+        );
+      case 'sent':
+      default:
+        return Icon(
+          Icons.done,
+          size: 15,
+          color: defaultColor,
+        );
+    }
   }
 
   Widget _buildContent(BuildContext context) {
@@ -1756,7 +1887,7 @@ class _AttachmentViewState extends State<_AttachmentView> {
         padding: const EdgeInsets.all(10),
         constraints: const BoxConstraints(maxWidth: 220),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.05),
+          color: Colors.black.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
@@ -1891,7 +2022,7 @@ class _AttachOption extends StatelessWidget {
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.18),
+                    color: color.withValues(alpha: 0.18),
                     shape: BoxShape.circle,
                   ),
                   alignment: Alignment.center,
@@ -2028,5 +2159,80 @@ class WavesPatternPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class AnimatedPresencePulse extends StatefulWidget {
+  final Color color;
+  final double size;
+
+  const AnimatedPresencePulse({
+    super.key,
+    this.color = const Color(0xFF10B981),
+    this.size = 8.0,
+  });
+
+  @override
+  State<AnimatedPresencePulse> createState() => _AnimatedPresencePulseState();
+}
+
+class _AnimatedPresencePulseState extends State<AnimatedPresencePulse>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+    _animation = Tween<double>(begin: 0.3, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: widget.size + (6 * _animation.value),
+              height: widget.size + (6 * _animation.value),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.color.withValues(alpha: 0.35 * (1.0 - _animation.value + 0.3)),
+              ),
+            ),
+            Container(
+              width: widget.size,
+              height: widget.size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.color,
+                boxShadow: [
+                  BoxShadow(
+                    color: widget.color.withValues(alpha: 0.6 * _animation.value),
+                    blurRadius: 4,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 

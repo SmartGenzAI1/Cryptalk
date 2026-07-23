@@ -271,16 +271,29 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
       return
     }
 
+    if (audioRef.current && !audioRef.current.ended && audioRef.current.src === audioContent) {
+      audioRef.current.play()
+      setPlaying(true)
+      return
+    }
+
     const audio = new Audio(audioContent)
     audioRef.current = audio
     audio.onended = () => {
       setPlaying(false)
       setProgress(0)
+      audioRef.current = null
     }
     audio.ontimeupdate = () => {
       if (audio.duration) {
         setProgress((audio.currentTime / audio.duration) * 100)
       }
+    }
+    audio.onerror = () => {
+      setPlaying(false)
+      setProgress(0)
+      audioRef.current = null
+      toast.error('Failed to play audio')
     }
     audio.play()
     setPlaying(true)
@@ -397,14 +410,14 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ type: 'spring', stiffness: 380, damping: 28 }}
                 className={cn(
-                  'relative rounded-2xl px-3.5 py-2 shadow-sm',
+                  'relative rounded-[18px] px-3.5 py-2 shadow-sm transition-all',
                   (isSticker || hasAnimatedEmojis)
                     ? 'bg-transparent border-0 shadow-none px-0 py-0'
                     : isOwn
-                      ? 'bg-gradient-to-br from-primary to-primary text-primary-foreground rounded-br-md'
-                      : 'bg-background border rounded-bl-md',
+                      ? 'bg-gradient-to-br from-emerald-600 via-teal-600 to-teal-700 text-white rounded-tr-[4px] shadow-emerald-500/10'
+                      : 'bg-card border border-border/50 text-card-foreground rounded-tl-[4px] shadow-sm',
                   isDeleted && 'opacity-60 italic',
-                  starred && 'ring-1 ring-amber-400/50'
+                  starred && 'ring-2 ring-amber-400/60 shadow-amber-500/10'
                 )}
               >
                 {/* Reply preview */}
@@ -525,6 +538,7 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                       isOwn={isOwn}
                       time={formatTime(message.createdAt)}
                       loading={attachment.status === 'loading'}
+                      status={message.status || 'sent'}
                     />
                   )
                 ) : (
@@ -562,7 +576,7 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                 )}
 
                 {/* Meta */}
-                {!editing && !isVoice && !isSticker && !hasAnimatedEmojis && !isImage && !isFile && (
+                {!editing && !isVoice && !isSticker && !hasAnimatedEmojis && (
                   <div className={cn('flex items-center gap-1 justify-end mt-0.5 -mb-0.5 text-[10px]', isOwn ? 'text-white/75' : 'text-muted-foreground')}>
                     {starred && <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400" />}
                     {message.editedAt && <span>edited</span>}
@@ -710,6 +724,7 @@ function VoiceBubble({
   isOwn,
   time,
   loading = false,
+  status = 'sent',
 }: {
   duration: number
   playing: boolean
@@ -718,6 +733,7 @@ function VoiceBubble({
   isOwn: boolean
   time: string
   loading?: boolean
+  status?: string
 }) {
   const bars = Math.min(Math.max(Math.floor(duration * 2), 12), 40)
   return (
@@ -759,22 +775,31 @@ function VoiceBubble({
         </div>
         <div className={cn('flex items-center justify-between text-[10px] mt-1', isOwn ? 'text-white/75' : 'text-muted-foreground')}>
           <span>{loading ? '…' : playing ? `${Math.ceil(duration * (1 - progress / 100))}s` : `${duration}s`}</span>
-          <span>{time}</span>
+          <div className="flex items-center gap-1">
+            <span>{time}</span>
+            {isOwn && <DeliveryTicks status={status} />}
+          </div>
         </div>
       </div>
     </div>
   )
 }
 
-// delivery ticks: ✓ sent, ✓✓ delivered, ✓✓ read (blue)
+// delivery ticks: 🕒 pending, ❗ failed, ✓ sent, ✓✓ delivered, ✓✓ read (emerald)
 function DeliveryTicks({ status }: { status: string }) {
+  if (status === 'pending') {
+    return <span title="Sending…"><Clock className="h-3 w-3 animate-spin text-white/80" /></span>
+  }
+  if (status === 'failed') {
+    return <span className="text-red-400 font-bold text-[10px]" title="Failed to send">❗</span>
+  }
   if (status === 'read') {
-    return <CheckCheck className="h-3 w-3 text-sky-400" />
+    return <span title="Read"><CheckCheck className="h-3.5 w-3.5 text-emerald-400 font-bold" /></span>
   }
   if (status === 'delivered') {
-    return <CheckCheck className="h-3 w-3" />
+    return <span title="Delivered"><CheckCheck className="h-3.5 w-3.5 opacity-80" /></span>
   }
-  return <Check className="h-3 w-3" />
+  return <span title="Sent"><Check className="h-3.5 w-3.5 opacity-80" /></span>
 }
 
 function AttachmentLoading({ label }: { label: string }) {

@@ -8,7 +8,6 @@ import '../../core/models.dart';
 import '../../core/ui/avatar.dart';
 import '../../core/socket_service.dart';
 import '../../core/animated_emojis.dart';
-import 'chat_view_screen.dart';
 
 class ChatInfoScreen extends StatefulWidget {
   final Chat chat;
@@ -31,9 +30,7 @@ class ChatInfoScreen extends StatefulWidget {
 class _ChatInfoScreenState extends State<ChatInfoScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   String _safetyNumber = 'Loading...';
-  bool _loadingSafetyNumber = true;
   List<Message> _messages = [];
-  bool _loadingMessages = false;
 
   @override
   void initState() {
@@ -47,21 +44,15 @@ class _ChatInfoScreenState extends State<ChatInfoScreen> with SingleTickerProvid
   }
 
   Future<void> _loadMessages() async {
-    setState(() => _loadingMessages = true);
     try {
       final chatService = context.read<ChatService>();
       final messages = await chatService.getMessages(widget.chat.id);
       if (mounted) {
         setState(() {
           _messages = messages;
-          _loadingMessages = false;
         });
       }
-    } catch (_) {
-      if (mounted) {
-        setState(() => _loadingMessages = false);
-      }
-    }
+    } catch (_) {}
   }
 
   @override
@@ -86,22 +77,19 @@ class _ChatInfoScreenState extends State<ChatInfoScreen> with SingleTickerProvid
         if (mounted) {
           setState(() {
             _safetyNumber = number;
-            _loadingSafetyNumber = false;
           });
         }
       } else {
         if (mounted) {
           setState(() {
             _safetyNumber = 'Not available';
-            _loadingSafetyNumber = false;
           });
         }
       }
     } catch (_) {
       if (mounted) {
         setState(() {
-          _safetyNumber = 'Unable to generate';
-          _loadingSafetyNumber = false;
+          _safetyNumber = 'Not available';
         });
       }
     }
@@ -203,8 +191,8 @@ class _ChatInfoScreenState extends State<ChatInfoScreen> with SingleTickerProvid
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.05),
-                  border: Border.all(color: Colors.green.withOpacity(0.2)),
+                  color: Colors.green.withValues(alpha: 0.05),
+                  border: Border.all(color: Colors.green.withValues(alpha: 0.2)),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Column(
@@ -342,7 +330,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen> with SingleTickerProvid
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(

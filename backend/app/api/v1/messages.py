@@ -105,6 +105,19 @@ async def mark_delivered(
     member = await repo.get_member(chat_id, user_id)
     if not member:
         raise ForbiddenError("Not a member of this chat")
+
+    sio = getattr(request.app.state, "sio", None)
+    if sio:
+        await sio.emit(
+            "message-status",
+            {
+                "chatId": chat_id,
+                "userId": user_id,
+                "status": "delivered",
+            },
+            room=f"chat:{chat_id}",
+        )
+
     return {"ok": True}
 
 from fastapi import Query
@@ -189,5 +202,20 @@ async def mark_read(chat_id: str, request: Request, db: AsyncSession = Depends(g
     member = await repo.get_member(chat_id, user_id)
     if not member:
         raise ForbiddenError("Not a member of this chat")
-    await repo.update_member(member.id, last_read_at=now_ms())
+    read_timestamp = now_ms()
+    await repo.update_member(member.id, last_read_at=read_timestamp)
+
+    sio = getattr(request.app.state, "sio", None)
+    if sio:
+        await sio.emit(
+            "message-status",
+            {
+                "chatId": chat_id,
+                "userId": user_id,
+                "status": "read",
+                "lastReadAt": read_timestamp,
+            },
+            room=f"chat:{chat_id}",
+        )
+
     return {"ok": True}

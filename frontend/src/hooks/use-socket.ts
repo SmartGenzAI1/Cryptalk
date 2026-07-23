@@ -28,6 +28,8 @@ export function useSocket() {
   const setConnected = useChatStore((s) => s.setConnected)
   const setCurrentUser = useChatStore((s) => s.setCurrentUser)
   const initialised = useRef(false)
+  const currentRoomRef = useRef<string | null>(null)
+  const typingTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
   useEffect(() => {
     if (!currentUser || initialised.current) return
@@ -51,12 +53,28 @@ export function useSocket() {
 
     socket.on('connect', () => {
       setConnected(true)
-      // no identify emit — auth happened at connect via the cookie
+      // re-join active chat room on connect/reconnect
+      const currentActiveId = useChatStore.getState().activeChatId
+      if (currentActiveId) {
+        socket?.emit('join-chat', { chatId: currentActiveId })
+        currentRoomRef.current = currentActiveId
+      }
     })
 
     socket.on('disconnect', () => {
       setConnected(false)
     })
+
+    // Auto-reconnect when tab regains focus or comes back online
+    function handleVisibilityOrOnline() {
+      if (socket && !socket.connected) {
+        socket.connect()
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', handleVisibilityOrOnline)
+      window.addEventListener('online', handleVisibilityOrOnline)
+    }
 
     // backend rejected cookie: force re-login so user gets a fresh cookie
     socket.on('auth-error', (data: { message?: string } | undefined) => {
@@ -142,19 +160,40 @@ export function useSocket() {
       }
     })
 
-    socket.on('message-status', (data: { chatId: string; messageId: string; status: string; message?: MessageWithSender }) => {
+    socket.on('message-status', (data: { chatId: string; messageId?: string; userId?: string; status: string; message?: MessageWithSender }) => {
+      const store = useChatStore.getState()
       if (data.message) {
         updateMessage(data.chatId, data.message)
+      } else if (data.status === 'read' && data.userId) {
+        store.markChatMessagesRead(data.chatId, data.userId)
+      } else if (data.status && data.chatId) {
+        store.updateMessageStatus(data.chatId, data.status, data.messageId)
       }
     })
 
-    socket.on('recording', (data: { chatId: string; userId: string; username: string; isRecording: boolean }) => {
-      // reuse typing display as the voice-recording indicator
-      if (data.isRecording) {
-        addTyping(data.chatId, { userId: data.userId, username: data.username })
-      } else {
-        removeTyping(data.chatId, data.userId)
+    const typingTimeouts = typingTimeoutsRef.current
+
+    function handleTypingState(chatId: string, userId: string, username: string, isActive: boolean) {
+      const key = `${chatId}:${userId}`
+      const existingTimer = typingTimeouts.get(key)
+      if (existingTimer) {
+        clearTimeout(existingTimer)
+        typingTimeouts.delete(key)
       }
+      if (isActive) {
+        addTyping(chatId, { userId, username })
+        const timer = setTimeout(() => {
+          removeTyping(chatId, userId)
+          typingTimeouts.delete(key)
+        }, 3500)
+        typingTimeouts.set(key, timer)
+      } else {
+        removeTyping(chatId, userId)
+      }
+    }
+
+    socket.on('recording', (data: { chatId: string; userId: string; username: string; isRecording: boolean }) => {
+      handleTypingState(data.chatId, data.userId, data.username, data.isRecording)
     })
 
     socket.on('reaction', (data: { chatId: string; messageId: string; emoji: string; userId: string; added: boolean }) => {
@@ -163,8 +202,7 @@ export function useSocket() {
     })
 
     socket.on('typing', (data: { chatId: string; userId: string; username: string; isTyping: boolean }) => {
-      if (data.isTyping) addTyping(data.chatId, { userId: data.userId, username: data.username })
-      else removeTyping(data.chatId, data.userId)
+      handleTypingState(data.chatId, data.userId, data.username, data.isTyping)
     })
 
     socket.on('chat-updated', async (data: { chat: any }) => {
@@ -193,20 +231,32 @@ export function useSocket() {
     })
 
     return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleVisibilityOrOnline)
+        window.removeEventListener('online', handleVisibilityOrOnline)
+      }
+      typingTimeoutsRef.current.forEach((t) => clearTimeout(t))
+      typingTimeoutsRef.current.clear()
       if (socket) {
         socket.removeAllListeners()
         socket.disconnect()
         socket = null
       }
       initialised.current = false
+      currentRoomRef.current = null
     }
   }, [currentUser])
 
   // join/leave chat room when activeChatId changes
   useEffect(() => {
     if (!socket || !currentUser) return
+    if (currentRoomRef.current && currentRoomRef.current !== activeChatId) {
+      socket.emit('leave-chat', { chatId: currentRoomRef.current })
+      currentRoomRef.current = null
+    }
     if (activeChatId) {
       socket.emit('join-chat', { chatId: activeChatId })
+      currentRoomRef.current = activeChatId
     }
   }, [activeChatId, currentUser])
 }

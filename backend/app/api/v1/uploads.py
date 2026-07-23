@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, Header, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.security import get_current_user_id
+from app.core.security import get_current_user_id, sanitize_filename
 from app.core.storage import (
     FileTooLargeError,
     QuotaExceededError,
@@ -26,10 +26,7 @@ router = APIRouter(prefix="/uploads", tags=["uploads"])
 def _safe_filename(name: Optional[str]) -> str:
     if not name:
         return "file"
-    # last path segment only (defends against ../)
-    base = name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in base)
-    return safe[:80] or "file"
+    return sanitize_filename(name)
 
 
 @router.post("")

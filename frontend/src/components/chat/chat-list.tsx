@@ -107,7 +107,13 @@ const ChatListItemView = memo(({
               </span>
               <div className="flex items-center gap-1 shrink-0">
                 {chat.lastMessage?.senderId === currentUser?.id && chat.lastMessage && (
-                  <CheckCheck className="h-3.5 w-3.5 text-emerald-500" />
+                  chat.lastMessage.status === 'read' ? (
+                    <CheckCheck className="h-3.5 w-3.5 text-emerald-400 font-bold" />
+                  ) : chat.lastMessage.status === 'delivered' ? (
+                    <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5 text-muted-foreground" />
+                  )
                 )}
                 <span className={cn('text-[11px]', unreadCount ? 'text-primary font-bold' : 'text-muted-foreground')}>
                   {chat.lastMessage ? formatChatListTime(chat.lastMessage.createdAt) : ''}
@@ -172,6 +178,7 @@ const ChatListItemView = memo(({
     prev.chat.pinnedAt === next.chat.pinnedAt &&
     prev.chat.lastMessage?.id === next.chat.lastMessage?.id &&
     prev.chat.lastMessage?.content === next.chat.lastMessage?.content &&
+    prev.chat.lastMessage?.status === next.chat.lastMessage?.status &&
     prev.chat.lastMessage?.createdAt === next.chat.lastMessage?.createdAt
   )
 })
@@ -460,36 +467,36 @@ export function ChatList() {
   // renderChat function replaced by memoized ChatListItemView component
 
   return (
-    <div className="w-full sm:w-[340px] md:w-[360px] shrink-0 flex flex-col border-r bg-sidebar/60 zc-glass-sidebar">
-      <div className="p-3 space-y-3 border-b bg-background/40">
-        <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-bold flex-1 tracking-tight">Chats</h1>
-          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full zc-tap" title="New chat" onClick={() => setNewChatOpen(true)}>
-            <Plus className="h-5 w-5" />
+    <div className="w-full sm:w-[340px] md:w-[360px] shrink-0 flex flex-col border-r bg-card/40 backdrop-blur-xl zc-glass-sidebar">
+      <div className="p-3 space-y-2.5 border-b bg-background/50 backdrop-blur-md">
+        <div className="flex items-center gap-2 px-1">
+          <h1 className="text-2xl font-black tracking-tight flex-1">Chats</h1>
+          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full zc-tap hover:bg-accent" title="New chat" onClick={() => setNewChatOpen(true)}>
+            <Plus className="h-5 w-5 text-primary" />
           </Button>
         </div>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search chats & messages"
-            className="pl-9 h-10 bg-background rounded-full border-0 focus-visible:ring-1 focus-visible:ring-primary"
+            className="pl-9 h-10 bg-accent/40 rounded-full border-0 focus-visible:ring-1 focus-visible:ring-primary text-sm font-medium"
           />
         </div>
       </div>
 
       {/* Category Tabs */}
-      <div className="flex items-center gap-1.5 px-3 pb-2 overflow-x-auto zc-scroll shrink-0 border-b bg-background/20 select-none">
+      <div className="flex items-center gap-1.5 px-3 py-2 overflow-x-auto zc-no-scrollbar shrink-0 border-b bg-background/30 select-none">
         {(['all', 'direct', 'group', 'channel', 'saved'] as const).map((filter) => (
           <button
             key={filter}
             onClick={() => setChatFilter(filter)}
             className={cn(
-              'px-3 py-1 text-xs font-medium rounded-full transition-all shrink-0 zc-tap border capitalize',
+              'px-3 py-1.5 text-xs font-semibold rounded-full transition-all shrink-0 zc-tap capitalize',
               chatFilter === filter
-                ? 'bg-primary border-primary text-primary-foreground shadow-sm font-semibold'
-                : 'bg-background hover:bg-accent border-input text-muted-foreground'
+                ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20'
+                : 'bg-accent/40 hover:bg-accent text-muted-foreground hover:text-foreground'
             )}
           >
             {filter === 'direct' ? 'Personal' : filter === 'saved' ? 'Saved' : filter + 's'}

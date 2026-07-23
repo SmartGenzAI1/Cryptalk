@@ -96,18 +96,16 @@ export async function encryptDirectMessage(
 export async function decryptDirectMessage(
   encryptedContent: string
 ): Promise<string> {
-  const identityKey = await loadIdentityKey()
-  if (!identityKey) throw new Error('No identity key — cannot decrypt')
-
-  // legacy plaintext fallback (pre-E2EE messages)
   try {
+    const identityKey = await loadIdentityKey()
+    if (!identityKey) return encryptedContent
+
     const payload = JSON.parse(encryptedContent) as EncryptedPayload
     if (!payload.ciphertext || !payload.nonce || !payload.ephemeralPublicKey) {
       return encryptedContent
     }
     return await decryptMessage(payload, identityKey.encryption.privateKey)
-  } catch (e: any) {
-    if (e.message?.includes('Decryption failed')) throw e
+  } catch {
     return encryptedContent
   }
 }
@@ -133,10 +131,10 @@ export async function decryptGroupMessageForChat(
   encryptedContent: string,
   chatId: string
 ): Promise<string> {
-  const identityKey = await loadIdentityKey()
-  if (!identityKey) throw new Error('No identity key — cannot decrypt')
-
   try {
+    const identityKey = await loadIdentityKey()
+    if (!identityKey) return encryptedContent
+
     const payload = JSON.parse(encryptedContent)
     if (!payload.ciphertext || !payload.nonce) {
       return encryptedContent // legacy plaintext
@@ -154,9 +152,8 @@ export async function decryptGroupMessageForChat(
       payload.mac || '',
       groupKey
     )
-  } catch (e: any) {
-    if (e.message?.includes('Decryption failed')) throw e
-    return encryptedContent // legacy plaintext
+  } catch {
+    return encryptedContent // legacy plaintext fallback
   }
 }
 
@@ -172,8 +169,10 @@ export async function decryptAndStoreChatKeys(chats: any[]): Promise<void> {
         if (!hasKey) {
           // The chatKey was encrypted by the creator using our public key
           const decryptedKeyBase64 = await decryptDirectMessage(chat.chatKey)
-          const groupKeyBytes = fromBase64(decryptedKeyBase64)
-          await saveGroupKey(chat.id, groupKeyBytes)
+          if (decryptedKeyBase64 && decryptedKeyBase64 !== chat.chatKey) {
+            const groupKeyBytes = fromBase64(decryptedKeyBase64)
+            await saveGroupKey(chat.id, groupKeyBytes)
+          }
         }
       } catch (e) {
         console.warn(`Failed to decrypt/store group key for chat ${chat.id}:`, e)

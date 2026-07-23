@@ -116,6 +116,8 @@ async def lifespan(app: FastAPI):
     cleanup_task.cancel()
     from app.core.storage import StorageService
     await StorageService.close()
+    from app.core.database import engine
+    await engine.dispose()
     logger.info("Shutting down...")
 
 

@@ -82,39 +82,39 @@ export function ChatApp() {
   }, [setChats, setCurrentUser, setE2eeEnabled])
 
   return (
-    <div className="h-screen w-full flex flex-col overflow-hidden bg-background">
+    <div className="h-[100dvh] w-full flex flex-col overflow-hidden bg-background select-none">
       <AccentApplier />
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         <Sidebar />
-        <div className={`${activeChatId ? 'hidden' : 'flex'} md:flex w-full md:w-[360px] shrink-0`}>
+        <div className={`${activeChatId ? 'hidden' : 'flex'} md:flex w-full md:w-[360px] shrink-0 h-full`}>
           <ChatList />
         </div>
-        <div className={`${activeChatId ? 'flex' : 'hidden'} md:flex flex-1 min-w-0 relative`}>
+        <div className={`${activeChatId ? 'flex' : 'hidden'} md:flex flex-1 min-w-0 relative h-full`}>
           <ChatWindow />
           {infoPanelOpen && activeChatId && (
             <Suspense fallback={<PanelFallback />}>
-              <div className="absolute inset-0 md:relative md:inset-auto z-40 w-full md:w-[340px] h-full flex">
+              <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-auto w-full md:w-[340px] h-full flex bg-background md:bg-transparent">
                 <ChatInfoPanel />
               </div>
             </Suspense>
           )}
-          {settingsOpen && (
+          {settingsOpen && activeChatId && (
             <Suspense fallback={<PanelFallback />}>
-              <div className="absolute inset-0 md:relative md:inset-auto z-40 w-full md:w-[380px] h-full flex">
+              <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-auto w-full md:w-[380px] h-full flex bg-background md:bg-transparent">
                 <SettingsPanel />
               </div>
             </Suspense>
           )}
-          {connectionsPanelOpen && (
+          {connectionsPanelOpen && activeChatId && (
             <Suspense fallback={<PanelFallback />}>
-              <div className="absolute inset-0 md:relative md:inset-auto z-40 w-full md:w-[380px] h-full flex">
+              <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-auto w-full md:w-[380px] h-full flex bg-background md:bg-transparent">
                 <ConnectionsPanel />
               </div>
             </Suspense>
           )}
         </div>
         {!activeChatId && (settingsOpen || connectionsPanelOpen) && (
-          <div className="flex md:hidden w-full absolute inset-0 z-50 top-0 bottom-14">
+          <div className="flex md:hidden w-full fixed inset-0 z-50 bg-background flex-col">
             {settingsOpen && (
               <Suspense fallback={<PanelFallback />}>
                 <SettingsPanel />

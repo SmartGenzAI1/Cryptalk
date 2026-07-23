@@ -34,10 +34,23 @@ def hash_password(password: str) -> str:
     )
     return f"{salt}:{derived.hex()}"
 
-def verify_password(password: str, stored: str) -> bool:
+_DUMMY_SALT = "00" * 16
+
+def verify_password(password: str, stored: str | None) -> bool:
+    if not stored or ":" not in stored:
+        # Constant-time dummy pass to prevent account enumeration timing attacks
+        hashlib.scrypt(
+            (password or "").encode(),
+            salt=_DUMMY_SALT.encode(),
+            n=_SCRYPT_N,
+            r=_SCRYPT_R,
+            p=_SCRYPT_P,
+            dklen=_KEY_LEN,
+        )
+        return False
 
     try:
-        salt_hex, expected_hash = stored.split(":")
+        salt_hex, expected_hash = stored.split(":", 1)
         derived = hashlib.scrypt(
             password.encode(),
             salt=salt_hex.encode(),
@@ -48,6 +61,14 @@ def verify_password(password: str, stored: str) -> bool:
         )
         return hmac.compare_digest(derived.hex(), expected_hash)
     except (ValueError, TypeError):
+        hashlib.scrypt(
+            (password or "").encode(),
+            salt=_DUMMY_SALT.encode(),
+            n=_SCRYPT_N,
+            r=_SCRYPT_R,
+            p=_SCRYPT_P,
+            dklen=_KEY_LEN,
+        )
         return False
 
 # session tokens
@@ -183,8 +204,16 @@ def sanitize_title(text: str) -> str:
     return sanitize_text(text, _MAX_TITLE_LENGTH)
 
 def sanitize_bio(text: str) -> str:
-
     return sanitize_text(text, _MAX_BIO_LENGTH)
+
+def sanitize_filename(filename: str) -> str:
+    if not filename:
+        return "file"
+    # prevent directory traversal, control characters, and malformed names
+    clean_name = os.path.basename(filename.replace("\\", "/"))
+    clean_name = re.sub(r"[^\w\.\-]", "_", clean_name)
+    clean_name = clean_name.lstrip(".")
+    return clean_name[:150] or "file"
 
 # fastapi dependencies
 

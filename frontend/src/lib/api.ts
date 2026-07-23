@@ -54,7 +54,11 @@ export async function apiPost<T = any>(path: string, body?: any): Promise<T> {
     const data = await res.json().catch(() => ({}))
     throw new Error(data.detail || data.message || `API error ${res.status}`)
   }
-  return res.json()
+  const data = await res.json()
+  if (data && data.token && typeof window !== 'undefined') {
+    localStorage.setItem('tc_token', data.token)
+  }
+  return data
 }
 
 export async function apiPatch<T = any>(path: string, body?: any): Promise<T> {

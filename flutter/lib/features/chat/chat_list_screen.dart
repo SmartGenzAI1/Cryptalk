@@ -63,6 +63,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
     _socketSubIds.add(socket.onMessage((data) {
       if (mounted) _loadChats();
     }));
+    _socketSubIds.add(socket.onMessageUpdate((_) {
+      if (mounted) _loadChats(silent: true);
+    }));
     _socketSubIds.add(socket.onUserStatus((_) {
       if (mounted) setState(() {});
     }));
@@ -441,7 +444,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     return Container(
       color: baseBgColor,
       child: CustomPaint(
-        painter: DotPatternPainter(color: accentColor.withOpacity(isDark ? 0.05 : 0.08)),
+        painter: DotPatternPainter(color: accentColor.withValues(alpha: isDark ? 0.05 : 0.08)),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
@@ -458,7 +461,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       borderRadius: BorderRadius.circular(24),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
+                          color: Colors.black.withValues(alpha: 0.08),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -492,7 +495,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF10B981).withOpacity(0.1),
+                          color: const Color(0xFF10B981).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: const Text(
@@ -508,7 +511,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF43F5E).withOpacity(0.1),
+                          color: const Color(0xFFF43F5E).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: const Text(
@@ -524,7 +527,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: Colors.amber.withOpacity(0.1),
+                          color: Colors.amber.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: const Text(
@@ -732,7 +735,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           height: 44,
           decoration: BoxDecoration(
             color: isActive
-                ? Theme.of(context).colorScheme.primary.withOpacity(0.15)
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
           ),
@@ -836,6 +839,28 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
+  Widget _buildStatusIcon(BuildContext context, String status) {
+    if (status == 'read') {
+      return Icon(
+        Icons.done_all,
+        size: 15,
+        color: Theme.of(context).colorScheme.primary,
+      );
+    } else if (status == 'delivered') {
+      return const Icon(
+        Icons.done_all,
+        size: 15,
+        color: Colors.grey,
+      );
+    } else {
+      return const Icon(
+        Icons.done,
+        size: 15,
+        color: Colors.grey,
+      );
+    }
+  }
+
   Widget _buildChatTile(Chat chat, AppUser? currentUser) {
     final title = _getDisplayTitle(chat, currentUser);
     final subtitle = _getDisplaySubtitle(chat, currentUser);
@@ -867,7 +892,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       selected: isWide && _activeChat?.id == chat.id,
-      selectedTileColor: Theme.of(context).colorScheme.primary.withOpacity(0.12),
+      selectedTileColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
       leading: AvatarIcon(
         iconKey: avatarEmoji,
         colorName: avatarColor,
@@ -889,6 +914,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
       ),
       subtitle: Row(
         children: [
+          if (last != null && last.senderId == currentUser?.id) ...[
+            _buildStatusIcon(context, last.status),
+            const SizedBox(width: 4),
+          ],
           Expanded(
             child: Text(
               subtitle,

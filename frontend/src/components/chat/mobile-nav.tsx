@@ -17,7 +17,7 @@ export function MobileNav() {
   if (activeChatId) return null
 
   return (
-    <nav className="md:hidden flex items-center justify-around h-14 border-t bg-sidebar/80 zc-glass-sidebar shrink-0 safe-area-pb">
+    <nav className="md:hidden flex items-center justify-around h-16 border-t bg-background/95 backdrop-blur-lg shrink-0 z-30 pb-[env(safe-area-inset-bottom,0px)] px-1">
       <NavBtn icon={MessageCircle} label="Chats" active={chatFilter === 'all' && !connectionsPanelOpen && !settingsOpen} onClick={() => { setChatFilter('all'); setActiveChatId(null); setConnectionsPanelOpen(false); setSettingsOpen(false) }} />
       <NavBtn icon={Users} label="People" active={connectionsPanelOpen} onClick={() => { setConnectionsPanelOpen(!connectionsPanelOpen); if (!connectionsPanelOpen) setSettingsOpen(false) }} />
       <NavBtn icon={Megaphone} label="Channels" active={chatFilter === 'channel' && !connectionsPanelOpen && !settingsOpen} onClick={() => { setChatFilter('channel'); setActiveChatId(null); setConnectionsPanelOpen(false); setSettingsOpen(false) }} />
@@ -28,9 +28,17 @@ export function MobileNav() {
 
 function NavBtn({ icon: Icon, label, active, onClick }: { icon: any; label: string; active?: boolean; onClick?: () => void }) {
   return (
-    <button onClick={onClick} className={cn('flex flex-col items-center justify-center gap-0.5 h-full flex-1 zc-tap transition-colors', active ? 'text-primary' : 'text-muted-foreground')}>
-      <Icon className="h-5 w-5" />
-      <span className="text-[10px] font-medium">{label}</span>
+    <button
+      onClick={onClick}
+      className={cn(
+        'flex flex-col items-center justify-center gap-1 h-full flex-1 py-1 px-2 rounded-xl transition-all zc-tap select-none',
+        active ? 'text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'
+      )}
+    >
+      <div className={cn('p-1 rounded-full transition-transform', active && 'bg-primary/10 scale-110')}>
+        <Icon className="h-5 w-5" />
+      </div>
+      <span className="text-[11px] leading-none tracking-tight">{label}</span>
     </button>
   )
 }

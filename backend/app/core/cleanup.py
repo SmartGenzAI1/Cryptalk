@@ -81,17 +81,39 @@ async def cleanup_expired_files() -> int:
     return deleted
 
 
+async def cleanup_inactive_users_task(days: int = 90) -> int:
+    from app.core.database import async_session_factory
+    from app.repositories import UserRepository
+    from app.core.offline_queue import drain
+
+    deleted_count = 0
+    try:
+        async with async_session_factory() as db:
+            user_repo = UserRepository(db)
+            deleted_uids = await user_repo.delete_inactive_users(days=days)
+            await db.commit()
+            deleted_count = len(deleted_uids)
+            for uid in deleted_uids:
+                drain(uid)
+            if deleted_count > 0:
+                logger.info("Purged %d inactive users (> %d days inactivity)", deleted_count, days)
+    except Exception as e:
+        logger.error("Inactive user cleanup failed: %s", e)
+    return deleted_count
+
+
 async def start_cleanup_loop() -> None:
     global _running
     if _running:
         return
     _running = True
     interval = max(settings.FILE_RETENTION_HOURS * 3600 // 6, 600)  # run ~6x per retention period, min 10min
-    logger.info("Starting media cleanup loop (every %ds, retention=%dh)", interval, settings.FILE_RETENTION_HOURS)
+    logger.info("Starting background cleanup loop (files & 90-day inactive user purging)", interval, settings.FILE_RETENTION_HOURS)
 
     while _running:
         try:
             await cleanup_expired_files()
+            await cleanup_inactive_users_task(days=90)
         except Exception as e:
             logger.error("Cleanup loop error: %s", e)
         await asyncio.sleep(interval)

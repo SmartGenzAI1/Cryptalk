@@ -54,7 +54,9 @@ export function ChatWindow() {
   const subtitle = activeChat
     ? activeChat.type === 'direct'
       ? otherMember
-        ? formatLastSeen(otherMember.user.lastSeen, otherOnline)
+        ? otherOnline
+          ? 'Online'
+          : formatLastSeen(otherMember.user.lastSeen, false)
         : 'Direct chat'
       : activeChat.type === 'saved'
       ? 'Your personal cloud'
@@ -68,6 +70,17 @@ export function ChatWindow() {
       : typingUsers.length === 1
       ? `${typingUsers[0].username} is typing…`
       : `${typingUsers.length} people typing…`
+
+  // Send mark-read notification when opening or viewing the chat window
+  useEffect(() => {
+    if (!activeChatId || !currentUser) return
+    import('@/lib/api').then(({ apiPost }) => {
+      apiPost(`/api/${activeChatId}/mark-read`).catch(() => {})
+    })
+    import('@/hooks/use-socket').then(({ getSocket }) => {
+      getSocket()?.emit('message-status', { chatId: activeChatId, status: 'read' })
+    })
+  }, [activeChatId, currentUser, messages.length])
 
   async function handleLeaveChat() {
     if (!activeChatId || !activeChat) return
@@ -163,30 +176,58 @@ export function ChatWindow() {
 
   if (!activeChat || !activeChatId) {
     return (
-      <div className="flex-1 flex items-center justify-center zc-wallpaper-dots">
+      <div className="flex-1 flex flex-col items-center justify-center zc-wallpaper-dots p-6 select-none relative overflow-hidden">
+        <div className="absolute h-96 w-96 rounded-full bg-emerald-500/10 dark:bg-emerald-500/15 blur-3xl animate-pulse pointer-events-none" />
+
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center max-w-md px-6"
+          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+          className="text-center max-w-lg px-8 py-10 rounded-3xl bg-card/85 dark:bg-card/75 backdrop-blur-2xl border border-border/60 shadow-2xl relative z-10"
         >
           <motion.div
             initial={{ scale: 0, rotate: -180 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ type: 'spring', stiffness: 200, damping: 15 }}
-            className="mx-auto mb-6 h-20 w-20 rounded-3xl overflow-hidden shadow-xl ring-1 ring-border"
+            className="mx-auto mb-6 h-24 w-24 rounded-3xl p-3 bg-background/80 border border-emerald-500/20 shadow-xl flex items-center justify-center"
           >
-            <Image src="/logo-small.png" alt="Cryptalk" width={80} height={80} className="object-contain" style={{ height: 'auto' }} />
+            <Image src="/logo.png" alt="Cryptalk" width={96} height={96} className="object-contain drop-shadow-md" priority />
           </motion.div>
-          <h2 className="text-2xl font-bold mb-2 tracking-tight">Welcome to Cryptalk</h2>
-          <p className="text-muted-foreground mb-6">
-            Select a chat to start messaging, or create a new one. Your conversations are
-            end-to-end real-time with presence and typing indicators.
+          <h2 className="text-3xl font-extrabold mb-3 tracking-tight bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 bg-clip-text text-transparent">
+            Welcome to Cryptalk
+          </h2>
+          <p className="text-sm text-muted-foreground mb-8 leading-relaxed max-w-sm mx-auto">
+            Select a conversation from the sidebar or click <span className="font-semibold text-foreground">+</span> to start a private chat, group, or channel.
           </p>
-          <div className="flex flex-wrap gap-2 justify-center text-xs">
-            <span className="px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">⚡ Real-time</span>
-            <span className="px-3 py-1.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 font-medium">😊 Reactions</span>
-            <span className="px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">🎙️ Voice</span>
-
+          <div className="grid grid-cols-2 gap-2.5 text-xs text-left">
+            <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-accent/40 border border-border/50">
+              <span className="text-base">🔒</span>
+              <div>
+                <div className="font-bold text-foreground">End-to-End E2EE</div>
+                <div className="text-[10px] text-muted-foreground">Zero-knowledge keys</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-accent/40 border border-border/50">
+              <span className="text-base">⚡</span>
+              <div>
+                <div className="font-bold text-foreground">Real-Time Sync</div>
+                <div className="text-[10px] text-muted-foreground">Instant WebSocket delivery</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-accent/40 border border-border/50">
+              <span className="text-base">🎙️</span>
+              <div>
+                <div className="font-bold text-foreground">Voice Notes</div>
+                <div className="text-[10px] text-muted-foreground">HD voice messaging</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-accent/40 border border-border/50">
+              <span className="text-base">😊</span>
+              <div>
+                <div className="font-bold text-foreground">Reactions & Stickers</div>
+                <div className="text-[10px] text-muted-foreground">Animated Telegram emojis</div>
+              </div>
+            </div>
           </div>
         </motion.div>
       </div>
@@ -229,10 +270,20 @@ export function ChatWindow() {
                 </svg>
               )}
             </div>
-            <div className="text-xs text-muted-foreground truncate">
+            <div className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
               {typingText ? (
-                <span className="text-primary font-medium">{typingText}</span>
-              ) : subtitle}
+                <span className="text-primary font-medium animate-pulse">{typingText}</span>
+              ) : otherOnline && activeChat.type === 'direct' ? (
+                <span className="text-emerald-500 font-medium flex items-center gap-1.5">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                  </span>
+                  Online
+                </span>
+              ) : (
+                subtitle
+              )}
             </div>
           </div>
         </button>

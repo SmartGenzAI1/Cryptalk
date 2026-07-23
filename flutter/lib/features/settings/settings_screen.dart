@@ -114,7 +114,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               padding: const EdgeInsets.symmetric(vertical: 10),
                               decoration: BoxDecoration(
                                 color: auth.themeMode == ThemeMode.light
-                                    ? Theme.of(context).colorScheme.primary.withOpacity(0.15)
+                                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
                                     : Theme.of(context).colorScheme.surface,
                                 border: Border.all(
                                   color: auth.themeMode == ThemeMode.light
@@ -160,7 +160,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               padding: const EdgeInsets.symmetric(vertical: 10),
                               decoration: BoxDecoration(
                                 color: auth.themeMode == ThemeMode.dark
-                                    ? Theme.of(context).colorScheme.primary.withOpacity(0.15)
+                                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
                                     : Theme.of(context).colorScheme.surface,
                                 border: Border.all(
                                   color: auth.themeMode == ThemeMode.dark
@@ -258,7 +258,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       : null,
                                   boxShadow: [
                                     BoxShadow(
-                                      color: colorVal.withOpacity(0.4),
+                                      color: colorVal.withValues(alpha: 0.4),
                                       blurRadius: 4,
                                       offset: const Offset(0, 2),
                                     ),
@@ -452,6 +452,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _confirmDeleteAccount(
       BuildContext context, AuthService auth) async {
+    final chatService = context.read<ChatService>();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -475,7 +476,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (confirmed != true) return;
     try {
-      await context.read<ChatService>().deleteAccount();
+      await chatService.deleteAccount();
       await auth.logout();
     } catch (_) {}
   }
@@ -634,27 +635,30 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   Future<void> _save() async {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
+    final chatService = context.read<ChatService>();
+    final auth = context.read<AuthService>();
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
     if (mounted) setState(() => _saving = true);
     try {
-      await context.read<ChatService>().updateProfile(
+      await chatService.updateProfile(
             name: _nameController.text.trim(),
             bio: _bioController.text.trim(),
             avatarEmoji: _avatarEmoji,
             avatarColor: _avatarColor,
           );
       // refresh cached user so settings + chat list show the new avatar/name
-      await context.read<AuthService>().refreshMe();
-      if (mounted) Navigator.pop(context);
+      await auth.refreshMe();
+      navigator.pop();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content:
-                Text('Failed: ${e.toString().replaceFirst('Exception: ', '')}'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      messenger.showSnackBar(
+        SnackBar(
+          content:
+              Text('Failed: ${e.toString().replaceFirst('Exception: ', '')}'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -717,7 +721,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                           decoration: BoxDecoration(
                             color: selected
                                 ? AvatarIcon.colorFor(_avatarColor)
-                                    .withOpacity(0.18)
+                                    .withValues(alpha: 0.18)
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(8),
                             border: selected
@@ -809,7 +813,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                           color: Theme.of(context)
                               .colorScheme
                               .outlineVariant
-                              .withOpacity(0.5),
+                              .withValues(alpha: 0.5),
                           width: 2,
                         ),
                       ),
@@ -949,7 +953,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             children: [
               Icon(Icons.cloud_off, size: 72, color: Colors.red[300]),
               const SizedBox(height: 16),
-              Text('Could not load blocked users'),
+              const Text('Could not load blocked users'),
               const SizedBox(height: 16),
               FilledButton.tonalIcon(
                 onPressed: _load,

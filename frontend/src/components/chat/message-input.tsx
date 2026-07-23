@@ -46,6 +46,8 @@ export function MessageInput() {
   const currentUser = useChatStore((s) => s.currentUser)
   const messages = useChatStore((s) => activeChatId ? (s.messages[activeChatId] || EMPTY_MESSAGES) : EMPTY_MESSAGES)
   const addMessage = useChatStore((s) => s.addMessage)
+  const replaceMessage = useChatStore((s) => s.replaceMessage)
+  const updateMessage = useChatStore((s) => s.updateMessage)
   const directChatBlocked = false
   const [text, setText] = useState(() => {
     if (typeof window !== 'undefined' && activeChatId) {
@@ -134,16 +136,60 @@ export function MessageInput() {
   }
 
   async function send(content: string, type: string = 'text') {
-    if (!activeChatId || !content.trim()) return
+    if (!activeChatId || !currentUser || !content.trim()) return
+
+    // Immediately stop typing indicator and clear typing timer
+    if (typingTimer.current) {
+      clearTimeout(typingTimer.current)
+      typingTimer.current = null
+    }
+    emitTyping(false)
+
+    // Optimistic message creation
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const optimisticMessage: MessageWithSender = {
+      id: tempId,
+      chatId: activeChatId,
+      content: content.trim(),
+      type,
+      senderId: currentUser.id,
+      sender: currentUser,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      replyToId: replyTo?.id || null,
+      editedAt: null,
+      deletedAt: null,
+      expiresIn: type === 'text' ? expiresIn : null,
+      replyTo: replyTo ? {
+        id: replyTo.id,
+        content: replyTo.content,
+        type: replyTo.type,
+        senderId: replyTo.senderId,
+        senderName: replyTo.sender.name,
+      } : null,
+      reactions: [],
+      starred: false,
+    }
+
+    addMessage(activeChatId, optimisticMessage)
+
+    const rawContent = content.trim()
+    setText('')
+    setReplyTo(null)
+    if (activeChatId && typeof window !== 'undefined') {
+      localStorage.removeItem(`draft-${activeChatId}`)
+    }
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
+
     try {
       // e2ee: encrypt before sending (server only sees ciphertext)
-      let encryptedContent = content.trim()
+      let encryptedContent = rawContent
       if (type === 'text' && activeChat) {
         try {
           const { encryptMessageForChat } = await import('@/lib/e2ee')
           const recipient = activeChat.members.find((m) => m.user.id !== currentUser?.id)
           encryptedContent = await encryptMessageForChat(
-            content.trim(),
+            rawContent,
             activeChatId,
             activeChat.type,
             recipient?.user.id
@@ -156,26 +202,21 @@ export function MessageInput() {
       const data = await apiPost<{ message: any }>(`/api/${activeChatId}/messages`, {
         content: encryptedContent,
         type,
-        replyToId: replyTo?.id || null,
+        replyToId: optimisticMessage.replyTo?.id || null,
         expiresIn: type === 'text' ? expiresIn : null,
       })
       if (data.message) {
         // use original plaintext for sender's local display
         if (type === 'text') {
-          data.message.content = content.trim()
+          data.message.content = rawContent
         }
-        addMessage(activeChatId, data.message)
-        getSocket()?.emit('send-message', { chatId: activeChatId, message: data.message })
+        replaceMessage(activeChatId, tempId, data.message)
+      } else {
+        updateMessage(activeChatId, { ...optimisticMessage, status: 'failed' })
       }
-      setText('')
-      if (activeChatId && typeof window !== 'undefined') {
-        localStorage.removeItem(`draft-${activeChatId}`)
-      }
-      setReplyTo(null)
-      if (textareaRef.current) textareaRef.current.style.height = 'auto'
-      emitTyping(false)
     } catch (e: any) {
       console.error('Send failed:', e)
+      updateMessage(activeChatId, { ...optimisticMessage, status: 'failed' })
       toast.error('Failed to send message')
     }
   }
@@ -330,7 +371,6 @@ export function MessageInput() {
           data.message.content = useFallback ? ciphertextString : (uploadUrl || ciphertextString)
         }
         addMessage(activeChatId, data.message)
-        getSocket()?.emit('send-message', { chatId: activeChatId, message: data.message })
       }
       setReplyTo(null)
       toast.success('Voice message sent 🎙️')
@@ -439,7 +479,6 @@ export function MessageInput() {
           data.message.content = useFallback ? ciphertextString : (uploadUrl || ciphertextString)
         }
         addMessage(activeChatId, data.message)
-        getSocket()?.emit('send-message', { chatId: activeChatId, message: data.message })
       }
       setReplyTo(null)
       toast.success(`File sent (${(file.size / 1024 / 1024).toFixed(1)}MB)`)
@@ -672,7 +711,7 @@ export function MessageInput() {
 
           {/* Mobile Expandable Drawer Panel */}
           {activeMobileTab && (
-            <div className="border-t bg-background p-3 md:hidden zc-fade-in">
+            <div className="border-t bg-background p-3 md:hidden zc-fade-in max-h-[260px] overflow-y-auto shrink-0 shadow-inner">
               {activeMobileTab === 'menu' && (
                 <div className="grid grid-cols-4 gap-4 py-2">
                   <button

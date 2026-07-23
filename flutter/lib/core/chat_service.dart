@@ -37,6 +37,44 @@ class ChatService {
     return messages;
   }
 
+  /// Creates an optimistic Message object locally with status 'pending' and a temporary ID.
+  Message createOptimisticMessage(
+    String chatId,
+    String content, {
+    String type = 'text',
+    String? replyToId,
+    ReplyTo? replyTo,
+    int? expiresIn,
+    int? duration,
+    AppUser? sender,
+    String? tempId,
+  }) {
+    final id = tempId ?? 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    return Message(
+      id: id,
+      chatId: chatId,
+      senderId: sender?.id ?? '',
+      content: content,
+      type: type,
+      replyToId: replyToId,
+      replyTo: replyTo,
+      createdAt: DateTime.now().toIso8601String(),
+      status: 'pending',
+      sender: sender ?? AppUser(id: sender?.id ?? '', name: 'You'),
+      expiresIn: expiresIn,
+      duration: duration,
+    );
+  }
+
+  /// Replaces an optimistic message (matched by temporary ID [tempId]) in a list with the server ACK message [serverMsg].
+  int replaceTempMessage(List<Message> messages, String tempId, Message serverMsg) {
+    final index = messages.indexWhere((m) => m.id == tempId);
+    if (index != -1) {
+      messages[index] = serverMsg;
+    }
+    return index;
+  }
+
   // send text/sticker. direct chats are e2ee, saved/group are plaintext for now.
   Future<Message> sendMessage(
     String chatId,
@@ -46,18 +84,32 @@ class ChatService {
     int? expiresIn,
     String? chatType,
     String? recipientUserId,
+    String? tempId,
+    Message? optimisticMessage,
   }) async {
-    final toStore = await _encryptForChat(content, chatType, recipientUserId, chatId);
-    final data = await _api.post('/api/$chatId/messages', body: {
-      'content': toStore,
-      'type': type,
-      if (replyToId != null) 'replyToId': replyToId,
-      if (expiresIn != null) 'expiresIn': expiresIn,
-    });
-    var msg = Message.fromJson(data['message']);
-    // decrypt own echo so local ui shows plaintext
-    msg.content = await _crypto.decryptMessage(msg.content, chatId);
-    return msg;
+    try {
+      final toStore = await _encryptForChat(content, chatType, recipientUserId, chatId);
+      final data = await _api.post('/api/$chatId/messages', body: {
+        'content': toStore,
+        'type': type,
+        if (replyToId != null) 'replyToId': replyToId,
+        if (expiresIn != null) 'expiresIn': expiresIn,
+        if (tempId != null || optimisticMessage != null)
+          'tempId': tempId ?? optimisticMessage?.id,
+      });
+      var msg = Message.fromJson(data['message']);
+      // decrypt own echo so local ui shows plaintext
+      msg.content = await _crypto.decryptMessage(msg.content, chatId);
+      if (optimisticMessage != null) {
+        optimisticMessage.status = msg.status;
+      }
+      return msg;
+    } catch (e) {
+      if (optimisticMessage != null) {
+        optimisticMessage.status = 'failed';
+      }
+      rethrow;
+    }
   }
 
   // returns ciphertext json, or plaintext when encryption is skipped (saved,
@@ -94,8 +146,13 @@ class ChatService {
     int? expiresIn,
     String? chatType,
     String? recipientUserId,
+    String? tempId,
+    Message? optimisticMessage,
   }) async {
     if (fileBytes.length > kMaxAttachmentBytes) {
+      if (optimisticMessage != null) {
+        optimisticMessage.status = 'failed';
+      }
       throw ApiException(
         413,
         'File exceeds 25MB limit',
@@ -103,53 +160,70 @@ class ChatService {
       );
     }
 
-    final mime = contentType ?? _guessMime(fileName);
-    final b64 = base64Encode(fileBytes);
-    final dataUrl = 'data:$mime;base64,$b64';
+    try {
+      final mime = contentType ?? _guessMime(fileName);
+      final b64 = base64Encode(fileBytes);
+      final dataUrl = 'data:$mime;base64,$b64';
 
-    // 1+2. encrypt the data url with the recipient's key
-    final ciphertext = await _encryptForChat(dataUrl, chatType, recipientUserId, chatId);
+      // 1+2. encrypt the data url with the recipient's key
+      final ciphertext = await _encryptForChat(dataUrl, chatType, recipientUserId, chatId);
 
-    // 3+4. utf-8 encode ciphertext → upload
-    final cipherBytes = Uint8List.fromList(utf8.encode(ciphertext));
-    final uploadRes = await _api.uploadFile(
-      fileName,
-      cipherBytes,
-      fileName: fileName,
-      contentType: contentType,
-    );
+      // 3+4. utf-8 encode ciphertext → upload
+      final cipherBytes = Uint8List.fromList(utf8.encode(ciphertext));
+      final uploadRes = await _api.uploadFile(
+        fileName,
+        cipherBytes,
+        fileName: fileName,
+        contentType: contentType,
+      );
 
-    // 5. dev fallback: no supabase on the server
-    if (uploadRes['fallback'] == true) {
+      final activeTempId = tempId ?? optimisticMessage?.id;
+
+      // 5. dev fallback: no supabase on the server
+      if (uploadRes['fallback'] == true) {
+        final data = await _api.post('/api/$chatId/messages', body: {
+          'content': ciphertext,
+          'type': type,
+          if (replyToId != null) 'replyToId': replyToId,
+          if (duration != null) 'duration': duration,
+          if (expiresIn != null) 'expiresIn': expiresIn,
+          if (activeTempId != null) 'tempId': activeTempId,
+        });
+        var msg = Message.fromJson(data['message']);
+        msg.content = await _crypto.decryptMessage(msg.content, chatId);
+        if (optimisticMessage != null) {
+          optimisticMessage.status = msg.status;
+        }
+        return msg;
+      }
+
+      // 6. upload succeeded — encrypt the url too
+      final url = uploadRes['url']?.toString() ?? '';
+      final path = uploadRes['path']?.toString();
+      final encryptedUrl = await _encryptForChat(url, chatType, recipientUserId, chatId);
+
       final data = await _api.post('/api/$chatId/messages', body: {
-        'content': ciphertext,
+        'content': encryptedUrl,
         'type': type,
         if (replyToId != null) 'replyToId': replyToId,
         if (duration != null) 'duration': duration,
         if (expiresIn != null) 'expiresIn': expiresIn,
+        if (path != null) 'attachmentPath': path,
+        if (activeTempId != null) 'tempId': activeTempId,
       });
       var msg = Message.fromJson(data['message']);
+      // decrypt own echo for local display
       msg.content = await _crypto.decryptMessage(msg.content, chatId);
+      if (optimisticMessage != null) {
+        optimisticMessage.status = msg.status;
+      }
       return msg;
+    } catch (e) {
+      if (optimisticMessage != null) {
+        optimisticMessage.status = 'failed';
+      }
+      rethrow;
     }
-
-    // 6. upload succeeded — encrypt the url too
-    final url = uploadRes['url']?.toString() ?? '';
-    final path = uploadRes['path']?.toString();
-    final encryptedUrl = await _encryptForChat(url, chatType, recipientUserId, chatId);
-
-    final data = await _api.post('/api/$chatId/messages', body: {
-      'content': encryptedUrl,
-      'type': type,
-      if (replyToId != null) 'replyToId': replyToId,
-      if (duration != null) 'duration': duration,
-      if (expiresIn != null) 'expiresIn': expiresIn,
-      if (path != null) 'attachmentPath': path,
-    });
-    var msg = Message.fromJson(data['message']);
-    // decrypt own echo for local display
-    msg.content = await _crypto.decryptMessage(msg.content, chatId);
-    return msg;
   }
 
   String _guessMime(String fileName) {
@@ -185,11 +259,23 @@ class ChatService {
   }
 
   Future<void> markDelivered(String chatId) async {
-    await _api.post('/api/$chatId/messages/delivered');
+    try {
+      await _api.post('/api/$chatId/messages/delivered');
+    } catch (_) {
+      // Graceful error handling for offline/network issues
+    }
   }
 
   Future<void> markRead(String chatId, String messageId) async {
-    await _api.post('/api/$chatId/messages/read?messageId=$messageId');
+    try {
+      await _api.post('/api/$chatId/messages/read?messageId=$messageId');
+    } catch (_) {
+      try {
+        await _api.post('/api/$chatId/mark-read');
+      } catch (_) {
+        // Graceful error handling for offline/network issues
+      }
+    }
   }
 
   Future<void> pinChat(String chatId, bool pin) async {
