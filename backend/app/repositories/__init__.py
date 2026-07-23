@@ -6,6 +6,8 @@ import secrets
 from typing import List, Optional
 
 from sqlalchemy import and_, delete, func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.security import escape_like, now_ms
 from app.models import Chat, ChatMember, User
