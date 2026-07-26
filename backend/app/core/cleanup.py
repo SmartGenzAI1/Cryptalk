@@ -73,8 +73,11 @@ async def cleanup_expired_files() -> int:
                 break
             offset += limit
 
-    except Exception as e:
-        logger.error("Cleanup sweep error: %s", e)
+    except (OSError, Exception) as e:
+        if isinstance(e, OSError) or "Name or service not known" in str(e) or "ConnectError" in str(type(e)):
+            logger.warning("Supabase storage unreachable for cleanup: %s", e)
+        else:
+            logger.error("Cleanup sweep error: %s", e)
 
     if deleted:
         logger.info("Cleanup swept %d expired files", deleted)

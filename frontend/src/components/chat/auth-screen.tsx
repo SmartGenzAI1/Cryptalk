@@ -23,7 +23,7 @@ export function AuthScreen() {
   const [loading, setLoading] = useState(false)
   const setCurrentUser = useChatStore((s) => s.setCurrentUser)
 
-  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  const emailValid = step === 'login' ? email.trim().length >= 3 : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
   const passwordValid = password.length >= 6
   const usernameValid = /^[a-zA-Z0-9_]{3,30}$/.test(username)
   const nameValid = name.trim().length >= 1
@@ -180,22 +180,26 @@ export function AuthScreen() {
             ) : (
               <>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email">{step === 'login' ? 'Email or Username' : 'Email'}</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       id="email"
-                      type="email"
+                      type={step === 'login' ? 'text' : 'email'}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@example.com"
+                      placeholder={step === 'login' ? 'you@example.com or username' : 'you@example.com'}
                       required
                       autoCapitalize="none"
                       autoCorrect="off"
                       className={`pl-9 h-11 ${email && !emailValid ? 'border-destructive' : ''}`}
                     />
                   </div>
-                  {email && !emailValid && <p className="text-xs text-destructive">Enter a valid email</p>}
+                  {email && !emailValid && (
+                    <p className="text-xs text-destructive">
+                      {step === 'login' ? 'Enter your email or username' : 'Enter a valid email'}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>

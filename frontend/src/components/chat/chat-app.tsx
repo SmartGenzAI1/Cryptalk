@@ -86,8 +86,14 @@ export function ChatApp() {
           apiGet<{ user: any }>('/api/users/me'),
         ])
         if (!mounted) return
-        if (meData.user) setCurrentUser(meData.user)
-        if (chatsData.chats) {
+        if (meData?.user) {
+          setCurrentUser(meData.user)
+        } else {
+          setCurrentUser(null)
+          if (typeof window !== 'undefined') localStorage.removeItem('tc_token')
+          return
+        }
+        if (chatsData?.chats) {
           setChats(chatsData.chats)
           try {
             const { decryptAndStoreChatKeys } = await import('@/lib/e2ee')
@@ -97,14 +103,16 @@ export function ChatApp() {
           }
         }
 
-        if (meData.user) {
-          try {
-            const e2eeStatus = await initE2EE(meData.user.id)
-            if (mounted) setE2eeEnabled(e2eeStatus.isE2EEEnabled)
-          } catch {}
-        }
-      } catch (e) {
+        try {
+          const e2eeStatus = await initE2EE(meData.user.id)
+          if (mounted) setE2eeEnabled(e2eeStatus.isE2EEEnabled)
+        } catch {}
+      } catch (e: any) {
         console.error('failed to load chats', e)
+        if (mounted) {
+          setCurrentUser(null)
+          if (typeof window !== 'undefined') localStorage.removeItem('tc_token')
+        }
       }
     })()
     return () => { mounted = false }
@@ -120,41 +128,29 @@ export function ChatApp() {
         </div>
         <div className={`${activeChatId ? 'flex' : 'hidden'} md:flex flex-1 min-w-0 relative h-full`}>
           <ChatWindow />
-          {infoPanelOpen && activeChatId && (
-            <Suspense fallback={<PanelFallback />}>
-              <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-auto w-full md:w-[340px] h-full flex bg-background md:bg-transparent">
-                <ChatInfoPanel />
-              </div>
-            </Suspense>
-          )}
-          {settingsOpen && activeChatId && (
-            <Suspense fallback={<PanelFallback />}>
-              <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-auto w-full md:w-[380px] h-full flex bg-background md:bg-transparent">
-                <SettingsPanel />
-              </div>
-            </Suspense>
-          )}
-          {connectionsPanelOpen && activeChatId && (
-            <Suspense fallback={<PanelFallback />}>
-              <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-auto w-full md:w-[380px] h-full flex bg-background md:bg-transparent">
-                <ConnectionsPanel />
-              </div>
-            </Suspense>
-          )}
         </div>
-        {!activeChatId && (settingsOpen || connectionsPanelOpen) && (
-          <div className="flex md:hidden w-full fixed inset-0 z-50 bg-background flex-col">
-            {settingsOpen && (
-              <Suspense fallback={<PanelFallback />}>
-                <SettingsPanel />
-              </Suspense>
-            )}
-            {connectionsPanelOpen && (
-              <Suspense fallback={<PanelFallback />}>
-                <ConnectionsPanel />
-              </Suspense>
-            )}
-          </div>
+
+        {/* Global Right Overlay Panels for Desktop / Full-screen for Mobile */}
+        {settingsOpen && (
+          <Suspense fallback={<PanelFallback />}>
+            <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-20 w-full md:w-[380px] shrink-0 h-full flex bg-background">
+              <SettingsPanel />
+            </div>
+          </Suspense>
+        )}
+        {connectionsPanelOpen && (
+          <Suspense fallback={<PanelFallback />}>
+            <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-20 w-full md:w-[380px] shrink-0 h-full flex bg-background">
+              <ConnectionsPanel />
+            </div>
+          </Suspense>
+        )}
+        {infoPanelOpen && activeChatId && (
+          <Suspense fallback={<PanelFallback />}>
+            <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-20 w-full md:w-[340px] shrink-0 h-full flex bg-background">
+              <ChatInfoPanel />
+            </div>
+          </Suspense>
         )}
       </div>
       <MobileNav />

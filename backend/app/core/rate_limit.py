@@ -43,10 +43,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if uid:
                 user_id = uid
 
-        forwarded = request.headers.get("x-forwarded-for", "")
-        ip = forwarded.split(",")[0].strip() if forwarded else (
-            request.client.host if request.client else "unknown"
-        )
+        real_ip = request.headers.get("x-real-ip", "").strip()
+        if real_ip:
+            ip = real_ip
+        elif request.client and request.client.host:
+            ip = request.client.host
+        else:
+            forwarded = request.headers.get("x-forwarded-for", "")
+            ips = [i.strip() for i in forwarded.split(",") if i.strip()]
+            ip = ips[-1] if ips else "unknown"
+
         return f"{ip}:{user_id}" if user_id else ip
 
     async def _check_redis(self, key: str, max_req: int, window: int) -> Tuple[bool, int]:

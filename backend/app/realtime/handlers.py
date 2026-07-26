@@ -56,6 +56,7 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
             await sio.emit("auth-error", {"message": "Not authenticated"}, to=sid)
             return False
         manager.add(sid, user_id)
+        await sio.enter_room(sid, f"user:{user_id}")
         logger.info("Socket connected: %s (user: %s)", sid, user_id[:8])
 
         async with async_session_factory() as db:
@@ -128,17 +129,17 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
 
         payload = {"chatId": chat_id, "message": message}
 
-        # relay to everyone in the room except sender (if sender already added locally)
+        # relay to everyone in the chat room except current sid
         await sio.emit("message", payload, room=f"chat:{chat_id}", skip_sid=sid)
 
-        # ack back to sender
+        # ack back to sender sid
         await sio.emit("message-ack", {
             "chatId": chat_id,
             "messageId": message["id"],
             "createdAt": message["createdAt"],
         }, to=sid)
 
-        # queue for offline members
+        # handle cross-view notifications and offline queueing
         async with async_session_factory() as db:
             result = await db.execute(
                 select(ChatMember.user_id).where(ChatMember.chat_id == chat_id)
@@ -146,13 +147,11 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
             all_member_ids = [row[0] for row in result.all()]
 
         for member_id in all_member_ids:
-            if member_id == user_id:
-                continue
             member_sids = manager.get_sockets_for_user(member_id)
             if member_sids:
-                for target_sid in member_sids:
-                    await sio.emit("message", payload, to=target_sid)
-            else:
+                # Notify online user's sockets (cross-view/multi-tab sync)
+                await sio.emit("message", payload, room=f"user:{member_id}", skip_sid=sid)
+            elif member_id != user_id:
                 enqueue_message(member_id, payload)
 
     @sio.on("typing")

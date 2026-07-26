@@ -160,8 +160,8 @@ export function ConnectionsPanel() {
         </Button>
       </div>
 
-      <Tabs defaultValue="find" className="flex-1 flex flex-col">
-        <TabsList className="grid w-full grid-cols-3 m-2">
+      <Tabs defaultValue="find" className="flex-1 flex flex-col min-h-0">
+        <TabsList className="grid grid-cols-3 mx-2 my-2 shrink-0">
           <TabsTrigger value="find" className="text-xs">
             <Search className="h-3.5 w-3.5 mr-1" /> Find
           </TabsTrigger>
@@ -178,8 +178,8 @@ export function ConnectionsPanel() {
           </TabsTrigger>
         </TabsList>
 
-        <ScrollArea className="flex-1 zc-scroll">
-          <TabsContent value="find" className="m-2 space-y-3">
+        <ScrollArea className="flex-1 zc-scroll min-h-0">
+          <TabsContent value="find" className="p-3 space-y-3 mt-0">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -223,7 +223,7 @@ export function ConnectionsPanel() {
             </div>
           </TabsContent>
 
-          <TabsContent value="requests" className="m-2 space-y-1">
+          <TabsContent value="requests" className="p-3 space-y-1 mt-0">
             {requests.length === 0 ? (
               <p className="text-center text-sm text-muted-foreground py-8">No pending requests</p>
             ) : (
@@ -250,7 +250,7 @@ export function ConnectionsPanel() {
             )}
           </TabsContent>
 
-          <TabsContent value="list" className="m-2 space-y-1">
+          <TabsContent value="list" className="p-3 space-y-1 mt-0">
             {connections.length === 0 ? (
               <p className="text-center text-sm text-muted-foreground py-8">No connections yet</p>
             ) : (

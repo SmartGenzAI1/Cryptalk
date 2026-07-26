@@ -189,7 +189,29 @@ export function SettingsPanel() {
         </Button>
       </div>
 
-      <ScrollArea className="flex-1 zc-scroll">
+      {/* TOP TAB NAVIGATION PILLS */}
+      <div className="flex items-center justify-around gap-1 px-3 py-2 border-b bg-muted/30 overflow-x-auto zc-scroll shrink-0">
+        {[
+          { key: 'main', label: 'General' },
+          { key: 'privacy', label: 'Privacy' },
+          { key: 'about', label: 'About' },
+        ].map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setSubView(t.key as SettingsView)}
+            className={cn(
+              'flex-1 py-1.5 px-2 rounded-xl text-xs font-semibold transition-all text-center zc-tap whitespace-nowrap',
+              subView === t.key || (subView === 'delete' && t.key === 'privacy')
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <ScrollArea className="flex-1 zc-scroll min-h-0">
         <div className="p-4 space-y-6">
           {subView === 'main' && (
             <div className="space-y-6 zc-fade-in">

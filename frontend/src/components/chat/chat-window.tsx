@@ -210,6 +210,19 @@ export function ChatWindow() {
     }
   }, [searchQuery, activeChatId])
 
+  // Close search on Escape key globally
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && searchOpen) {
+        setSearchOpen(false)
+        setSearchQuery('')
+        setSearchResults([])
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [searchOpen])
+
   function navigateResults(dir: 'up' | 'down') {
     if (searchResults.length === 0) return
     const next = dir === 'up'
@@ -222,7 +235,7 @@ export function ChatWindow() {
 
   if (!activeChat || !activeChatId) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center zc-wallpaper-dots p-6 select-none relative overflow-hidden">
+      <div className="flex-1 flex flex-col items-center justify-center zc-wallpaper-dots p-6 select-none relative overflow-y-auto">
         <div className="absolute h-96 w-96 rounded-full bg-emerald-500/10 dark:bg-emerald-500/15 blur-3xl animate-pulse pointer-events-none" />
 
         <motion.div
@@ -287,7 +300,8 @@ export function ChatWindow() {
         <Button
           variant="ghost"
           size="icon"
-          className="md:hidden h-9 w-9 zc-tap"
+          className="md:hidden h-9 w-9 zc-tap focus-visible:ring-2 focus-visible:ring-primary"
+          aria-label="Back to conversations"
           onClick={() => {
             setActiveChatId(null)
             setActiveChat(null)
@@ -297,7 +311,8 @@ export function ChatWindow() {
         </Button>
         <button
           onClick={() => setInfoPanelOpen(!infoPanelOpen)}
-          className="flex items-center gap-3 flex-1 min-w-0 text-left"
+          aria-label={`Chat details for ${activeChat.title}`}
+          className="flex items-center gap-3 flex-1 min-w-0 text-left rounded-xl p-1 -ml-1 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           <ChatAvatar
             emoji={activeChat.avatarEmoji}
@@ -335,17 +350,32 @@ export function ChatWindow() {
         </button>
 
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" className="h-9 w-9 hidden sm:flex zc-tap" title="Voice call" onClick={handleStartVoiceCall}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 hidden sm:flex zc-tap focus-visible:ring-2 focus-visible:ring-primary"
+            title="Voice call"
+            aria-label="Start voice call"
+            onClick={handleStartVoiceCall}
+          >
             <Phone className="h-[18px] w-[18px]" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-9 w-9 hidden sm:flex zc-tap" title="Video call" onClick={handleStartVideoCall}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 hidden sm:flex zc-tap focus-visible:ring-2 focus-visible:ring-primary"
+            title="Video call"
+            aria-label="Start video call"
+            onClick={handleStartVideoCall}
+          >
             <Video className="h-[18px] w-[18px]" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className={`h-9 w-9 zc-tap ${searchOpen ? 'bg-accent' : ''}`}
+            className={`h-9 w-9 zc-tap focus-visible:ring-2 focus-visible:ring-primary ${searchOpen ? 'bg-accent' : ''}`}
             title="Search in chat"
+            aria-label="Search in chat"
             onClick={() => setSearchOpen(!searchOpen)}
           >
             <Search className="h-[18px] w-[18px]" />
@@ -353,15 +383,21 @@ export function ChatWindow() {
           <Button
             variant="ghost"
             size="icon"
-            className={`h-9 w-9 zc-tap ${infoPanelOpen ? 'bg-accent' : ''}`}
+            className={`h-9 w-9 zc-tap focus-visible:ring-2 focus-visible:ring-primary ${infoPanelOpen ? 'bg-accent' : ''}`}
             title="Chat info"
+            aria-label="Toggle chat details"
             onClick={() => setInfoPanelOpen(!infoPanelOpen)}
           >
             <Info className="h-[18px] w-[18px]" />
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9 zc-tap">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 zc-tap focus-visible:ring-2 focus-visible:ring-primary"
+                aria-label="More chat options"
+              >
                 <MoreVertical className="h-[18px] w-[18px]" />
               </Button>
             </DropdownMenuTrigger>
@@ -370,6 +406,18 @@ export function ChatWindow() {
                 <Search className="h-4 w-4 mr-2" />
                 Search messages
               </DropdownMenuItem>
+              {activeChat.type === 'direct' && (
+                <>
+                  <DropdownMenuItem onClick={handleStartVoiceCall} className="sm:hidden">
+                    <Phone className="h-4 w-4 mr-2" />
+                    Voice call
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleStartVideoCall} className="sm:hidden">
+                    <Video className="h-4 w-4 mr-2" />
+                    Video call
+                  </DropdownMenuItem>
+                </>
+              )}
               {activeChat.type !== 'saved' && activeChat.type !== 'direct' && (
                 <DropdownMenuItem onClick={handleInviteLink}>
                   <Link2 className="h-4 w-4 mr-2" />
@@ -412,26 +460,62 @@ export function ChatWindow() {
               <Input
                 value={searchQuery}
                 onChange={(e) => runSearch(e.target.value)}
-                placeholder="Search in this chat…"
-                className="h-8 border-0 bg-transparent focus-visible:ring-0 px-0"
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    setSearchOpen(false)
+                    setSearchQuery('')
+                    setSearchResults([])
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault()
+                    navigateResults(e.shiftKey ? 'up' : 'down')
+                  } else if (e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    navigateResults('down')
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    navigateResults('up')
+                  }
+                }}
+                placeholder="Search in this chat… (Esc to close)"
+                aria-label="Search in this chat"
+                className="h-8 border-0 bg-transparent focus-visible:ring-0 px-0 text-sm"
                 autoFocus
               />
               {searchResults.length > 0 && (
-                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                <span className="text-xs text-muted-foreground whitespace-nowrap" aria-live="polite">
                   {searchIndex + 1}/{searchResults.length}
                 </span>
               )}
               {searchResults.length > 1 && (
                 <>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigateResults('up')}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 focus-visible:ring-2 focus-visible:ring-primary"
+                    aria-label="Previous search result"
+                    onClick={() => navigateResults('up')}
+                  >
                     <ArrowLeft className="h-3.5 w-3.5 rotate-90" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigateResults('down')}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 focus-visible:ring-2 focus-visible:ring-primary"
+                    aria-label="Next search result"
+                    onClick={() => navigateResults('down')}
+                  >
                     <ArrowLeft className="h-3.5 w-3.5 -rotate-90" />
                   </Button>
                 </>
               )}
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setSearchOpen(false); setSearchQuery(''); setSearchResults([]) }}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 focus-visible:ring-2 focus-visible:ring-primary"
+                aria-label="Close search"
+                onClick={() => { setSearchOpen(false); setSearchQuery(''); setSearchResults([]) }}
+              >
                 <X className="h-4 w-4" />
               </Button>
             </div>

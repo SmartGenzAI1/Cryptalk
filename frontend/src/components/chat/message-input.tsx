@@ -30,6 +30,7 @@ import type { MessageWithSender } from '@/lib/types'
 import { AnimatedStickerPicker } from './animated-sticker'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { motion, AnimatePresence } from 'framer-motion'
 
 // 25 MB — must match backend MAX_FILE_SIZE
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -230,6 +231,13 @@ export function MessageInput() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       send(text)
+    } else if (e.key === 'Escape') {
+      if (replyTo) {
+        setReplyTo(null)
+      }
+      if (activeMobileTab) {
+        setActiveMobileTab(null)
+      }
     }
   }
 
@@ -499,26 +507,40 @@ export function MessageInput() {
   return (
     <div className="border-t bg-background/80 backdrop-blur shrink-0">
       {/* Reply preview */}
-      {replyTo && (
-        <div className="px-3 pt-2 flex items-center gap-2">
-          <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent border-l-2 border-primary">
-            <div className="min-w-0 flex-1">
-              <div className="text-xs font-semibold text-primary">Replying to {replyTo.sender.name}</div>
-              <div className="text-xs text-muted-foreground truncate">{replyTo.content}</div>
+      <AnimatePresence>
+        {replyTo && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="px-3 pt-2 flex items-center gap-2 overflow-hidden"
+          >
+            <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent border-l-2 border-primary">
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-semibold text-primary">Replying to {replyTo.sender.name}</div>
+                <div className="text-xs text-muted-foreground truncate">{replyTo.content}</div>
+              </div>
             </div>
-          </div>
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setReplyTo(null)}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 focus-visible:ring-2 focus-visible:ring-primary"
+              aria-label="Cancel reply"
+              onClick={() => setReplyTo(null)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {recording ? (
         <div className="p-3 flex items-center gap-3 bg-red-500/5">
           <button
             onClick={cancelRecording}
-            className="h-10 w-10 rounded-full bg-destructive/10 text-destructive flex items-center justify-center zc-tap shrink-0"
-            title="Cancel"
+            className="h-10 w-10 rounded-full bg-destructive/10 text-destructive flex items-center justify-center zc-tap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
+            title="Cancel recording"
+            aria-label="Cancel recording"
           >
             <Trash2 className="h-5 w-5" />
           </button>
@@ -543,8 +565,9 @@ export function MessageInput() {
           </div>
           <button
             onClick={sendVoice}
-            className="h-10 w-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-md zc-tap shrink-0"
-            title="Send voice"
+            className="h-10 w-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-md zc-tap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            title="Send voice message"
+            aria-label="Send voice message"
           >
             <Check className="h-5 w-5" />
           </button>
@@ -559,13 +582,14 @@ export function MessageInput() {
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "h-10 w-10 rounded-full zc-tap",
+                    "h-10 w-10 rounded-full zc-tap focus-visible:ring-2 focus-visible:ring-primary",
                     activeMobileTab ? "text-primary border border-primary/20 bg-primary/5" : "text-muted-foreground"
                   )}
                   onClick={() => {
                     setActiveMobileTab((prev) => (prev ? null : 'menu'))
                   }}
                   title="More actions"
+                  aria-label="More actions"
                   disabled={directChatBlocked}
                 >
                   {activeMobileTab ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
@@ -576,7 +600,14 @@ export function MessageInput() {
               <div className="hidden md:flex items-center gap-1">
                 <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
                   <PopoverTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground zc-tap" disabled={directChatBlocked}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 rounded-full text-muted-foreground zc-tap focus-visible:ring-2 focus-visible:ring-primary"
+                      title="Emojis"
+                      aria-label="Open emoji picker"
+                      disabled={directChatBlocked}
+                    >
                       <Smile className="h-5 w-5" />
                     </Button>
                   </PopoverTrigger>
@@ -587,7 +618,8 @@ export function MessageInput() {
                            <button
                              key={e}
                              onClick={() => { setText((t) => t + e); textareaRef.current?.focus() }}
-                             className="h-8 w-8 rounded hover:bg-accent hover:scale-125 transition-all flex items-center justify-center text-lg"
+                             aria-label={`Insert emoji ${e}`}
+                             className="h-8 w-8 rounded hover:bg-accent hover:scale-125 transition-all flex items-center justify-center text-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                            >
                              {e}
                            </button>
@@ -599,7 +631,14 @@ export function MessageInput() {
 
                 <Popover open={stickerOpen} onOpenChange={setStickerOpen}>
                   <PopoverTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground zc-tap" title="Stickers & Emojis" disabled={directChatBlocked}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 rounded-full text-muted-foreground zc-tap focus-visible:ring-2 focus-visible:ring-primary"
+                      title="Stickers & Emojis"
+                      aria-label="Open stickers and animated emojis"
+                      disabled={directChatBlocked}
+                    >
                       <Sticker className="h-5 w-5" />
                     </Button>
                   </PopoverTrigger>
@@ -617,7 +656,8 @@ export function MessageInput() {
                               <button
                                 key={name}
                                 onClick={() => { send(name, 'sticker'); setStickerOpen(false) }}
-                                className="aspect-square rounded-xl bg-accent/40 hover:bg-primary/10 hover:scale-105 transition-all flex items-center justify-center p-1 zc-tap"
+                                aria-label={`Send sticker ${name}`}
+                                className="aspect-square rounded-xl bg-accent/40 hover:bg-primary/10 hover:scale-105 transition-all flex items-center justify-center p-1 zc-tap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                 title={name}
                               >
                                 <img src={stickerIconUrl(name)} alt={name} width={44} height={44} loading="lazy" className="object-contain" />
@@ -636,7 +676,14 @@ export function MessageInput() {
 
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button variant="ghost" size="icon" className={cn('h-10 w-10 rounded-full zc-tap', expiresIn ? 'text-amber-500' : 'text-muted-foreground')} title="Self-destruct timer" disabled={directChatBlocked}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn('h-10 w-10 rounded-full zc-tap focus-visible:ring-2 focus-visible:ring-primary', expiresIn ? 'text-amber-500' : 'text-muted-foreground')}
+                      title="Self-destruct timer"
+                      aria-label="Set self-destruct timer"
+                      disabled={directChatBlocked}
+                    >
                       <Clock className="h-5 w-5" />
                     </Button>
                   </PopoverTrigger>
@@ -654,7 +701,7 @@ export function MessageInput() {
                         key={String(opt.value)}
                         onClick={() => { setExpiresIn(opt.value); }}
                         className={cn(
-                          'w-full text-left px-2 py-1.5 rounded-lg text-sm transition-colors zc-tap',
+                          'w-full text-left px-2 py-1.5 rounded-lg text-sm transition-colors zc-tap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
                           expiresIn === opt.value ? 'bg-primary/15 text-primary font-medium' : 'hover:bg-accent'
                         )}
                       >
@@ -664,7 +711,15 @@ export function MessageInput() {
                   </PopoverContent>
                 </Popover>
 
-                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground zc-tap" onClick={() => !fileUploading && fileInputRef.current?.click()} title="Attach file" disabled={fileUploading || directChatBlocked}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 rounded-full text-muted-foreground zc-tap focus-visible:ring-2 focus-visible:ring-primary"
+                  onClick={() => !fileUploading && fileInputRef.current?.click()}
+                  title="Attach file"
+                  aria-label="Attach file"
+                  disabled={fileUploading || directChatBlocked}
+                >
                   {fileUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Paperclip className="h-5 w-5" />}
                 </Button>
               </div>
@@ -685,6 +740,7 @@ export function MessageInput() {
               onKeyDown={handleKeyDown}
               onFocus={() => setActiveMobileTab(null)}
               placeholder="Type a message…"
+              aria-label="Type a message"
               rows={1}
               className="flex-1 resize-none min-h-[40px] max-h-40 bg-accent/40 border-0 rounded-2xl focus-visible:ring-1 focus-visible:ring-primary px-4 py-2.5 leading-snug"
             />
@@ -695,7 +751,8 @@ export function MessageInput() {
                   onClick={() => { send(text); setActiveMobileTab(null); }}
                   size="icon"
                   disabled={directChatBlocked}
-                  className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-primary hover:brightness-110 shadow-md zc-tap"
+                  aria-label="Send message"
+                  className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-primary hover:brightness-110 shadow-md zc-tap focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <Send className="h-5 w-5" />
                 </Button>
@@ -704,9 +761,10 @@ export function MessageInput() {
                   variant="ghost"
                   size="icon"
                   disabled={directChatBlocked}
-                  className="h-10 w-10 rounded-full text-muted-foreground hover:text-red-500 zc-tap"
+                  className="h-10 w-10 rounded-full text-muted-foreground hover:text-red-500 zc-tap focus-visible:ring-2 focus-visible:ring-primary"
                   onClick={startRecording}
                   title="Record voice message"
+                  aria-label="Record voice message"
                 >
                   <Mic className="h-5 w-5" />
                 </Button>

@@ -90,6 +90,17 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
 
   const [previewModal, setPreviewModal] = useState<{ url: string; name: string; type: 'image' | 'video' | 'pdf' | 'file' } | null>(null)
 
+  // Close preview modal on Escape key
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && previewModal) {
+        setPreviewModal(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [previewModal])
+
   // content may be an encrypted URL, encrypted data URL, or "[delivered]" placeholder
   const [attachment, setAttachment] = useState<{
     status: 'loading' | 'ready' | 'delivered' | 'error'
@@ -339,22 +350,52 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
           )}
           onMouseLeave={() => setShowHoverBar(false)}
         >
-          <button onClick={() => setShowQuickReact((v) => !v)} className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center" title="React">
+          <motion.button
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setShowQuickReact((v) => !v)}
+            className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            title="React"
+            aria-label="React to message"
+          >
             <Smile className="h-4 w-4" />
-          </button>
-          <button onClick={startReply} className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center" title="Reply">
+          </motion.button>
+          <motion.button
+            whileTap={{ scale: 0.9 }}
+            onClick={startReply}
+            className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            title="Reply"
+            aria-label="Reply to message"
+          >
             <Reply className="h-4 w-4" />
-          </button>
-          <button onClick={() => setForwardOpen(true)} className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center" title="Forward">
+          </motion.button>
+          <motion.button
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setForwardOpen(true)}
+            className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            title="Forward"
+            aria-label="Forward message"
+          >
             <Forward className="h-4 w-4" />
-          </button>
-          <button onClick={handleStar} className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center" title="Star">
+          </motion.button>
+          <motion.button
+            whileTap={{ scale: 0.9 }}
+            onClick={handleStar}
+            className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            title="Star"
+            aria-label={starred ? "Unstar message" : "Star message"}
+          >
             <Star className={cn('h-4 w-4', starred && 'fill-amber-400 text-amber-400')} />
-          </button>
+          </motion.button>
           {isOwn && (
-            <button onClick={() => { setEditing(true); setEditText(message.content) }} className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center" title="Edit">
+            <motion.button
+              whileTap={{ scale: 0.9 }}
+              onClick={() => { setEditing(true); setEditText(message.content) }}
+              className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              title="Edit"
+              aria-label="Edit message"
+            >
               <Pencil className="h-4 w-4" />
-            </button>
+            </motion.button>
           )}
         </motion.div>
       )}
@@ -366,6 +407,8 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
+            role="article"
+            aria-label={`Message from ${message.sender.name}`}
             className={cn('group relative flex items-end gap-2 px-1', isOwn ? 'justify-end' : 'justify-start', isLastInGroup ? 'mb-2' : 'mb-0.5')}
             onMouseEnter={() => setShowHoverBar(true)}
             onMouseLeave={() => { setShowHoverBar(false); setShowQuickReact(false) }}
@@ -404,7 +447,8 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                       <button
                         key={e}
                         onClick={() => handleReact(e)}
-                        className="h-8 w-8 rounded-full hover:bg-accent hover:scale-125 transition-all flex items-center justify-center text-lg"
+                        aria-label={`React with ${e}`}
+                        className="h-8 w-8 rounded-full hover:bg-accent hover:scale-125 transition-all flex items-center justify-center text-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                       >
                         {e}
                       </button>
@@ -446,18 +490,40 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                     <textarea
                       value={editText}
                       onChange={(e) => setEditText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          handleEdit()
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault()
+                          setEditing(false)
+                          setEditText(message.content)
+                        }
+                      }}
+                      aria-label="Edit message content"
                       className={cn(
-                        'w-full bg-transparent outline-none resize-none text-sm',
-                        isOwn ? 'placeholder-white/60' : ''
+                        'w-full bg-transparent outline-none resize-none text-sm p-1 rounded focus-visible:ring-1 focus-visible:ring-primary',
+                        isOwn ? 'placeholder-white/60 text-white' : 'text-card-foreground'
                       )}
                       rows={2}
                       autoFocus
                     />
                     <div className="flex justify-end gap-1 mt-1">
-                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setEditing(false); setEditText(message.content) }}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs focus-visible:ring-2 focus-visible:ring-primary"
+                        aria-label="Cancel edit"
+                        onClick={() => { setEditing(false); setEditText(message.content) }}
+                      >
                         Cancel
                       </Button>
-                      <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={handleEdit}>
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-primary"
+                        aria-label="Save edited message"
+                        onClick={handleEdit}
+                      >
                         Save
                       </Button>
                     </div>
@@ -823,15 +889,17 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                   <a
                     href={previewModal.url}
                     download={previewModal.name}
-                    className="p-2 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                    className="p-2 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                     title="Download file"
+                    aria-label="Download attachment"
                   >
                     <Download className="h-5 w-5" />
                   </a>
                   <button
                     onClick={() => setPreviewModal(null)}
-                    className="p-2 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-                    title="Close"
+                    className="p-2 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    title="Close preview (Esc)"
+                    aria-label="Close preview"
                   >
                     <X className="h-5 w-5" />
                   </button>
@@ -921,8 +989,9 @@ function VoiceBubble({
       <button
         onClick={onToggle}
         disabled={loading}
+        aria-label={playing ? "Pause voice message" : "Play voice message"}
         className={cn(
-          'h-9 w-9 rounded-full flex items-center justify-center shrink-0 zc-tap',
+          'h-9 w-9 rounded-full flex items-center justify-center shrink-0 zc-tap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
           isOwn ? 'bg-white/20' : 'bg-primary',
           loading && 'opacity-60'
         )}

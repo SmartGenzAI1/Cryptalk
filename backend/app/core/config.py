@@ -20,7 +20,9 @@ class Settings(BaseSettings):
 
     DB_PATH: str = os.environ.get("DB_PATH", "./db/cryptalk.db")
 
-    SESSION_SECRET: str = os.environ.get("SESSION_SECRET", "")
+    SESSION_SECRET: str = os.environ.get(
+        "SESSION_SECRET", "cryptalk-production-session-secret-key-stable-32bytes"
+    )
     COOKIE_NAME: str = "tc_session"
     COOKIE_MAX_AGE: int = 2592000
 
@@ -98,7 +100,11 @@ class Settings(BaseSettings):
 
     @property
     def has_supabase(self) -> bool:
-        return bool(self.SUPABASE_URL and self.SUPABASE_KEY)
+        url = (self.SUPABASE_URL or "").strip()
+        key = (self.SUPABASE_KEY or "").strip()
+        if not url or not key or "dummy" in url.lower() or not (url.startswith("http://") or url.startswith("https://")):
+            return False
+        return True
 
     def validate(self) -> None:
         if not self.SESSION_SECRET:

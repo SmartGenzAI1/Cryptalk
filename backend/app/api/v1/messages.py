@@ -68,8 +68,8 @@ async def send_message(
     }
 
     # Retrieve socket server and manager from app state
-    sio = request.app.state.sio
-    manager = request.app.state.sio_manager
+    sio = getattr(request.app.state, "sio", None)
+    manager = getattr(request.app.state, "sio_manager", None)
 
     from sqlalchemy import select
     from app.models import ChatMember
@@ -83,14 +83,16 @@ async def send_message(
     payload = {"chatId": chat_id, "message": msg}
 
     # Relay to everyone in the chat room who is online
-    await sio.emit("message", payload, room=f"chat:{chat_id}")
+    if sio:
+        await sio.emit("message", payload, room=f"chat:{chat_id}")
 
     # Enqueue for offline members
-    for m_id in all_member_ids:
-        if m_id == user_id:
-            continue
-        if not manager.get_sockets_for_user(m_id):
-            enqueue_message(m_id, payload)
+    if manager:
+        for m_id in all_member_ids:
+            if m_id == user_id:
+                continue
+            if not manager.get_sockets_for_user(m_id):
+                enqueue_message(m_id, payload)
 
     return {"message": msg}
 

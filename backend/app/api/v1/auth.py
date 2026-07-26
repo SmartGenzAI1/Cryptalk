@@ -88,7 +88,7 @@ async def register_with_email(req: EmailRegisterRequest, response: Response, db:
     return {"user": serialize_user(user), "token": token}
 
 @router.post("/onboard")
-async def set_username(req: UsernameOnboardingRequest, request: Request, db: AsyncSession = Depends(get_db)):
+async def set_username(req: UsernameOnboardingRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     from app.core.security import get_current_user_id
     user_id = get_current_user_id(request)
 
@@ -133,15 +133,20 @@ async def set_username(req: UsernameOnboardingRequest, request: Request, db: Asy
         last_read_at=now_ms(),
     ))
 
-    return {"user": serialize_user(user)}
+    token = create_session_token(user.id)
+    _set_cookie(response, user.id)
+    return {"user": serialize_user(user), "token": token}
 
 @router.post("/login")
 async def login_with_email(req: EmailLoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
-    email = _validate_email(req.email)
+    input_str = (req.email or "").strip()
+    if not input_str:
+        raise AuthError("Invalid email or password")
 
     # brute-force check before hitting the DB
     from app.core.brute_force import is_locked, record_failed_attempt, clear_failures
-    locked, retry_after = is_locked(email)
+    lower_input = input_str.lower()
+    locked, retry_after = is_locked(lower_input)
     if locked:
         return JSONResponse(
             status_code=429,
@@ -149,15 +154,17 @@ async def login_with_email(req: EmailLoginRequest, response: Response, db: Async
             headers={"Retry-After": str(retry_after)},
         )
 
-    result = await db.execute(select(User).where(User.email == email))
+    # Search by email OR username (case-insensitive)
+    result = await db.execute(
+        select(User).where((User.email == lower_input) | (User.username == lower_input))
+    )
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(req.password, user.password_hash or "x" * 64):
-        record_failed_attempt(email)
-        # don't reveal whether the email exists vs password wrong
+        record_failed_attempt(lower_input)
         raise AuthError("Invalid email or password")
 
-    clear_failures(email)
+    clear_failures(lower_input)
     user.is_online = True
     user.last_seen = now_ms()
     user.updated_at = now_ms()

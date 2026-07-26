@@ -74,8 +74,9 @@ async def mark_chat_read(
     user_id = get_current_user_id(request)
     repo = ChatRepository(db)
     member = await repo.get_member(chat_id, user_id)
+    from app.core.exceptions import ForbiddenError
     if not member:
-        return {"ok": True}
+        raise ForbiddenError("Not a member of this chat")
     read_timestamp = now_ms()
     await repo.update_member(member.id, last_read_at=read_timestamp)
 
