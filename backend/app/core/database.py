@@ -10,50 +10,23 @@ from sqlalchemy.orm import declarative_base
 
 from app.core.config import settings
 
-_connect_args = {}
+_connect_args = {
+    "ssl": "require",
+}
 _engine_kwargs = {
     "echo": settings.DEBUG,
     "pool_pre_ping": True,
+    "pool_size": settings.NEON_POOL_SIZE,
+    "max_overflow": settings.NEON_MAX_OVERFLOW,
+    "pool_timeout": 30,
+    "pool_recycle": 300,
 }
-
-if settings.is_neon:
-    _connect_args = {
-        "ssl": "require",
-    }
-    _engine_kwargs["pool_size"] = settings.NEON_POOL_SIZE
-    _engine_kwargs["max_overflow"] = settings.NEON_MAX_OVERFLOW
-    _engine_kwargs["pool_timeout"] = 30
-    _engine_kwargs["pool_recycle"] = 300
-elif not settings.is_postgres:
-    _connect_args = {"check_same_thread": False}
-    _engine_kwargs["pool_size"] = 5
-    _engine_kwargs["max_overflow"] = 10
-    _engine_kwargs["pool_timeout"] = 30
-    _engine_kwargs["pool_recycle"] = 1800
-else:
-    # tuned for Render free tier + Supabase pgbouncer in transaction mode
-    _connect_args = {
-        "statement_cache_size": 0,
-    }
-    _engine_kwargs["pool_size"] = 10
-    _engine_kwargs["max_overflow"] = 20
-    _engine_kwargs["pool_timeout"] = 30
-    _engine_kwargs["pool_recycle"] = 300
 
 engine = create_async_engine(
     settings.database_url,
     connect_args=_connect_args,
     **_engine_kwargs,
 )
-
-if not settings.is_postgres:
-    @event.listens_for(engine.sync_engine, "connect")
-    def _set_sqlite_pragma(dbapi_conn, _connection_record):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA journal_mode = WAL")
-        cursor.execute("PRAGMA foreign_keys = ON")
-        cursor.execute("PRAGMA busy_timeout = 5000")
-        cursor.close()
 
 async_session_factory = async_sessionmaker(
     engine,
@@ -93,16 +66,9 @@ async def test_connection() -> bool:
 
 
 async def get_database_info() -> Dict[str, Any]:
-    url = settings.database_url
-    db_type = "SQLite"
-    if settings.is_neon:
-        db_type = "Neon (serverless PostgreSQL)"
-    elif settings.is_postgres:
-        db_type = "PostgreSQL"
-
     pool = engine.pool
     status = {
-        "database_type": db_type,
+        "database_type": "Neon (serverless PostgreSQL)",
         "connected": False,
         "pool_size": pool.size(),
         "checked_in": pool.checkedin(),

@@ -16,14 +16,9 @@ services:
       - key: CORS_ORIGINS
         value: "https://cryptalk.vercel.app,http://localhost:3000"
 
-      # === DATABASE (choose ONE) ===
+      # === DATABASE (Neon — required) ===
       - key: NEON_DATABASE_URL
         sync: false
-        description: "Neon DB connection string"
-      # OR
-      - key: DATABASE_URL
-        sync: false
-        description: "Supabase/PostgreSQL connection string"
 
       # === SUPABASE ===
       - key: SUPABASE_URL

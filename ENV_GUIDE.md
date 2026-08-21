@@ -44,8 +44,7 @@ Variables marked `sync: false` in render.yaml must be entered manually — Rende
 |----------|-------|----------|
 | SESSION_SECRET | Generate: python -c "import secrets; print(secrets.token_hex(32))" | Yes |
 | CORS_ORIGINS | https://your-app.vercel.app | Yes |
-| NEON_DATABASE_URL | postgresql://user:pass@ep-xxx.neon.tech/cryptalk?sslmode=require | Yes (or DATABASE_URL) |
-| DATABASE_URL | postgresql+asyncpg://user:pass@host/db | Yes (or NEON_DATABASE_URL) |
+| NEON_DATABASE_URL | postgresql://user:pass@ep-xxx.neon.tech/cryptalk?sslmode=require | Yes |
 | SUPABASE_URL | https://xxx.supabase.co | Yes |
 | SUPABASE_KEY | your_supabase_service_key | Yes |
 | REDIS_URL | rediss://xxx.upstash.io | Optional |
@@ -71,16 +70,11 @@ Variables marked `sync: false` in render.yaml must be entered manually — Rende
 - Must include your production Vercel domain; keep localhost only if you develop against prod.
 - Default in render.yaml: `https://cryptalk.vercel.app,http://localhost:3000`.
 
-#### Database — choose ONE (required)
-Priority order in code (`database_url` property): `NEON_DATABASE_URL` → `DATABASE_URL` → SQLite fallback.
-
-| Option | Format | Notes |
-|--------|--------|-------|
-| Neon (recommended, free tier) | `postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/cryptalk?sslmode=require` | Pool auto-tuned via `NEON_POOL_SIZE=2`, `NEON_MAX_OVERFLOW=1` to fit Neon's free-tier connection limit |
-| Supabase PostgreSQL | `postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres` | Set as `DATABASE_URL` |
-| SQLite (local dev only) | unset both; uses `DB_PATH=./db/cryptalk.db` | Automatic |
-
-Any `postgres://` / `postgresql://` URL is automatically converted to `postgresql+asyncpg://` internally.
+#### Neon DB (required)
+- The only database option. Get one free at neon.tech.
+- Format: `postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/cryptalk?sslmode=require`
+- Pool auto-tuned via `NEON_POOL_SIZE=2`, `NEON_MAX_OVERFLOW=1` to fit Neon's free-tier connection limit
+- Any `postgres://` / `postgresql://` URL is automatically converted to `postgresql+asyncpg://` internally
 
 #### SUPABASE_URL / SUPABASE_KEY (required)
 - Used for file storage (images, documents). Get both from **Supabase Dashboard → Settings → API**.
@@ -148,7 +142,7 @@ All have safe defaults in `backend/app/core/config.py`; set only if you need to 
 ```bash
 PORT=8001
 DEBUG=False
-DB_PATH=./db/cryptalk.db          # SQLite default — zero config
+NEON_DATABASE_URL=postgresql://user:password@ep-xxx.neon.tech/cryptalk?sslmode=require
 SESSION_SECRET=<python -c "import secrets; print(secrets.token_hex(32))">
 COOKIE_NAME=tc_session
 COOKIE_MAX_AGE=2592000
@@ -191,7 +185,7 @@ iOS simulator can use `http://localhost:8001`; physical devices need your LAN IP
 3. **Upstash** (optional) — create Redis DB → copy `rediss://` URL.
 4. **Render** — New Blueprint from repo (uses `render.yaml`) → fill all `sync: false` secrets:
    - [ ] `SESSION_SECRET` (≥ 32 chars)
-   - [ ] `NEON_DATABASE_URL` *or* `DATABASE_URL`
+   - [ ] `NEON_DATABASE_URL`
    - [ ] `SUPABASE_URL` + `SUPABASE_KEY`
    - [ ] `REDIS_URL`, `SENTRY_DSN`, SMTP vars (optional)
    - [ ] Update `CORS_ORIGINS` with your real Vercel domain
@@ -212,7 +206,6 @@ Cross-check of every variable against its source of truth:
 | SESSION_SECRET | ✅ | ✅ | ✅ | — | — |
 | CORS_ORIGINS | ✅ | ✅ | ✅ | — | — |
 | NEON_DATABASE_URL | ✅ | ✅ | ✅ | — | — |
-| DATABASE_URL | ✅ | ✅ | ✅ | — | — |
 | SUPABASE_URL / SUPABASE_KEY | ✅ | ✅ | ✅ | — | — |
 | SUPABASE_BUCKET | ✅ | — | — | — | — |
 | REDIS_URL | ✅ | ✅ | ✅ | — | — |

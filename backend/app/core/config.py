@@ -18,9 +18,7 @@ class Settings(BaseSettings):
     PORT: int = int(os.environ.get("PORT", "8001"))
     DEBUG: bool = False
 
-    DB_PATH: str = os.environ.get("DB_PATH", "./db/cryptalk.db")
-
-    # Neon DB (serverless PostgreSQL) settings
+    # Neon DB (serverless PostgreSQL) — the only database option
     NEON_DATABASE_URL: str = os.environ.get("NEON_DATABASE_URL", "")
     NEON_POOL_SIZE: int = 2
     NEON_MAX_OVERFLOW: int = 1
@@ -111,31 +109,25 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        # Priority: NEON_DATABASE_URL > DATABASE_URL > SQLite
         neon_raw = self.NEON_DATABASE_URL.strip()
-        if neon_raw:
-            if neon_raw.startswith("postgresql://") and not neon_raw.startswith("postgresql+"):
-                return neon_raw.replace("postgresql://", "postgresql+asyncpg://", 1)
-            if neon_raw.startswith("postgres://"):
-                return neon_raw.replace("postgres://", "postgresql+asyncpg://", 1)
-            return neon_raw
-
-        raw = os.environ.get("DATABASE_URL", "")
-        if raw.startswith("postgres"):
-            if raw.startswith("postgres://"):
-                return raw.replace("postgres://", "postgresql+asyncpg://", 1)
-            elif raw.startswith("postgresql://") and not raw.startswith("postgresql+"):
-                return raw.replace("postgresql://", "postgresql+asyncpg://", 1)
-            return raw
-        return f"sqlite+aiosqlite:///{self.DB_PATH}"
+        if not neon_raw:
+            raise RuntimeError(
+                "NEON_DATABASE_URL is required. Get one at neon.tech — free tier works great. "
+                "Example: postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/cryptalk?sslmode=require"
+            )
+        if neon_raw.startswith("postgresql://") and not neon_raw.startswith("postgresql+"):
+            return neon_raw.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if neon_raw.startswith("postgres://"):
+            return neon_raw.replace("postgres://", "postgresql+asyncpg://", 1)
+        return neon_raw
 
     @property
     def is_postgres(self) -> bool:
-        return self.database_url.startswith("postgresql")
+        return True  # always True — Neon is PostgreSQL
 
     @property
     def is_neon(self) -> bool:
-        return bool(self.NEON_DATABASE_URL.strip()) or "neon.tech" in self.database_url
+        return True  # always True — Neon is the only DB option
 
     @property
     def has_redis(self) -> bool:
@@ -163,19 +155,16 @@ class Settings(BaseSettings):
                 "SESSION_SECRET must be set and at least 32 characters. Generate one with: openssl rand -hex 32"
             )
         assert self.SESSION_SECRET != "CHANGE_ME_IN_PRODUCTION", "SESSION_SECRET must be changed from the default sentinel"
-        # enforce 30-day max session expiry
         if self.COOKIE_MAX_AGE > 2592000:
             self.COOKIE_MAX_AGE = 2592000
-        # privacy mode: cap data retention
         if self.PRIVACY_MODE and self.DATA_RETENTION_DAYS > 90:
             self.DATA_RETENTION_DAYS = 90
-        if self.is_postgres:
-            if self.SENTRY_DSN and not (self.SENTRY_DSN.startswith("http://") or self.SENTRY_DSN.startswith("https://")):
-                raise RuntimeError("SENTRY_DSN must be a valid HTTP/HTTPS URL in production.")
-        else:
-            db_dir = os.path.dirname(self.DB_PATH)
-            if db_dir and not os.path.exists(db_dir):
-                os.makedirs(db_dir, exist_ok=True)
+        if not self.NEON_DATABASE_URL.strip():
+            raise RuntimeError(
+                "NEON_DATABASE_URL is required. Get one free at neon.tech"
+            )
+        if self.SENTRY_DSN and not (self.SENTRY_DSN.startswith("http://") or self.SENTRY_DSN.startswith("https://")):
+            raise RuntimeError("SENTRY_DSN must be a valid HTTP/HTTPS URL.")
 
 
 @lru_cache
