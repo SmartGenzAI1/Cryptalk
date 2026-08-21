@@ -2,11 +2,14 @@
 # after MAX_FAILED_ATTEMPTS wrong passwords the account is locked for
 # LOCKOUT_SECONDS. state is stored in Redis if configured for multi-process scaling.
 
+import logging
 import time
 from collections import defaultdict
 from typing import Dict, Tuple
 
 from app.core.config import settings
+
+logger = logging.getLogger("cryptalk.brute_force")
 
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_SECONDS = 15 * 60
@@ -17,7 +20,7 @@ _failures: Dict[str, list] = defaultdict(list)
 _redis_client = None
 _redis_init_done = False
 
-def _get_redis():
+async def _get_redis():
     global _redis_client, _redis_init_done
     if _redis_init_done:
         return _redis_client
@@ -25,34 +28,35 @@ def _get_redis():
     if not settings.has_redis:
         return None
     try:
-        import redis
-        _redis_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
-        _redis_client.ping()
+        import redis.asyncio as aioredis
+        _redis_client = await aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        await _redis_client.ping()
     except Exception:
+        logger.warning("Failed to initialize Redis for brute-force protection, falling back to in-memory")
         _redis_client = None
     return _redis_client
 
 
-def record_failed_attempt(email: str) -> Tuple[bool, int]:
+async def record_failed_attempt(email: str) -> Tuple[bool, int]:
     key = (email or "").lower().strip()
 
-    rc = _get_redis()
+    rc = await _get_redis()
     if rc:
         try:
             count_key = f"bf:count:{key}"
             lock_key = f"bf:lock:{key}"
 
-            count = rc.incr(count_key)
+            count = await rc.incr(count_key)
             if count == 1:
-                rc.expire(count_key, FAILURE_WINDOW)
+                await rc.expire(count_key, FAILURE_WINDOW)
 
             if count >= MAX_FAILED_ATTEMPTS:
-                rc.set(lock_key, "1", ex=LOCKOUT_SECONDS)
-                rc.delete(count_key)  # reset counter once locked
+                await rc.set(lock_key, "1", ex=LOCKOUT_SECONDS)
+                await rc.delete(count_key)
                 return True, LOCKOUT_SECONDS
             return False, 0
         except Exception:
-            pass  # fallback to local process memory
+            logger.warning("Redis error recording failed attempt for %s, falling back to in-memory", key)
 
     now = time.time()
     cutoff = now - FAILURE_WINDOW
@@ -66,19 +70,19 @@ def record_failed_attempt(email: str) -> Tuple[bool, int]:
     return False, 0
 
 
-def is_locked(email: str) -> Tuple[bool, int]:
+async def is_locked(email: str) -> Tuple[bool, int]:
     key = (email or "").lower().strip()
 
-    rc = _get_redis()
+    rc = await _get_redis()
     if rc:
         try:
             lock_key = f"bf:lock:{key}"
-            ttl = rc.ttl(lock_key)
+            ttl = await rc.ttl(lock_key)
             if ttl > 0:
                 return True, ttl
             return False, 0
         except Exception:
-            pass
+            logger.warning("Redis error checking lock for %s, falling back to in-memory", key)
 
     now = time.time()
     cutoff = now - FAILURE_WINDOW
@@ -93,14 +97,14 @@ def is_locked(email: str) -> Tuple[bool, int]:
     return False, 0
 
 
-def clear_failures(email: str) -> None:
+async def clear_failures(email: str) -> None:
     key = (email or "").lower().strip()
-    rc = _get_redis()
+    rc = await _get_redis()
     if rc:
         try:
-            rc.delete(f"bf:count:{key}")
-            rc.delete(f"bf:lock:{key}")
+            await rc.delete(f"bf:count:{key}")
+            await rc.delete(f"bf:lock:{key}")
             return
         except Exception:
-            pass
+            logger.warning("Redis error clearing failures for %s, falling back to in-memory", key)
     _failures.pop(key, None)

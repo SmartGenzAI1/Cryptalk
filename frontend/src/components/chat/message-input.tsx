@@ -23,7 +23,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { toast } from 'sonner'
-import { getSocket } from '@/hooks/use-socket'
+import { getSocket, playSendMessage } from '@/hooks/use-socket'
 import { apiPost, apiUploadFile } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { MessageWithSender } from '@/lib/types'
@@ -62,11 +62,13 @@ export function MessageInput() {
   const [recording, setRecording] = useState(false)
   const [recordSeconds, setRecordSeconds] = useState(0)
   const [ expiresIn, setExpiresIn] = useState<number | null>(null)
+  const [timerOpen, setTimerOpen] = useState(false)
   const [activeMobileTab, setActiveMobileTab] = useState<'menu' | 'emoji' | 'sticker' | 'timer' | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [fileUploading, setFileUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastTypingEmit = useRef(0)
@@ -87,6 +89,37 @@ export function MessageInput() {
     window.addEventListener('zc-reply', onReply)
     return () => window.removeEventListener('zc-reply', onReply)
   }, [])
+
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      if (!activeChatId || fileUploading) return
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file') {
+          const file = items[i].getAsFile()
+          if (file && file.size <= MAX_ATTACHMENT_BYTES) {
+            e.preventDefault()
+            const dt = new DataTransfer()
+            dt.items.add(file)
+            if (fileInputRef.current) {
+              fileInputRef.current.files = dt.files
+              fileInputRef.current.dispatchEvent(new Event('change', { bubbles: true }))
+            }
+            return
+          }
+        }
+      }
+    }
+    if (typeof window !== 'undefined') {
+      document.addEventListener('paste', onPaste)
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        document.removeEventListener('paste', onPaste)
+      }
+    }
+  }, [activeChatId, fileUploading])
 
   // on unmount: release mic stream + clear typing timer (best-effort, never throw)
   useEffect(() => {
@@ -139,6 +172,12 @@ export function MessageInput() {
   async function send(content: string, type: string = 'text') {
     if (!activeChatId || !currentUser || !content.trim()) return
 
+    const trimmedContent = content.trim()
+    if (type === 'text' && trimmedContent.length > 10000) {
+      toast.error('Message too long (max 10,000 characters)')
+      return
+    }
+
     // Immediately stop typing indicator and clear typing timer
     if (typingTimer.current) {
       clearTimeout(typingTimer.current)
@@ -174,10 +213,7 @@ export function MessageInput() {
 
     addMessage(activeChatId, optimisticMessage)
 
-    try {
-      const sendAudio = new Audio('/sounds/message-send.mp3')
-      sendAudio.play().catch(() => {})
-    } catch (_) {}
+    playSendMessage()
 
     const rawContent = content.trim()
     setText('')
@@ -190,7 +226,7 @@ export function MessageInput() {
     try {
       // e2ee: encrypt before sending (server only sees ciphertext)
       let encryptedContent = rawContent
-      if (type === 'text' && activeChat) {
+      if (activeChat) {
         try {
           const { encryptMessageForChat } = await import('@/lib/e2ee')
           const recipient = activeChat.members.find((m) => m.user.id !== currentUser?.id)
@@ -392,6 +428,7 @@ export function MessageInput() {
       toast.error(e.message || 'Failed to send voice message')
     } finally {
       setFileUploading(false)
+      setUploadProgress(0)
     }
   }
 
@@ -408,6 +445,7 @@ export function MessageInput() {
     if (!activeChatId) return
 
     setFileUploading(true)
+    setUploadProgress(0)
     try {
       // 1. read as base64 data URL
       const reader = new FileReader()
@@ -448,7 +486,7 @@ export function MessageInput() {
         const upload = await apiUploadFile(
           '/api/uploads',
           new Blob([encryptedBytes as BlobPart], { type: 'application/octet-stream' }),
-          { contentType: 'application/octet-stream', fileName: file.name },
+          { contentType: 'application/octet-stream', fileName: file.name, onProgress: (p) => setUploadProgress(p.percent) },
         )
         if (upload.fallback) {
           // dev mode (no supabase) — embed ciphertext in content (legacy)
@@ -499,6 +537,7 @@ export function MessageInput() {
       toast.error(err.message || 'Failed to send file')
     } finally {
       setFileUploading(false)
+      setUploadProgress(0)
     }
   }
 
@@ -674,7 +713,7 @@ export function MessageInput() {
                   </PopoverContent>
                 </Popover>
 
-                <Popover>
+                <Popover open={timerOpen} onOpenChange={setTimerOpen}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="ghost"
@@ -699,7 +738,7 @@ export function MessageInput() {
                     ].map((opt) => (
                       <button
                         key={String(opt.value)}
-                        onClick={() => { setExpiresIn(opt.value); }}
+                        onClick={() => { setExpiresIn(opt.value); setTimerOpen(false); }}
                         className={cn(
                           'w-full text-left px-2 py-1.5 rounded-lg text-sm transition-colors zc-tap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
                           expiresIn === opt.value ? 'bg-primary/15 text-primary font-medium' : 'hover:bg-accent'
@@ -720,7 +759,11 @@ export function MessageInput() {
                   aria-label="Attach file"
                   disabled={fileUploading || directChatBlocked}
                 >
-                  {fileUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Paperclip className="h-5 w-5" />}
+                  {fileUploading ? (
+                    <span className="text-[10px] font-bold tabular-nums">{uploadProgress || 0}%</span>
+                  ) : (
+                    <Paperclip className="h-5 w-5" />
+                  )}
                 </Button>
               </div>
 
@@ -742,6 +785,7 @@ export function MessageInput() {
               placeholder="Type a message…"
               aria-label="Type a message"
               rows={1}
+              maxLength={10000}
               className="flex-1 resize-none min-h-[40px] max-h-40 bg-accent/40 border-0 rounded-2xl focus-visible:ring-1 focus-visible:ring-primary px-4 py-2.5 leading-snug"
             />
 

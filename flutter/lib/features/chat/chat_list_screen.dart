@@ -25,6 +25,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   bool _refreshing = false;
   String? _error;
   final _searchController = TextEditingController();
+  String _chatFilter = 'all';
 
   Chat? _activeChat;
   bool _settingsOpen = false;
@@ -126,6 +127,39 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }
   }
 
+  Widget _buildFilterTabs() {
+    const tabs = [
+      ('all', 'All'),
+      ('direct', 'Personal'),
+      ('group', 'Group'),
+      ('channel', 'Channel'),
+      ('saved', 'Saved'),
+    ];
+    return SizedBox(
+      height: 36,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        scrollDirection: Axis.horizontal,
+        itemCount: tabs.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        itemBuilder: (_, i) {
+          final (key, label) = tabs[i];
+          final selected = _chatFilter == key;
+          return ChoiceChip(
+            label: Text(label),
+            selected: selected,
+            onSelected: (_) => setState(() => _chatFilter = key),
+            selectedColor: Theme.of(context).colorScheme.primary,
+            labelStyle: TextStyle(
+              color: selected ? Colors.white : Theme.of(context).colorScheme.onSurface,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   String _getDisplayTitle(Chat chat, AppUser? currentUser) {
     if (chat.type == 'saved') return 'Saved Messages';
     if (chat.type == 'direct') {
@@ -156,7 +190,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   void dispose() {
     // cancel ONLY this screen's socket subs
-    final socket = SocketService();
+    final socket = Provider.of<SocketService>(context, listen: false);
     for (final id in _socketSubIds) {
       socket.cancelSubscription(id);
     }
@@ -170,12 +204,20 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final auth = context.watch<AuthService>();
     final currentUser = auth.currentUser;
     final query = _searchController.text.toLowerCase();
-    final filtered = query.isEmpty
-        ? _chats
-        : _chats.where((c) {
-            final title = _getDisplayTitle(c, currentUser).toLowerCase();
-            return title.contains(query);
-          }).toList();
+    final filtered = _chats.where((c) {
+      if (_chatFilter == 'saved') {
+        if (c.type != 'saved') return false;
+      } else {
+        if (c.type == 'saved') return false;
+        if (_chatFilter != 'all' && c.type != _chatFilter) return false;
+      }
+      if (query.isEmpty) return true;
+      final title = _getDisplayTitle(c, currentUser).toLowerCase();
+      if (title.contains(query)) return true;
+      final last = c.lastMessage;
+      if (last != null && last.content.toLowerCase().contains(query)) return true;
+      return false;
+    }).toList();
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -224,7 +266,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           controller: _searchController,
                           onChanged: (_) => setState(() {}),
                           decoration: InputDecoration(
-                            hintText: 'Search chats...',
+                            hintText: 'Search chats & messages',
                             prefixIcon: const Icon(Icons.search),
                             suffixIcon: _searchController.text.isEmpty
                                 ? null
@@ -244,6 +286,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           ),
                         ),
                       ),
+                      _buildFilterTabs(),
                       Expanded(
                         child: _buildBody(filtered, currentUser),
                       ),
@@ -390,7 +433,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     controller: _searchController,
                     onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
-                      hintText: 'Search chats...',
+                      hintText: 'Search chats & messages',
                       prefixIcon: const Icon(Icons.search),
                       suffixIcon: _searchController.text.isEmpty
                           ? null
@@ -409,6 +452,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     ),
                   ),
                 ),
+                _buildFilterTabs(),
                 Expanded(
                   child: _buildBody(filtered, currentUser),
                 ),

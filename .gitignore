@@ -1,5 +1,5 @@
 # dependencies
-node_modules
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -9,17 +9,29 @@ node_modules
 !.yarn/versions
 
 # testing
-/coverage
+/coverage/
+coverage/
 
 # next.js
 /.next/
 /out/
 
-# production
+# build output
 /build
+/dist
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Flutter/Dart
+.dart_tool/
+build/
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
 
 # debug
@@ -29,7 +41,16 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files
-.env*
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
 
 # vercel
 .vercel
@@ -40,6 +61,7 @@ next-env.d.ts
 
 # logs
 *.log
+*.log.*
 
 # sandbox / local-only files (not source code)
 .zscripts/

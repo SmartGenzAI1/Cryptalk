@@ -107,6 +107,7 @@ class AuthService extends ChangeNotifier {
       SocketService().disconnect();
     } catch (_) {}
     await _api.post('/api/auth/logout');
+    await _secureStorage.delete(key: 'session_cookie');
     _currentUser = null;
     notifyListeners();
   }

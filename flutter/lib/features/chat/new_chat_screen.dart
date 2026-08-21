@@ -483,6 +483,7 @@ class _NewChatScreenState extends State<NewChatScreen> with SingleTickerProvider
                         border: const OutlineInputBorder(),
                         hintText: 'e.g. Project Sync',
                       ),
+                      maxLength: 100,
                       validator: (v) {
                         if ((v ?? '').trim().isEmpty) return 'Name is required';
                         return null;
@@ -496,6 +497,7 @@ class _NewChatScreenState extends State<NewChatScreen> with SingleTickerProvider
                         border: OutlineInputBorder(),
                         hintText: 'What is this chat about?',
                       ),
+                      maxLength: 300,
                     ),
                   ],
                 ),

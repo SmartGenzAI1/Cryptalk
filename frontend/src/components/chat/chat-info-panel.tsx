@@ -57,7 +57,7 @@ export function ChatInfoPanel() {
     <div className="w-full h-full shrink-0 md:border-l flex flex-col bg-background shadow-xl">
       <div className="flex items-center gap-2 px-4 h-16 border-b shrink-0">
         <span className="font-semibold flex-1">Info</span>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setInfoPanelOpen(false)}>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setInfoPanelOpen(false)} aria-label="Close info panel">
           <X className="h-4 w-4" />
         </Button>
       </div>

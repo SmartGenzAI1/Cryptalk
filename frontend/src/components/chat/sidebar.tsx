@@ -93,6 +93,7 @@ export function Sidebar() {
               <TooltipTrigger asChild>
                 <button
                   onClick={(item as any).onClick}
+                  aria-label={item.label}
                   className={cn(
                     'h-11 w-11 rounded-2xl flex items-center justify-center transition-all zc-tap relative group',
                     item.active
@@ -113,6 +114,7 @@ export function Sidebar() {
             <TooltipTrigger asChild>
               <button
                 onClick={() => { setSettingsOpen(!settingsOpen); if (!settingsOpen) setConnectionsPanelOpen(false) }}
+                aria-label="Settings"
                 className={cn(
                   'h-11 w-11 rounded-2xl flex items-center justify-center transition-all zc-tap',
                   settingsOpen
@@ -130,6 +132,7 @@ export function Sidebar() {
             <TooltipTrigger asChild>
               <button
                 onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                aria-label="Toggle theme"
                 className="h-11 w-11 rounded-2xl flex items-center justify-center text-muted-foreground hover:bg-accent/70 hover:text-foreground zc-tap transition-colors"
               >
                 {theme === 'dark' ? <Sun className="h-5 w-5 text-amber-400" /> : <Moon className="h-5 w-5 text-indigo-500" />}
@@ -142,6 +145,7 @@ export function Sidebar() {
             <TooltipTrigger asChild>
               <button
                 onClick={() => setProfileOpen(true)}
+                aria-label="Profile"
                 className="mt-1 zc-tap transition-transform hover:scale-105"
               >
                 <ChatAvatar

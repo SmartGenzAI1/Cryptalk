@@ -7,6 +7,39 @@ import { toSafeUser, type SafeUser, type ChatWithMembers, type MessageWithSender
 export const EMPTY_MESSAGES: MessageWithSender[] = []
 export const EMPTY_TYPING: { userId: string; username: string }[] = []
 
+// Debounced localStorage writer to avoid blocking main thread on every state change
+let _pendingChats: any = null
+let _chatWriteTimer: ReturnType<typeof setTimeout> | null = null
+let _pendingUser: any = null
+let _userWriteTimer: ReturnType<typeof setTimeout> | null = null
+
+function _scheduleChatPersist(chats: any) {
+  _pendingChats = chats
+  if (!_chatWriteTimer) {
+    _chatWriteTimer = setTimeout(() => {
+      _chatWriteTimer = null
+      if (_pendingChats !== null && typeof window !== 'undefined') {
+        localStorage.setItem('zc-chats', JSON.stringify(_pendingChats))
+        _pendingChats = null
+      }
+    }, 300)
+  }
+}
+
+function _scheduleUserPersist(user: any) {
+  _pendingUser = user
+  if (!_userWriteTimer) {
+    _userWriteTimer = setTimeout(() => {
+      _userWriteTimer = null
+      if (typeof window !== 'undefined') {
+        if (_pendingUser) localStorage.setItem('zc-currentUser', JSON.stringify(_pendingUser))
+        else localStorage.removeItem('zc-currentUser')
+        _pendingUser = null
+      }
+    }, 300)
+  }
+}
+
 interface ChatListItem {
   id: string
   type: string
@@ -105,6 +138,7 @@ interface ChatState {
 
   // chat settings (pin/mute) helpers
   updateChatListItem: (id: string, patch: Partial<ChatListItem>) => void
+  removeChat: (chatId: string) => void
 }
 
 export const useChatStore = create<ChatState>((set, _get) => ({
@@ -112,11 +146,31 @@ export const useChatStore = create<ChatState>((set, _get) => ({
   authLoading: true,
   setCurrentUser: (u) => {
     const safeUser = u ? toSafeUser(u) : null
-    set({ currentUser: safeUser })
-    if (typeof window !== 'undefined') {
-      if (safeUser) localStorage.setItem('zc-currentUser', JSON.stringify(safeUser))
-      else localStorage.removeItem('zc-currentUser')
+    if (!safeUser) {
+      // Reset all state on logout
+      set({
+        currentUser: null,
+        chats: [],
+        messages: {},
+        onlineUserIds: new Set(),
+        typingUsers: {},
+        activeChatId: null,
+        activeChat: null,
+        isConnected: false,
+        messagesLoading: {},
+        e2eeEnabled: false,
+        infoPanelOpen: false,
+        settingsOpen: false,
+        connectionsPanelOpen: false,
+        chatSearchOpen: false,
+        chatSearchQuery: '',
+        searchQuery: '',
+        chatFilter: 'all',
+      })
+    } else {
+      set({ currentUser: safeUser })
     }
+    _scheduleUserPersist(safeUser)
   },
   setAuthLoading: (b) => set({ authLoading: b }),
 
@@ -130,9 +184,7 @@ export const useChatStore = create<ChatState>((set, _get) => ({
       })),
     }))
     set({ chats: mapped })
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('zc-chats', JSON.stringify(mapped))
-    }
+    _scheduleChatPersist(mapped)
   },
   upsertChat: (c) =>
     set((s) => {
@@ -151,7 +203,7 @@ export const useChatStore = create<ChatState>((set, _get) => ({
         nextChats = [safeChat, ...s.chats]
       }
       if (typeof window !== 'undefined') {
-        localStorage.setItem('zc-chats', JSON.stringify(nextChats))
+        _scheduleChatPersist(nextChats)
       }
       return { chats: nextChats }
     }),
@@ -177,20 +229,29 @@ export const useChatStore = create<ChatState>((set, _get) => ({
   addMessage: (chatId, msg) =>
     set((s) => {
       const existing = s.messages[chatId] || []
-      const isDuplicate = existing.some((m) => m.id === msg.id)
-      const nextMessages = isDuplicate
-        ? existing.map((m) => (m.id === msg.id ? { ...m, ...msg } : m))
-        : [...existing, msg]
+      const dupIdx = existing.findIndex((m) => m.id === msg.id)
+      const isDuplicate = dupIdx >= 0
+      let nextMessages: MessageWithSender[]
+      if (isDuplicate) {
+        const prev = existing[dupIdx]
+        if (prev.content === msg.content && prev.status === msg.status && prev.deletedAt === msg.deletedAt) {
+          nextMessages = existing
+        } else {
+          nextMessages = existing.map((m) => (m.id === msg.id ? { ...m, ...msg } : m))
+        }
+      } else {
+        nextMessages = [...existing, msg]
+      }
 
       const isIncoming = msg.senderId !== s.currentUser?.id
       const isInactive = s.activeChatId !== chatId
 
       // Update chat list item lastMessage, unreadCount, and sort to top
       const chatIndex = s.chats.findIndex((c) => c.id === chatId)
-      let nextChats = [...s.chats]
+      let nextChats = s.chats
 
       if (chatIndex >= 0) {
-        const targetChat = { ...nextChats[chatIndex] }
+        const targetChat = { ...s.chats[chatIndex] }
         targetChat.lastMessage = {
           id: msg.id,
           content: msg.content,
@@ -205,13 +266,28 @@ export const useChatStore = create<ChatState>((set, _get) => ({
         }
         targetChat.updatedAt = msg.createdAt
 
-        // Move to top of chat list
-        nextChats.splice(chatIndex, 1)
-        nextChats.unshift(targetChat)
+        // Only recreate the chats array if the chat actually moves to top
+        const alreadyAtTop = chatIndex === 0
+        if (alreadyAtTop) {
+          nextChats = [...s.chats]
+          nextChats[0] = targetChat
+        } else {
+          // Check if this message is newer than the current top chat's last message
+          const topChat = s.chats[0]
+          const topTimestamp = topChat.lastMessage?.createdAt || topChat.updatedAt || ''
+          if (msg.createdAt > topTimestamp) {
+            nextChats = [...s.chats]
+            nextChats.splice(chatIndex, 1)
+            nextChats.unshift(targetChat)
+          } else {
+            // Position doesn't change, just update the item in place
+            nextChats = s.chats.map((c, i) => (i === chatIndex ? targetChat : c))
+          }
+        }
       }
 
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('zc-chats', JSON.stringify(nextChats))
+      if (nextChats !== s.chats && typeof window !== 'undefined') {
+        _scheduleChatPersist(nextChats)
       }
 
       return {
@@ -243,45 +319,65 @@ export const useChatStore = create<ChatState>((set, _get) => ({
     }),
   updateMessageStatus: (chatId, status, messageId) =>
     set((s) => {
+      const STATUS_PRIORITY: Record<string, number> = { pending: 0, sent: 1, delivered: 2, read: 3 }
+      const newPriority = STATUS_PRIORITY[status] ?? 0
       const existing = s.messages[chatId] || []
+      let changed = false
       const updatedMsgs = existing.map((m) => {
+        const currentPriority = STATUS_PRIORITY[m.status || 'sent'] ?? 0
+        if (newPriority <= currentPriority) return m
         if (messageId) {
-          if (m.id === messageId) return { ...m, status }
+          if (m.id === messageId) { changed = true; return { ...m, status } }
           return m
         }
-        // if no messageId specified, update status of sent messages
         if (m.senderId === s.currentUser?.id && m.status !== 'read') {
+          changed = true
           return { ...m, status }
         }
         return m
       })
-      // Also update lastMessage status in chat list preview if matching
+      let changedChats = false
       const updatedChats = s.chats.map((c) => {
         if (c.id === chatId && c.lastMessage) {
           if (!messageId || c.lastMessage.id === messageId) {
-            return { ...c, lastMessage: { ...c.lastMessage, status } as any }
+            if (c.lastMessage.status !== status) {
+              changedChats = true
+              return { ...c, lastMessage: { ...c.lastMessage, status } as any }
+            }
           }
         }
         return c
       })
+      if (!changed && !changedChats) return s
       return { messages: { ...s.messages, [chatId]: updatedMsgs }, chats: updatedChats }
     }),
   markChatMessagesRead: (chatId, readerUserId) =>
     set((s) => {
+      if (!readerUserId) return s
       const existing = s.messages[chatId] || []
+      let changed = false
       const updatedMsgs = existing.map((m) => {
-        if (m.senderId !== readerUserId) {
-          return { ...m, status: 'read' }
+        if (m.senderId !== readerUserId && (m.status === 'sent' || m.status === 'delivered')) {
+          changed = true
+          return { ...m, status: 'read' as const }
         }
         return m
       })
       const updatedChats = s.chats.map((c) => {
         if (c.id === chatId) {
-          const lm = c.lastMessage ? { ...c.lastMessage, status: 'read' } : null
-          return { ...c, unreadCount: 0, lastMessage: lm as any }
+          const lastMsgChanged = c.lastMessage &&
+            c.lastMessage.senderId !== readerUserId &&
+            (c.lastMessage.status === 'sent' || c.lastMessage.status === 'delivered')
+          const newUnread = s.currentUser && readerUserId === s.currentUser.id ? 0 : c.unreadCount
+          if (lastMsgChanged || c.unreadCount !== newUnread) {
+            changed = true
+            const lm = lastMsgChanged ? { ...c.lastMessage, status: 'read' as const } : c.lastMessage
+            return { ...c, unreadCount: newUnread, lastMessage: lm as any }
+          }
         }
         return c
       })
+      if (!changed) return s
       return { messages: { ...s.messages, [chatId]: updatedMsgs }, chats: updatedChats }
     }),
   removeMessage: (chatId, messageId) =>
@@ -385,10 +481,26 @@ export const useChatStore = create<ChatState>((set, _get) => ({
   updateChatListItem: (id, patch) =>
     set((s) => {
       const nextChats = s.chats.map((c) => (c.id === id ? { ...c, ...patch } : c))
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('zc-chats', JSON.stringify(nextChats))
-      }
+      _scheduleChatPersist(nextChats)
       return { chats: nextChats }
+    }),
+  removeChat: (chatId) =>
+    set((s) => {
+      const nextChats = s.chats.filter((c) => c.id !== chatId)
+      const nextMessages = { ...s.messages }
+      delete nextMessages[chatId]
+      const nextTyping = { ...s.typingUsers }
+      delete nextTyping[chatId]
+      const nextLoading = { ...s.messagesLoading }
+      delete nextLoading[chatId]
+      _scheduleChatPersist(nextChats)
+      return {
+        chats: nextChats,
+        messages: nextMessages,
+        typingUsers: nextTyping,
+        messagesLoading: nextLoading,
+        ...(s.activeChatId === chatId ? { activeChatId: null, activeChat: null } : {}),
+      }
     }),
 }))
 

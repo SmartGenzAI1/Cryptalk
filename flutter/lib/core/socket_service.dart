@@ -35,6 +35,10 @@ class SocketService {
   final Map<int, void Function(Map<String, dynamic>)> _typingCallbacks = {};
   final Map<int, void Function(Map<String, dynamic>)> _messageUpdateCallbacks = {};
   final Map<int, void Function(Map<String, dynamic>)> _messageStatusCallbacks = {};
+  final Map<int, void Function(Map<String, dynamic>)> _reactionCallbacks = {};
+  final Map<int, void Function(Map<String, dynamic>)> _queuedMessageCallbacks = {};
+  final Map<int, void Function(Map<String, dynamic>)> _chatUpdatedCallbacks = {};
+  final Map<int, void Function(Map<String, dynamic>)> _authErrorCallbacks = {};
 
   bool get isConnected => _connected;
   io.Socket? get socket => _socket;
@@ -149,6 +153,40 @@ class SocketService {
         }
       }
     });
+
+    _socket!.on('reaction', (data) {
+      if (data is Map) {
+        final mapData = Map<String, dynamic>.from(data);
+        for (final cb in _reactionCallbacks.values.toList()) {
+          cb(mapData);
+        }
+      }
+    });
+
+    _socket!.on('queued-messages', (data) {
+      if (data is Map) {
+        final mapData = Map<String, dynamic>.from(data);
+        for (final cb in _queuedMessageCallbacks.values.toList()) {
+          cb(mapData);
+        }
+      }
+    });
+
+    _socket!.on('chat-updated', (data) {
+      if (data is Map) {
+        final mapData = Map<String, dynamic>.from(data);
+        for (final cb in _chatUpdatedCallbacks.values.toList()) {
+          cb(mapData);
+        }
+      }
+    });
+
+    _socket!.on('auth-error', (data) {
+      final mapData = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+      for (final cb in _authErrorCallbacks.values.toList()) {
+        cb(mapData);
+      }
+    });
   }
 
   void _handleTypingOrRecording(dynamic data) {
@@ -236,6 +274,32 @@ class SocketService {
     });
   }
 
+  void sendReaction(String chatId, String messageId, String emoji, String userId, bool added) {
+    _socket?.emit('reaction', {
+      'chatId': chatId,
+      'messageId': messageId,
+      'emoji': emoji,
+      'userId': userId,
+      'added': added,
+    });
+  }
+
+  void sendMessageUpdate(String chatId, Map<String, dynamic> message, String action) {
+    _socket?.emit('message-update', {
+      'chatId': chatId,
+      'message': message,
+      'action': action,
+    });
+  }
+
+  void sendChatUpdated(String chatId, List<String> memberIds, Map<String, dynamic> chat) {
+    _socket?.emit('chat-updated', {
+      'chatId': chatId,
+      'memberIds': memberIds,
+      'chat': chat,
+    });
+  }
+
   // subscribe to message events. returns a sub id — pass it to
   // cancelSubscription in dispose to remove just this callback
   int onMessage(void Function(Map<String, dynamic>) callback) {
@@ -268,6 +332,30 @@ class SocketService {
     return id;
   }
 
+  int onReaction(void Function(Map<String, dynamic>) callback) {
+    final id = _nextSubId++;
+    _reactionCallbacks[id] = callback;
+    return id;
+  }
+
+  int onQueuedMessages(void Function(Map<String, dynamic>) callback) {
+    final id = _nextSubId++;
+    _queuedMessageCallbacks[id] = callback;
+    return id;
+  }
+
+  int onChatUpdated(void Function(Map<String, dynamic>) callback) {
+    final id = _nextSubId++;
+    _chatUpdatedCallbacks[id] = callback;
+    return id;
+  }
+
+  int onAuthError(void Function(Map<String, dynamic>) callback) {
+    final id = _nextSubId++;
+    _authErrorCallbacks[id] = callback;
+    return id;
+  }
+
   // remove a single subscription. no-op if id unknown. looks up across all
   // event maps so callers don't track which event they subscribed to.
   void cancelSubscription(int id) {
@@ -276,6 +364,10 @@ class SocketService {
     _typingCallbacks.remove(id);
     _messageUpdateCallbacks.remove(id);
     _messageStatusCallbacks.remove(id);
+    _reactionCallbacks.remove(id);
+    _queuedMessageCallbacks.remove(id);
+    _chatUpdatedCallbacks.remove(id);
+    _authErrorCallbacks.remove(id);
   }
 
   // tear down socket + clear ALL subscriptions. only call on logout / account
@@ -298,6 +390,10 @@ class SocketService {
     _typingCallbacks.clear();
     _messageUpdateCallbacks.clear();
     _messageStatusCallbacks.clear();
+    _reactionCallbacks.clear();
+    _queuedMessageCallbacks.clear();
+    _chatUpdatedCallbacks.clear();
+    _authErrorCallbacks.clear();
     _onlineUserIds.clear();
 
     for (final timer in _typingTimers.values) {

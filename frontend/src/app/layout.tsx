@@ -5,6 +5,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
+import { SWRegister } from "@/components/sw-register";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,7 +29,7 @@ export const metadata: Metadata = {
     ],
     apple: "/apple-icon.png",
   },
-  manifest: undefined,
+  manifest: "/manifest.json",
   openGraph: {
     title: "Cryptalk",
     description: "Secure real-time messaging",
@@ -62,6 +63,11 @@ export default function RootLayout({
       <head>
         <link rel="apple-touch-icon" href="/apple-icon.png" />
         <link rel="preload" href="/logo.png" as="image" type="image/png" fetchPriority="high" />
+        <meta name="theme-color" content="#10b981" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Cryptalk" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
@@ -72,6 +78,7 @@ export default function RootLayout({
           </ErrorBoundary>
           <Toaster />
           <SonnerToaster richColors position="top-center" />
+          <SWRegister />
         </ThemeProvider>
       </body>
     </html>

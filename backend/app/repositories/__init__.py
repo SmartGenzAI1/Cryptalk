@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.security import escape_like, now_ms
-from app.models import Chat, ChatMember, User
+from app.models import Chat, ChatMember, User, UserBlock
 
 
 def _id() -> str:
@@ -39,15 +39,28 @@ class UserRepository:
         if query_clean.startswith("@"):
             query_clean = query_clean[1:]
         q = f"%{escape_like(query_clean)}%"
+        # name is encrypted at rest so it can't be matched in SQL;
+        # discovery runs against the plaintext username handle
         result = await self.db.execute(
             select(User)
             .where(
                 User.id != exclude_id,
-                (User.username.ilike(q, escape="\\")) | (User.name.ilike(q, escape="\\")),
+                User.username.ilike(q, escape="\\"),
             )
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def get_blocked_ids(self, user_id: str) -> set:
+        result = await self.db.execute(
+            select(UserBlock.blocked_id).where(UserBlock.blocker_id == user_id)
+        )
+        mine = {row[0] for row in result.all()}
+        result2 = await self.db.execute(
+            select(UserBlock.blocker_id).where(UserBlock.blocked_id == user_id)
+        )
+        theirs = {row[0] for row in result2.all()}
+        return mine | theirs
 
     async def create(self, **kwargs) -> User:
         user = User(id=_id(), created_at=now_ms(), updated_at=now_ms(), **kwargs)

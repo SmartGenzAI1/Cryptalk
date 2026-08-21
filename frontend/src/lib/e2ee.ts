@@ -29,8 +29,43 @@ export interface E2EEStatus {
   isE2EEEnabled: boolean
 }
 
+// Key rotation: recommended every 7 days. Stores the last rotation timestamp.
+const ROTATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+const ROTATION_KEY = 'last-key-rotation'
+
+export async function checkKeyRotationNeeded(): Promise<boolean> {
+  try {
+    const lastRotation = localStorage.getItem(ROTATION_KEY)
+    if (!lastRotation) return true
+    return Date.now() - Number(lastRotation) > ROTATION_INTERVAL_MS
+  } catch {
+    return true
+  }
+}
+
+export async function performKeyRotation(userId: string): Promise<E2EEStatus> {
+  console.warn('[E2EE] Key rotation: regenerating identity keys. Past messages encrypted with old keys will need re-encryption by senders.')
+  await clearAllKeys()
+  try { localStorage.removeItem(ROTATION_KEY) } catch {}
+  const status = await initE2EE(userId)
+  try { localStorage.setItem(ROTATION_KEY, String(Date.now())) } catch {}
+  return status
+}
+
+export function markRotationDone(): void {
+  try { localStorage.setItem(ROTATION_KEY, String(Date.now())) } catch {}
+}
+
 // generate keys if needed and sync with server (called on app load)
+let initPromise: Promise<E2EEStatus> | null = null
+
 export async function initE2EE(userId: string): Promise<E2EEStatus> {
+  if (initPromise) return initPromise
+  initPromise = initE2EEInternal(userId).finally(() => { initPromise = null })
+  return initPromise
+}
+
+async function initE2EEInternal(userId: string): Promise<E2EEStatus> {
   let identityKey = await loadIdentityKey()
   let hasLocal = identityKey !== null
   let forceUpload = false
@@ -106,7 +141,7 @@ export async function decryptDirectMessage(
     }
     return await decryptMessage(payload, identityKey.encryption.privateKey)
   } catch {
-    return encryptedContent
+    return '\uFFFD Unable to decrypt message'
   }
 }
 
@@ -146,6 +181,9 @@ export async function decryptGroupMessageForChat(
     }
 
     // Pass ciphertext, nonce, and mac (defaulting to empty mac if missing)
+    if (!payload.mac) {
+      console.warn('Missing MAC in group message payload — message integrity cannot be verified')
+    }
     return await decryptGroupMessage(
       payload.ciphertext,
       payload.nonce,
@@ -153,7 +191,7 @@ export async function decryptGroupMessageForChat(
       groupKey
     )
   } catch {
-    return encryptedContent // legacy plaintext fallback
+    return '\uFFFD Unable to decrypt message'
   }
 }
 

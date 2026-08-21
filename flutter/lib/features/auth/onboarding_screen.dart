@@ -557,7 +557,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             prefixIcon: Icons.alternate_email,
                             prefixText: '@ ',
                             hintText: 'your_username',
-                            helperText: 'Letters, numbers, and underscore. 3–20 chars.',
+                            helperText: 'Letters, numbers, and underscore. 3–30 chars.',
                           ),
                           textCapitalization: TextCapitalization.none,
                           textInputAction: TextInputAction.next,
@@ -566,7 +566,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           validator: (v) {
                             final t = (v ?? '').trim().toLowerCase();
                             if (t.length < 3) return 'At least 3 characters';
-                            if (t.length > 20) return 'At most 20 characters';
+                            if (t.length > 30) return 'At most 30 characters';
                             if (!RegExp(r'^[a-z0-9_]+$').hasMatch(t)) {
                               return 'Letters, numbers, and underscore only';
                             }
@@ -587,7 +587,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           validator: (v) {
                             final t = (v ?? '').trim();
                             if (t.isEmpty) return 'Display name is required';
-                            if (t.length > 40) return 'At most 40 characters';
+                            if (t.length > 50) return 'At most 50 characters';
                             return null;
                           },
                           onFieldSubmitted: (_) {

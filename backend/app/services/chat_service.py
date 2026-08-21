@@ -1,11 +1,18 @@
+import logging
 from typing import List, Optional
+
+import secrets
+from sqlalchemy import delete
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.exceptions import ForbiddenError, ValidationError
 from app.core.security import ms_to_iso, now_ms, sanitize_text, sanitize_title
-from app.models import Chat, ChatMember
+from app.models import Chat, ChatMember, Report, UserBlock, UserNickname, ConnectionRequest
 from app.repositories import ChatRepository, UserRepository
 from app.services.serializers import serialize_chat
+
+logger = logging.getLogger("cryptalk.chat_service")
 
 class ChatService:
 
@@ -27,7 +34,7 @@ class ChatService:
                 # refetch memberships
                 memberships = await self.chats.get_user_chats(user_id)
             except Exception:
-                pass
+                logger.warning("Failed to create Saved Messages chat for user %s", user_id)
 
         valid = [
             (member, chat) for member, chat in memberships
@@ -78,17 +85,35 @@ class ChatService:
             raise ValidationError("A member is required for direct chats")
         other_id = member_ids[0]
 
+        from sqlalchemy import select, or_, and_
+        block_check = await self.chats.db.execute(
+            select(UserBlock).where(
+                or_(
+                    and_(UserBlock.blocker_id == user_id, UserBlock.blocked_id == other_id),
+                    and_(UserBlock.blocker_id == other_id, UserBlock.blocked_id == user_id),
+                )
+            )
+        )
+        if block_check.scalar_one_or_none():
+            raise ValidationError("Cannot create direct chat with this user")
+
         existing = await self.chats.find_direct_chat(user_id, other_id)
         if existing:
             member = await self.chats.get_member(existing.id, user_id)
             return serialize_chat(existing, member)
 
-        chat = await self.chats.create(type="direct", title="Direct", created_by=user_id)
-        await self.chats.add_member(chat.id, user_id, role="owner")
-        await self.chats.add_member(chat.id, other_id, role="member")
-        chat = await self.chats.get_by_id(chat.id)
-        member = await self.chats.get_member(chat.id, user_id)
-        return serialize_chat(chat, member)
+        try:
+            chat = await self.chats.create(type="direct", title="Direct", created_by=user_id)
+            await self.chats.add_member(chat.id, user_id, role="owner")
+            await self.chats.add_member(chat.id, other_id, role="member")
+            return serialize_chat(chat, await self.chats.get_member(chat.id, user_id))
+        except IntegrityError:
+            # concurrent creation race — re-query for the chat that won
+            existing = await self.chats.find_direct_chat(user_id, other_id)
+            if existing:
+                member = await self.chats.get_member(existing.id, user_id)
+                return serialize_chat(existing, member)
+            raise
 
     async def _create_group(
         self, user_id: str, chat_type: str, title: Optional[str],
@@ -131,12 +156,23 @@ class ChatService:
             created_by=user_id,
             expires_at=expires_at,
         )
+
+        # batch add all members in one flush instead of N individual flushes
         for i, uid in enumerate(all_members):
             role = "owner" if i == 0 else "member"
             chat_key = member_keys.get(uid) if member_keys else None
-            await self.chats.add_member(chat.id, uid, role=role, chat_key=chat_key)
+            member_obj = ChatMember(
+                id=secrets.token_hex(12),
+                chat_id=chat.id,
+                user_id=uid,
+                role=role,
+                joined_at=now_ms(),
+                last_read_at=now_ms(),
+                chat_key=chat_key,
+            )
+            self.chats.db.add(member_obj)
+        await self.chats.db.flush()
 
-        chat = await self.chats.get_by_id(chat.id)
         member = await self.chats.get_member(chat.id, user_id)
         return serialize_chat(chat, member)
 
@@ -163,3 +199,31 @@ class ChatService:
             "pinnedAt": ms_to_iso(member.pinned_at) if member.pinned_at else None,
             "muted": bool(member.muted),
         }
+
+    async def delete_chat(self, chat_id: str, user_id: str) -> None:
+        chat = await self.chats.get_by_id(chat_id)
+        if not chat:
+            raise ForbiddenError("Chat not found")
+        member = await self.chats.get_member(chat_id, user_id)
+        if not member:
+            raise ForbiddenError("Not a member of this chat")
+        if chat.type == "saved":
+            raise ValidationError("Cannot delete Saved Messages")
+        if chat.type in ("group", "channel") and member.role != "owner":
+            raise ForbiddenError("Only the chat owner can delete a group or channel")
+        if chat.type == "direct" and chat.created_by != user_id:
+            raise ForbiddenError("Only the chat creator can delete a direct chat")
+
+        db = self.chats.db
+        await db.execute(delete(Report).where(Report.chat_id == chat_id))
+        await db.execute(delete(ChatMember).where(ChatMember.chat_id == chat_id))
+        await db.execute(delete(Chat).where(Chat.id == chat_id))
+
+    @staticmethod
+    def validate_message_content(content: object) -> str:
+        if not isinstance(content, str):
+            raise ValidationError("Message content must be a string")
+        cleaned = content.strip()
+        if not cleaned:
+            raise ValidationError("Message content cannot be empty")
+        return cleaned

@@ -1,3 +1,4 @@
+import logging
 import time
 from collections import defaultdict, deque
 from typing import Deque, Dict, Tuple
@@ -7,6 +8,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.core.config import settings
+
+logger = logging.getLogger("cryptalk.rate_limit")
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -25,44 +28,49 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 import redis.asyncio as aioredis
                 self._redis = aioredis.from_url(settings.REDIS_URL)
             except Exception:
-                pass
+                logger.warning("Failed to initialize Redis for rate limiting, falling back to in-memory")
 
     def _client_key(self, request: Request) -> str:
-        # combine IP + user identity so one attacker behind NAT doesn't throttle
-        # everyone, and one user rotating IPs can't bypass per-user limits.
-        from app.core.security import verify_session_token
-        from app.core.config import settings
-        token = request.cookies.get(settings.COOKIE_NAME)
-        if not token:
-            auth_header = request.headers.get("Authorization")
-            if auth_header and auth_header.startswith("Bearer "):
-                token = auth_header.split(" ", 1)[1].strip()
-        user_id = ""
-        if token:
-            uid = verify_session_token(token)
-            if uid:
-                user_id = uid
-
         real_ip = request.headers.get("x-real-ip", "").strip()
-        if real_ip:
-            ip = real_ip
+        forwarded = request.headers.get("x-forwarded-for", "")
+        ips = [i.strip() for i in forwarded.split(",") if i.strip()]
+
+        # Mitigate x-real-ip spoofing: prefer x-forwarded-for (set by trusted proxy)
+        # over x-real-ip which can be set by any client
+        if ips:
+            ip = ips[-1]
         elif request.client and request.client.host:
             ip = request.client.host
+        elif real_ip:
+            ip = real_ip
         else:
-            forwarded = request.headers.get("x-forwarded-for", "")
-            ips = [i.strip() for i in forwarded.split(",") if i.strip()]
-            ip = ips[-1] if ips else "unknown"
+            ip = "unknown"
 
-        return f"{ip}:{user_id}" if user_id else ip
+        return ip
+
+    def _user_key(self, request: Request) -> str | None:
+        token = request.cookies.get("__Host-tc_session") or request.cookies.get(settings.COOKIE_NAME)
+        if not token:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header.split(" ", 1)[1].strip()
+        if not token:
+            return None
+        from app.core.security import verify_session_token
+        return verify_session_token(token)
 
     async def _check_redis(self, key: str, max_req: int, window: int) -> Tuple[bool, int]:
-        count = await self._redis.incr(key)
-        if count == 1:
-            await self._redis.expire(key, window)
-        if count > max_req:
-            ttl = await self._redis.ttl(key)
-            return False, max(ttl, 1)
-        return True, 0
+        try:
+            count = await self._redis.incr(key)
+            if count == 1:
+                await self._redis.expire(key, window)
+            if count > max_req:
+                ttl = await self._redis.ttl(key)
+                return False, max(ttl, 1)
+            return True, 0
+        except Exception:
+            logger.warning("Redis error in rate limiter for key %s, falling back to in-memory", key)
+            return self._check_local(key, max_req, window)
 
     def _check_local(self, key: str, max_req: int, window: int) -> Tuple[bool, int]:
         now = time.time()
@@ -76,8 +84,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         bucket.append(now)
 
         # housekeeping: purge dead buckets every ~100 requests to cap memory
-        if len(self._hits) > 500:
-            stale = [k for k, v in self._hits.items() if not v]
+        if len(self._hits) > 100:
+            stale = [k for k, v in self._hits.items() if not v or v[0] < now - window]
             for k in stale:
                 del self._hits[k]
 
@@ -104,6 +112,24 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                         },
                         headers={"Retry-After": str(retry_after)},
                     )
+                # secondary per-user rate limit for authenticated requests
+                user_id = self._user_key(request)
+                if user_id:
+                    user_key = f"rl:user:{user_id}:{prefix}"
+                    if self._redis:
+                        allowed, retry_after = await self._check_redis(user_key, max_req, window)
+                    else:
+                        allowed, retry_after = self._check_local(user_key, max_req, window)
+                    if not allowed:
+                        return JSONResponse(
+                            status_code=429,
+                            content={
+                                "error": "rate_limited",
+                                "message": "Too many requests. Please slow down.",
+                                "retry_after": retry_after,
+                            },
+                            headers={"Retry-After": str(retry_after)},
+                        )
                 break
 
         return await call_next(request)

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'api_client.dart';
 import 'models.dart';
 import 'crypto_service.dart';
+import 'socket_service.dart';
 
 // 25mb client cap, matches server
 const int kMaxAttachmentBytes = 25 * 1024 * 1024;
@@ -16,11 +17,16 @@ class ChatService {
   Future<List<Chat>> getChats() async {
     final data = await _api.get('/api/chats');
     final chats = (data['chats'] as List).map((c) => Chat.fromJson(c)).toList();
-    // Decrypt and store any group chat keys we received
+    // Decrypt and store any group chat keys in parallel (skip direct/saved)
+    final keyFutures = <Future>[];
     for (final chat in chats) {
-      if (chat.chatKey != null && chat.chatKey!.isNotEmpty) {
-        await _crypto.decryptAndStoreGroupKey(chat.id, chat.chatKey!);
+      if (chat.chatKey != null && chat.chatKey!.isNotEmpty &&
+          chat.type != 'direct' && chat.type != 'saved') {
+        keyFutures.add(_crypto.decryptAndStoreGroupKey(chat.id, chat.chatKey!));
       }
+    }
+    if (keyFutures.isNotEmpty) {
+      await Future.wait(keyFutures);
     }
     return chats;
   }
@@ -30,10 +36,11 @@ class ChatService {
     if (before != null) path += '&before=${Uri.encodeComponent(before)}';
     final data = await _api.get(path);
     var messages = (data['messages'] as List).map((m) => Message.fromJson(m)).toList();
-    // decrypt returns input as-is for non-ciphertext, so legacy/system msgs still work
-    for (final m in messages) {
-      m.content = await _crypto.decryptMessage(m.content, chatId);
-    }
+    // decrypt in parallel (returns input as-is for non-ciphertext, so legacy/system msgs still work)
+    final decryptFutures = messages.map((m) => _crypto.decryptMessage(m.content, chatId).then((decrypted) {
+      m.content = decrypted;
+    }));
+    await Future.wait(decryptFutures);
     return messages;
   }
 
@@ -243,15 +250,26 @@ class ChatService {
 
   Future<Message> editMessage(String chatId, String messageId, String newContent) async {
     final data = await _api.patch('/api/$chatId/messages?messageId=$messageId', body: {'content': newContent});
-    return Message.fromJson(data['message']);
+    final msg = Message.fromJson(data['message']);
+    SocketService().sendMessageUpdate(chatId, msg.toJson(), 'edit');
+    return msg;
   }
 
   Future<void> deleteMessage(String chatId, String messageId, {bool forEveryone = false}) async {
     await _api.delete('/api/$chatId/messages?messageId=$messageId${forEveryone ? '&forEveryone=true' : ''}');
+    SocketService().sendMessageUpdate(chatId, {
+      'id': messageId,
+      'chatId': chatId,
+      'deletedAt': DateTime.now().toIso8601String(),
+      'content': '\uD83D\uDDD1\uFE0F Message deleted',
+    }, 'delete');
   }
 
-  Future<void> toggleReaction(String chatId, String messageId, String emoji) async {
-    await _api.put('/api/$chatId/messages?messageId=$messageId', body: {'emoji': emoji});
+  Future<bool> toggleReaction(String chatId, String messageId, String emoji, String userId) async {
+    final data = await _api.put('/api/$chatId/messages?messageId=$messageId', body: {'emoji': emoji});
+    final added = data['added'] == true;
+    SocketService().sendReaction(chatId, messageId, emoji, userId, added);
+    return added;
   }
 
   Future<void> toggleStar(String chatId, String messageId) async {
@@ -268,7 +286,7 @@ class ChatService {
 
   Future<void> markRead(String chatId, String messageId) async {
     try {
-      await _api.post('/api/$chatId/messages/read?messageId=$messageId');
+      await _api.post('/api/$chatId/messages/read');
     } catch (_) {
       try {
         await _api.post('/api/chats/$chatId/mark-read');
@@ -284,6 +302,18 @@ class ChatService {
 
   Future<void> muteChat(String chatId, bool mute) async {
     await _api.patch('/api/chats/$chatId/settings', body: {'action': 'mute', 'value': mute});
+  }
+
+  Future<void> pinMessage(String chatId, String messageId) async {
+    await _api.patch('/api/chats/$chatId/settings', body: {'action': 'pinMessage', 'value': messageId});
+  }
+
+  Future<List<Map<String, dynamic>>> forwardMessage(String messageId, List<String> targetChatIds) async {
+    final data = await _api.post('/api/forward', body: {
+      'message_id': messageId,
+      'target_chat_ids': targetChatIds,
+    });
+    return List<Map<String, dynamic>>.from(data['forwarded'] ?? []);
   }
 
   Future<void> leaveChat(String chatId) async {
@@ -344,6 +374,16 @@ class ChatService {
   Future<List<AppUser>> searchUsers(String query) async {
     final data = await _api.get('/api/users/search?q=${Uri.encodeComponent(query)}');
     return (data['users'] as List).map((u) => AppUser.fromJson(u)).toList();
+  }
+
+  Future<List<Message>> searchMessages(String chatId, String query) async {
+    final data = await _api.get('/api/$chatId/messages?q=${Uri.encodeComponent(query)}&limit=50');
+    var messages = (data['messages'] as List).map((m) => Message.fromJson(m)).toList();
+    final decryptFutures = messages.map((m) => _crypto.decryptMessage(m.content, chatId).then((decrypted) {
+      m.content = decrypted;
+    }));
+    await Future.wait(decryptFutures);
+    return messages;
   }
 
   Future<List<Map<String, dynamic>>> crossChatSearch(String query) async {

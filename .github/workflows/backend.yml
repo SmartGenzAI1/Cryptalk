@@ -20,10 +20,10 @@ jobs:
         python-version: ['3.11', '3.12']
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -34,11 +34,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Lint
+        run: |
+          pip install ruff
+          ruff check app/
+        continue-on-error: true
+
+      - name: Type check
+        run: |
+          pip install pyright
+          pyright app/
+        continue-on-error: true
+
       - name: Run tests
         run: python -m pytest tests/ -v
         env:
           DB_PATH: /tmp/cryptalk-test.db
-          SESSION_SECRET: ci-test-secret
+          SESSION_SECRET: ci-test-only-not-a-real-secret-32chars!
 
       - name: Smoke test
         run: |
@@ -47,4 +59,4 @@ jobs:
           curl -sf http://localhost:8001/health | grep -q '"status":"ok"' && echo "Smoke test passed"
         env:
           DB_PATH: /tmp/cryptalk-test.db
-          SESSION_SECRET: ci-test-secret
+          SESSION_SECRET: ci-test-only-not-a-real-secret-32chars!

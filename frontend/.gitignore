@@ -7,16 +7,23 @@ node_modules/
 .next/
 out/
 build/
+dist/
 next-env.d.ts
 *.tsbuildinfo
 
 # Environment
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # Logs
 *.log
+*.log.*
+
+# Testing / Coverage
+coverage/
+.coverage
+htmlcov/
 
 # OS
 .DS_Store
@@ -25,3 +32,12 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# Databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3

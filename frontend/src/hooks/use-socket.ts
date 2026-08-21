@@ -7,6 +7,27 @@ import type { MessageWithSender } from '@/lib/types'
 
 let socket: Socket | null = null
 
+// Preloaded audio instances to avoid creating new Audio() per message
+let _incomingAudio: HTMLAudioElement | null = null
+let _sendAudio: HTMLAudioElement | null = null
+
+function getIncomingAudio(): HTMLAudioElement | null {
+  if (typeof window === 'undefined') return null
+  if (!_incomingAudio) {
+    try { _incomingAudio = new Audio('/sounds/incoming-message.mp3') } catch { return null }
+  }
+  return _incomingAudio
+}
+
+export function playSendMessage() {
+  if (typeof window === 'undefined') return
+  if (!_sendAudio) {
+    try { _sendAudio = new Audio('/sounds/message-send.mp3') } catch { return }
+  }
+  _sendAudio.currentTime = 0
+  _sendAudio.play().catch(() => {})
+}
+
 export function getSocket(): Socket | null {
   return socket
 }
@@ -36,9 +57,16 @@ export function useSocket() {
     initialised.current = true
 
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || ''
-    const socketUrl = backendUrl
+    let socketUrl = backendUrl
       ? backendUrl
       : `/?XTransformPort=${process.env.NEXT_PUBLIC_BACKEND_PORT || '8001'}`
+    // Enforce WSS in production
+    if (process.env.NODE_ENV === 'production' && socketUrl.startsWith('ws://')) {
+      socketUrl = socketUrl.replace(/^ws:\/\//, 'wss://')
+    }
+    if (process.env.NODE_ENV === 'production' && socketUrl.startsWith('http://')) {
+      socketUrl = socketUrl.replace(/^http:\/\//, 'https://')
+    }
     const token = typeof window !== 'undefined' ? localStorage.getItem('tc_token') : null
     socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
@@ -67,7 +95,7 @@ export function useSocket() {
 
     // Auto-reconnect when tab regains focus or comes back online
     function handleVisibilityOrOnline() {
-      if (socket && !socket.connected) {
+      if (socket && !socket.connected && !socket.connecting) {
         socket.connect()
       }
     }
@@ -112,7 +140,7 @@ export function useSocket() {
           try {
             const chat = store.chats.find((c) => c.id === item.chatId)
             const chatType = chat?.type || store.activeChat?.type || 'direct'
-            if (item.message.type === 'text' && item.message.content) {
+            if (item.message.content) {
               item.message.content = await decryptMessageForChat(
                 item.message.content,
                 item.chatId,
@@ -139,7 +167,7 @@ export function useSocket() {
         const { decryptMessageForChat } = await import('@/lib/e2ee')
         const chat = store.chats.find((c) => c.id === data.chatId)
         const chatType = chat?.type || store.activeChat?.type || 'direct'
-        if (data.message.type === 'text' && data.message.content) {
+        if (data.message.content) {
           data.message.content = await decryptMessageForChat(
             data.message.content,
             data.chatId,
@@ -151,18 +179,41 @@ export function useSocket() {
       }
       addMessage(data.chatId, data.message)
 
-      if (data.message.senderId !== store.currentUser?.id) {
-        try {
-          const incomingAudio = new Audio('/sounds/income-messaage.mp3')
-          incomingAudio.play().catch(() => {})
-        } catch (_) {}
-      }
+      try {
+        const soundsEnabled = typeof window === 'undefined' || localStorage.getItem('zc-notificationSounds') !== 'false'
+        if (!soundsEnabled) return
+        const audio = getIncomingAudio()
+        if (audio) {
+          if (!audio.paused) {
+            audio.currentTime = 0
+          } else {
+            audio.play().catch(() => {})
+          }
+        }
+      } catch (_) {}
     })
 
-    socket.on('message-update', (data: { chatId: string; message: MessageWithSender; action: 'edit' | 'delete' }) => {
+    socket.on('message-update', async (data: { chatId: string; message: MessageWithSender; action: 'edit' | 'delete' }) => {
       if (data.action === 'delete') {
         removeMessage(data.chatId, data.message.id)
       } else {
+        // Decrypt edited content before displaying — server relays the
+        // encrypted blob as-is, so we must decrypt here.
+        try {
+          if (data.message.content) {
+            const { decryptMessageForChat } = await import('@/lib/e2ee')
+            const store = useChatStore.getState()
+            const chat = store.chats.find((c) => c.id === data.chatId)
+            const chatType = chat?.type || store.activeChat?.type || 'direct'
+            data.message.content = await decryptMessageForChat(
+              data.message.content,
+              data.chatId,
+              chatType
+            )
+          }
+        } catch {
+          // keep ciphertext on decryption failure
+        }
         updateMessage(data.chatId, data.message)
       }
     })
@@ -213,6 +264,7 @@ export function useSocket() {
     })
 
     socket.on('chat-updated', async (data: { chat: any }) => {
+      if (!data.chat) return
       if (data.chat.chatKey) {
         try {
           const { decryptAndStoreChatKeys } = await import('@/lib/e2ee')
@@ -252,7 +304,7 @@ export function useSocket() {
       initialised.current = false
       currentRoomRef.current = null
     }
-  }, [currentUser])
+  }, [currentUser?.id])
 
   // join/leave chat room when activeChatId changes
   useEffect(() => {
@@ -265,7 +317,7 @@ export function useSocket() {
       socket.emit('join-chat', { chatId: activeChatId })
       currentRoomRef.current = activeChatId
     }
-  }, [activeChatId, currentUser])
+  }, [activeChatId, currentUser?.id])
 }
 
 // mutate reactions in store (kept simple)
@@ -273,13 +325,18 @@ function updateReactionInStore(chatId: string, messageId: string, emoji: string,
   const store = useChatStore.getState()
   const msgs = store.messages[chatId]
   if (!msgs) return
+  let reactingUser: any = null
+  for (const chat of store.chats) {
+    const member = chat.members?.find((m: any) => m.user.id === userId)
+    if (member) { reactingUser = member.user; break }
+  }
+  if (!reactingUser) reactingUser = { id: userId }
   const updated = msgs.map((m) => {
     if (m.id !== messageId) return m
     let reactions = m.reactions
     if (added) {
-      const me = store.currentUser
-      if (me && !reactions.some((r) => r.emoji === emoji && r.user.id === userId)) {
-        reactions = [...reactions, { id: 'tmp-' + Date.now(), emoji, user: me }]
+      if (!reactions.some((r) => r.emoji === emoji && r.user.id === userId)) {
+        reactions = [...reactions, { id: 'tmp-' + Date.now(), emoji, user: reactingUser }]
       }
     } else {
       reactions = reactions.filter((r) => !(r.emoji === emoji && r.user.id === userId))

@@ -8,6 +8,12 @@ const DB_VERSION = 1
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
+// In-memory cache — keys are never written to localStorage or sessionStorage.
+// IndexedDB is used for persistence across page reloads; this cache avoids
+// repeated async reads on hot paths.
+let _identityKeyCache: IdentityKeyPair | null = null
+let _groupKeyCache: Map<string, Uint8Array> = new Map()
+
 function openDB(): Promise<IDBDatabase> {
   if (typeof window === 'undefined' || typeof indexedDB === 'undefined') {
     return Promise.reject(new Error('IndexedDB is not available in this environment'))
@@ -20,6 +26,14 @@ function openDB(): Promise<IDBDatabase> {
       reject(request.error)
     }
     request.onsuccess = () => resolve(request.result)
+    request.onblocked = () => {
+      dbPromise = null
+      // Another tab holds a blocking connection — clear in-memory state
+      // and reject so callers know the DB is unavailable.
+      _identityKeyCache = null
+      _groupKeyCache.clear()
+      reject(new Error('IndexedDB open blocked — close other tabs with this app'))
+    }
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result
       if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -72,12 +86,16 @@ export async function hasIdentityKey(): Promise<boolean> {
 }
 
 export async function saveIdentityKey(keyPair: IdentityKeyPair): Promise<void> {
+  _identityKeyCache = keyPair
   await put(IDENTITY_KEY, keyPair)
 }
 
 export async function loadIdentityKey(): Promise<IdentityKeyPair | null> {
+  if (_identityKeyCache) return _identityKeyCache
   try {
-    return await get<IdentityKeyPair>(IDENTITY_KEY)
+    const key = await get<IdentityKeyPair>(IDENTITY_KEY)
+    if (key) _identityKeyCache = key
+    return key
   } catch {
     return null
   }
@@ -85,6 +103,8 @@ export async function loadIdentityKey(): Promise<IdentityKeyPair | null> {
 
 // wipes all keys — past messages become permanently undecryptable
 export async function clearAllKeys(): Promise<void> {
+  _identityKeyCache = null
+  _groupKeyCache.clear()
   try {
     await del(IDENTITY_KEY)
     const db = await openDB()
@@ -100,20 +120,26 @@ export async function clearAllKeys(): Promise<void> {
 }
 
 export async function saveGroupKey(chatId: string, key: Uint8Array): Promise<void> {
+  _groupKeyCache.set(chatId, key)
   await put(`${GROUP_KEYS_PREFIX}${chatId}`, Array.from(key))
 }
 
 export async function loadGroupKey(chatId: string): Promise<Uint8Array | null> {
+  const cached = _groupKeyCache.get(chatId)
+  if (cached) return cached
   try {
     const arr = await get<number[]>(`${GROUP_KEYS_PREFIX}${chatId}`)
     if (!arr) return null
-    return new Uint8Array(arr)
+    const key = new Uint8Array(arr)
+    _groupKeyCache.set(chatId, key)
+    return key
   } catch {
     return null
   }
 }
 
 export async function hasGroupKey(chatId: string): Promise<boolean> {
+  if (_groupKeyCache.has(chatId)) return true
   try {
     const arr = await get<number[]>(`${GROUP_KEYS_PREFIX}${chatId}`)
     return arr !== null

@@ -238,6 +238,8 @@ class Message {
   final bool starred;
   final AppUser sender;
   final List<Reaction> reactions;
+  final String? forwardedFrom;
+  final bool pinned;
   // supabase storage path from /api/uploads (null on dev fallback or after
   // server wipes the attachment on delivery)
   final String? attachmentPath;
@@ -259,6 +261,8 @@ class Message {
     this.starred = false,
     required this.sender,
     this.reactions = const [],
+    this.forwardedFrom,
+    this.pinned = false,
     this.attachmentPath,
   });
 
@@ -281,6 +285,8 @@ class Message {
       starred: json['starred'] ?? false,
       sender: AppUser.fromJson(json['sender'] ?? {}),
       reactions: (json['reactions'] as List?)?.map((r) => Reaction.fromJson(r)).toList() ?? [],
+      forwardedFrom: json['forwardedFrom'] ?? json['forwarded_from'],
+      pinned: json['pinned'] ?? false,
       attachmentPath: json['attachmentPath'] ?? json['attachment_path'],
     );
   }
@@ -303,6 +309,8 @@ class Message {
       'starred': starred,
       'sender': sender.toJson(),
       'reactions': reactions.map((r) => r.toJson()).toList(),
+      if (forwardedFrom != null) 'forwardedFrom': forwardedFrom,
+      'pinned': pinned,
       if (attachmentPath != null) 'attachmentPath': attachmentPath,
     };
   }
@@ -324,6 +332,8 @@ class Message {
     bool? starred,
     AppUser? sender,
     List<Reaction>? reactions,
+    String? forwardedFrom,
+    bool? pinned,
     String? attachmentPath,
   }) {
     return Message(
@@ -343,6 +353,8 @@ class Message {
       starred: starred ?? this.starred,
       sender: sender ?? this.sender,
       reactions: reactions ?? this.reactions,
+      forwardedFrom: forwardedFrom ?? this.forwardedFrom,
+      pinned: pinned ?? this.pinned,
       attachmentPath: attachmentPath ?? this.attachmentPath,
     );
   }

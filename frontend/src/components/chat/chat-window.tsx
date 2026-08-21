@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Phone,
   Video,
@@ -56,23 +56,6 @@ export function ChatWindow() {
   const [incomingCallOffer, setIncomingCallOffer] = useState<any>(null)
   const [isVideoCall, setIsVideoCall] = useState(false)
 
-  useEffect(() => {
-    const socket = getSocket()
-    if (!socket) return
-
-    const handleCallOffer = (data: any) => {
-      setIncomingCallOffer(data)
-      setIsIncomingCall(true)
-      setIsVideoCall(!!data.isVideoCall)
-      setCallModalOpen(true)
-    }
-
-    socket.on('call-offer', handleCallOffer)
-    return () => {
-      socket.off('call-offer', handleCallOffer)
-    }
-  }, [])
-
   function handleStartVoiceCall() {
     if (!activeChat || activeChat.type !== 'direct') {
       toast.info('Voice calls supported in direct chats')
@@ -118,14 +101,48 @@ export function ChatWindow() {
       : `${typingUsers.length} people typing…`
 
   // Send mark-read notification when opening or viewing the chat window
+  // Debounced: fires once on chat open, then at most every 5 seconds
+  const markReadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastMarkReadRef = useRef<string | null>(null)
+
   useEffect(() => {
     if (!activeChatId || !currentUser) return
-    import('@/lib/api').then(({ apiPost }) => {
-      apiPost(`/api/chats/${activeChatId}/mark-read`).catch(() => {})
-    })
-    import('@/hooks/use-socket').then(({ getSocket }) => {
-      getSocket()?.emit('message-status', { chatId: activeChatId, status: 'read' })
-    })
+    let cancelled = false
+
+    // Reset tracking when switching chats
+    if (lastMarkReadRef.current !== activeChatId) {
+      lastMarkReadRef.current = activeChatId
+      // Fire immediately on chat open
+      import('@/lib/api').then(({ apiPost }) => {
+        if (!cancelled) apiPost(`/api/chats/${activeChatId}/mark-read`).catch(() => {})
+      })
+      import('@/hooks/use-socket').then(({ getSocket }) => {
+        if (!cancelled) getSocket()?.emit('message-status', { chatId: activeChatId, status: 'read' })
+      })
+      return () => { cancelled = true }
+    }
+
+    // For subsequent messages in same chat, debounce to at most every 5s
+    if (markReadTimerRef.current) return () => { cancelled = true }
+    markReadTimerRef.current = setTimeout(() => {
+      markReadTimerRef.current = null
+      if (!cancelled) {
+        import('@/lib/api').then(({ apiPost }) => {
+          if (!cancelled) apiPost(`/api/chats/${activeChatId}/mark-read`).catch(() => {})
+        })
+        import('@/hooks/use-socket').then(({ getSocket }) => {
+          if (!cancelled) getSocket()?.emit('message-status', { chatId: activeChatId, status: 'read' })
+        })
+      }
+    }, 5000)
+
+    return () => {
+      cancelled = true
+      if (markReadTimerRef.current) {
+        clearTimeout(markReadTimerRef.current)
+        markReadTimerRef.current = null
+      }
+    }
   }, [activeChatId, currentUser, messages.length])
 
   async function handleLeaveChat() {

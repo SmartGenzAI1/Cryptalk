@@ -141,6 +141,16 @@ class StorageService:
         return False
 
     @classmethod
+    async def delete_files(cls, paths: list) -> bool:
+        """Batch delete multiple files concurrently."""
+        if not paths or not settings.has_supabase:
+            return False
+        import asyncio
+        results = await asyncio.gather(*(cls.delete_file(p) for p in paths), return_exceptions=True)
+        success_count = sum(1 for r in results if r is True)
+        return success_count == len(paths)
+
+    @classmethod
     async def delete_file_by_url(cls, url: str) -> bool:
         path = cls.path_from_url(url)
         if not path:

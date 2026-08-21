@@ -1,22 +1,83 @@
 services:
+  # ── Backend API ──
   - type: web
-    name: cryptalk-backend
+    name: cryptalk-api
     runtime: docker
-    rootDir: backend
     plan: free
     region: oregon
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
     healthCheckPath: /health
     autoDeployTrigger: commit
     envVars:
+      # === REQUIRED ===
       - key: SESSION_SECRET
         sync: false
+      - key: CORS_ORIGINS
+        value: "https://cryptalk.vercel.app,http://localhost:3000"
+
+      # === DATABASE (choose ONE) ===
+      - key: NEON_DATABASE_URL
+        sync: false
+        description: "Neon DB connection string"
+      # OR
       - key: DATABASE_URL
         sync: false
-      - key: CORS_ORIGINS
-        sync: false
-      - key: REDIS_URL
-        sync: false
+        description: "Supabase/PostgreSQL connection string"
+
+      # === SUPABASE ===
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_KEY
         sync: false
+
+      # === REDIS (optional) ===
+      - key: REDIS_URL
+        sync: false
+        description: "Upstash Redis URL"
+
+      # === SENTRY (optional) ===
+      - key: SENTRY_DSN
+        sync: false
+
+      # === EMAIL (optional) ===
+      - key: SMTP_HOST
+        value: "smtp.gmail.com"
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USE_TLS
+        value: "true"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_EMAIL
+        sync: false
+      - key: EMAIL_VERIFICATION_ENABLED
+        value: "false"
+
+      # === SETTINGS ===
+      - key: DEBUG
+        value: "false"
+      - key: PORT
+        value: "10000"
+
+  # ── Frontend ──
+  - type: web
+    name: cryptalk-frontend
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    healthCheckPath: /
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: "production"
+      - key: PORT
+        value: "3000"
+      - key: BACKEND_URL
+        fromService:
+          name: cryptalk-api
+          property: host

@@ -185,12 +185,13 @@ class CryptoService {
   // plaintext unchanged so the message at least sends.
   Future<String> encrypt(String plaintext, String recipientPublicKeyB64) async {
     if (_identityKeyPair == null || recipientPublicKeyB64.isEmpty) {
-      debugPrint('CryptoService.encrypt: not initialized or empty recipient key — sending plaintext');
+      debugPrint('CryptoService.encrypt: WARNING — falling back to plaintext (identityKeyPair=${_identityKeyPair != null}, recipientKey=${recipientPublicKeyB64.isNotEmpty})');
       return plaintext;
     }
 
     final x25519 = X25519();
     final chacha = Chacha20.poly1305Aead();
+    // Fixed zero salt — must match the web frontend's HKDF derivation exactly.
     final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
 
     // 1. per-message ephemeral x25519 keypair
@@ -204,15 +205,15 @@ class CryptoService {
     );
     final sharedBytes = await sharedSecret.extractBytes();
 
-    // 3. hkdf-sha256 → 32-byte symmetric key
+    // 3. hkdf-sha256 → 32-byte symmetric key (fixed zero salt, matches web)
     final derivedKey = await hkdf.deriveKey(
       secretKey: SecretKey(sharedBytes),
-      nonce: [],
+      nonce: Uint8List(32), // fixed zero salt — deterministic across encrypt/decrypt
       info: utf8.encode('cryptalk-message'),
     );
     final derivedBytes = await derivedKey.extractBytes();
 
-    // 4. seal with chacha20-poly1305 (aead). package generates the nonce.
+    // 4. seal with chacha20-poly1305 (aead) — IETF variant, 12-byte nonce
     final secretBox = await chacha.encrypt(
       utf8.encode(plaintext),
       secretKey: SecretKey(derivedBytes),
@@ -239,14 +240,16 @@ class CryptoService {
     try {
       final payload = jsonDecode(encryptedJson);
       if (payload['ciphertext'] == null ||
-          payload['ephemeralPublicKey'] == null) {
-        // not an encrypted payload — return as-is (legacy plaintext, sticker
+          payload['ephemeralPublicKey'] == null ||
+          payload['mac'] == null) {
+        // not a complete encrypted payload — return as-is (legacy plaintext, sticker
         // name, or saved-messages body that was never encrypted)
         return encryptedJson;
       }
 
       final x25519 = X25519();
       final chacha = Chacha20.poly1305Aead();
+      // Fixed zero salt — must match encrypt() and the web frontend.
       final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
 
       final ephemeralPub = SimplePublicKey(base64Decode(payload['ephemeralPublicKey']), type: KeyPairType.x25519);
@@ -260,15 +263,16 @@ class CryptoService {
 
       final derivedKey = await hkdf.deriveKey(
         secretKey: SecretKey(sharedBytes),
-        nonce: [],
+        nonce: Uint8List(32), // fixed zero salt — matches encrypt() and web
         info: utf8.encode('cryptalk-message'),
       );
       final derivedBytes = await derivedKey.extractBytes();
 
-      // some legacy payloads may not have a mac — be defensive
-      final macBytes = payload['mac'] != null
-          ? base64Decode(payload['mac'])
-          : List<int>.filled(16, 0);
+      // MAC is required for integrity — reject if missing
+      final macBytes = base64Decode(payload['mac']);
+      if (macBytes.isEmpty) {
+        throw FormatException('Empty MAC — message integrity cannot be verified');
+      }
       final secretBox = SecretBox(
         base64Decode(payload['ciphertext']),
         nonce: base64Decode(payload['nonce']),
@@ -309,7 +313,7 @@ class CryptoService {
     try {
       final keyB64 = await _storage.read(key: 'group_key_$chatId');
       if (keyB64 == null) {
-        debugPrint('No group key found for chat $chatId — sending plaintext');
+        debugPrint('CryptoService.encryptGroup: WARNING — no group key found for chat $chatId, falling back to plaintext');
         return plaintext;
       }
       
@@ -343,13 +347,21 @@ class CryptoService {
       if (payload['ciphertext'] == null) {
         return encryptedJson;
       }
+
+      // MAC is required — reject if missing or empty
+      if (payload['mac'] == null) {
+        debugPrint('CryptoService.decryptGroup: missing MAC — message integrity cannot be verified');
+        return encryptedJson;
+      }
       
       final keyBytes = base64Decode(keyB64);
       final chacha = Chacha20.poly1305Aead();
       
-      final macBytes = payload['mac'] != null
-          ? base64Decode(payload['mac'])
-          : List<int>.filled(16, 0);
+      final macBytes = base64Decode(payload['mac']);
+      if (macBytes.isEmpty) {
+        debugPrint('CryptoService.decryptGroup: empty MAC — message integrity cannot be verified');
+        return encryptedJson;
+      }
       final secretBox = SecretBox(
         base64Decode(payload['ciphertext']),
         nonce: base64Decode(payload['nonce']),
@@ -387,5 +399,61 @@ class CryptoService {
   // Saves a symmetric group key to local secure storage
   Future<void> saveGroupKey(String chatId, String keyB64) async {
     await _storage.write(key: 'group_key_$chatId', value: keyB64);
+  }
+
+  // Encrypts file bytes for upload — returns ciphertext JSON as UTF-8 bytes.
+  // Server stores these bytes verbatim and cannot read plaintext.
+  Future<List<int>> encryptFileForUpload(
+    String dataUrl,
+    String chatId,
+    String chatType, {
+    String? recipientUserId,
+  }) async {
+    if (chatType == 'saved') {
+      return utf8.encode(dataUrl);
+    }
+
+    String ciphertextJson;
+    if (chatType == 'direct' && recipientUserId != null) {
+      final recipientPub = await getRecipientPublicKey(recipientUserId);
+      if (recipientPub == null) throw Exception('Recipient has no E2EE keys');
+      ciphertextJson = await encrypt(dataUrl, recipientPub);
+    } else {
+      ciphertextJson = await encryptGroup(dataUrl, chatId);
+    }
+    return utf8.encode(ciphertextJson);
+  }
+
+  // Generates a random 12-byte nonce for IETF ChaCha20-Poly1305.
+  // The cryptography package auto-generates nonces, but this helper is
+  // available for callers that need explicit nonce generation.
+  List<int> generateNonce12() {
+    final rng = _SecureRng();
+    return rng.nextBytes(12);
+  }
+
+  // Wipes all in-memory key material — call on logout.
+  void clearInMemoryKeys() {
+    _identityKeyPair = null;
+    _identityPublicKeyBase64 = null;
+    _signingKeyPair = null;
+    _signingPublicKeyBase64 = null;
+    _signedPreKeyPair = null;
+    _signedPreKeyPublicBase64 = null;
+    _signedPreKeySignature = null;
+    _recipientKeyCache.clear();
+    _initialized = false;
+  }
+
+  // Deletes all persisted keys from secure storage — call on explicit reset.
+  Future<void> deleteAllPersistedKeys() async {
+    clearInMemoryKeys();
+    await _storage.delete(key: 'x25519_identity_priv');
+    await _storage.delete(key: 'x25519_identity_pub');
+    await _storage.delete(key: 'ed25519_signing_priv');
+    await _storage.delete(key: 'ed25519_signing_pub');
+    await _storage.delete(key: 'x25519_signed_prekey_priv');
+    await _storage.delete(key: 'x25519_signed_prekey_pub');
+    await _storage.delete(key: 'signed_prekey_signature');
   }
 }

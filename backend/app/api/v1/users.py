@@ -31,7 +31,7 @@ async def update_me(
 
 @router.get("/search")
 async def search_users(
-    q: str = Query("", min_length=0),
+    q: str = Query("", min_length=0, max_length=100),
     user_id: str = Depends(get_current_user_id),
     service: UserService = Depends(get_user_service),
 ):

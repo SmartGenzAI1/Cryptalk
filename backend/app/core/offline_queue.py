@@ -19,7 +19,7 @@ _redis = None
 _redis_ready = False
 
 
-def _get_redis():
+async def _get_redis():
     global _redis, _redis_ready
     if _redis_ready:
         return _redis
@@ -27,24 +27,24 @@ def _get_redis():
     if not settings.has_redis:
         return None
     try:
-        import redis as _redis_lib
-        _redis = _redis_lib.Redis.from_url(settings.REDIS_URL, decode_responses=True)
-        _redis.ping()
+        import redis.asyncio as _redis_lib
+        _redis = _redis_lib.from_url(settings.REDIS_URL, decode_responses=True)
+        await _redis.ping()
         logger.info("Offline queue using Redis")
     except Exception:
         _redis = None
     return _redis
 
 
-def enqueue(user_id: str, message: dict) -> None:
+async def enqueue(user_id: str, message: dict) -> None:
     message["_queued_at"] = time.time()
-    rc = _get_redis()
+    rc = await _get_redis()
     if rc:
         try:
             key = f"oq:{user_id}"
-            rc.rpush(key, json.dumps(message, default=str))
-            rc.ltrim(key, -500, -1)
-            rc.expire(key, settings.OFFLINE_QUEUE_TTL)
+            await rc.rpush(key, json.dumps(message, default=str))
+            await rc.ltrim(key, -500, -1)
+            await rc.expire(key, settings.OFFLINE_QUEUE_TTL)
             return
         except Exception as e:
             logger.warning("Redis enqueue failed, using local: %s", e)
@@ -55,15 +55,15 @@ def enqueue(user_id: str, message: dict) -> None:
         _local_queue[user_id] = _local_queue[user_id][-500:]
 
 
-def drain(user_id: str) -> List[dict]:
-    rc = _get_redis()
+async def drain(user_id: str) -> List[dict]:
+    rc = await _get_redis()
     if rc:
         try:
             key = f"oq:{user_id}"
             pipe = rc.pipeline()
             pipe.lrange(key, 0, -1)
             pipe.delete(key)
-            results = pipe.execute()
+            results = await pipe.execute()
             raw_messages = results[0] or []
             now = time.time()
             messages = []
@@ -88,11 +88,11 @@ def drain(user_id: str) -> List[dict]:
     ]
 
 
-def queue_size(user_id: str) -> int:
-    rc = _get_redis()
+async def queue_size(user_id: str) -> int:
+    rc = await _get_redis()
     if rc:
         try:
-            return rc.llen(f"oq:{user_id}")
+            return await rc.llen(f"oq:{user_id}")
         except Exception:
             pass
     return len(_local_queue.get(user_id, []))

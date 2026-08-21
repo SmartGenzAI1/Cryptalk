@@ -33,23 +33,36 @@ export function MessageList() {
   const removeMessage = useChatStore((s) => s.removeMessage)
   const lastReadAt = chatListItem?.lastReadAt ? new Date(chatListItem.lastReadAt).getTime() : 0
 
-  // remove expired messages every second
+  // remove expired messages every second (only when there are expiring messages)
+  const expiringRef = useRef(false)
   const hasExpiring = messages.some(m => m.expiresIn)
+  if (hasExpiring !== expiringRef.current) expiringRef.current = hasExpiring
+
   useEffect(() => {
-    if (!hasExpiring) return
+    if (!expiringRef.current) return
     const interval = setInterval(() => {
       const now = Date.now()
-      for (const msg of messages) {
+      const store = useChatStore.getState()
+      const msgs = activeChatId ? (store.messages[activeChatId] || []) : []
+      for (const msg of msgs) {
         if (msg.expiresIn && msg.createdAt) {
           const expiresAt = new Date(msg.createdAt).getTime() + msg.expiresIn * 1000
           if (now >= expiresAt && !msg.deletedAt) {
-            if (activeChatId) removeMessage(activeChatId, msg.id)
+            if (activeChatId) store.removeMessage(activeChatId, msg.id)
           }
         }
       }
     }, 1000)
     return () => clearInterval(interval)
-  }, [messages, activeChatId, removeMessage, hasExpiring])
+  }, [activeChatId, hasExpiring])
+
+  // scroll to bottom when switching chats
+  useEffect(() => {
+    lastCountRef.current = 0
+    requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'instant' })
+    })
+  }, [activeChatId])
 
   // auto-scroll on new message (only if near bottom)
   useEffect(() => {
@@ -62,7 +75,7 @@ export function MessageList() {
       })
     }
     lastCountRef.current = messages.length
-  }, [messages.length])
+  }, [messages.length, activeChatId])
 
   // scroll position for the scroll-to-bottom FAB
   const handleScroll = useCallback(() => {
@@ -159,7 +172,7 @@ export function MessageList() {
                           isOwn={m.senderId === currentUser?.id}
                           isFirstInGroup={isFirstInGroup}
                           isLastInGroup={isLastInGroup}
-                          showAvatar={activeChatId !== undefined}
+                          showAvatar={isFirstInGroup}
                         />
                       </ErrorBoundary>
                       </div>
@@ -171,19 +184,27 @@ export function MessageList() {
           )}
 
           {/* Typing indicator */}
-          {typingUsers.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-2 px-2 py-2"
-            >
-              <div className="bg-background border rounded-2xl rounded-bl-md px-4 py-3 shadow-sm flex items-center gap-1">
-                <span className="zc-typing-dot h-2 w-2 rounded-full bg-muted-foreground/60" />
-                <span className="zc-typing-dot h-2 w-2 rounded-full bg-muted-foreground/60" />
-                <span className="zc-typing-dot h-2 w-2 rounded-full bg-muted-foreground/60" />
-              </div>
-            </motion.div>
-          )}
+          <AnimatePresence>
+            {typingUsers.length > 0 && (
+              <motion.div
+                key="typing-indicator"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+                aria-live="polite"
+              >
+                <div className="flex items-center gap-2 px-2 py-2">
+                  <div className="bg-background border rounded-2xl rounded-bl-md px-4 py-3 shadow-sm flex items-center gap-1">
+                    <span className="zc-typing-dot h-2 w-2 rounded-full bg-muted-foreground/60" />
+                    <span className="zc-typing-dot h-2 w-2 rounded-full bg-muted-foreground/60" />
+                    <span className="zc-typing-dot h-2 w-2 rounded-full bg-muted-foreground/60" />
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div ref={bottomRef} className="h-1" />
         </div>
@@ -198,6 +219,7 @@ export function MessageList() {
             exit={{ opacity: 0, scale: 0.6, y: 10 }}
             transition={{ type: 'spring', stiffness: 400, damping: 25 }}
             onClick={scrollToBottom}
+            aria-label="Scroll to latest messages"
             className="absolute bottom-4 right-4 h-11 w-11 rounded-full bg-background shadow-lg border flex items-center justify-center hover:bg-accent zc-tap"
             title="Scroll to latest"
           >

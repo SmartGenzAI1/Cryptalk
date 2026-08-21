@@ -301,11 +301,11 @@ function NewChatForm({ onDone }: { onDone: () => void }) {
 
             <div className="space-y-1">
               <Label htmlFor="gn">{isChannel ? 'Channel' : 'Group'} name</Label>
-              <Input id="gn" value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder={isChannel ? 'My Channel' : 'My Group'} />
+              <Input id="gn" value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder={isChannel ? 'My Channel' : 'My Group'} maxLength={100} />
             </div>
             <div className="space-y-1">
               <Label htmlFor="gd">Description (optional)</Label>
-              <Textarea id="gd" value={groupDesc} onChange={(e) => setGroupDesc(e.target.value)} rows={2} placeholder="What's this about?" />
+              <Textarea id="gd" value={groupDesc} onChange={(e) => setGroupDesc(e.target.value)} rows={2} placeholder="What's this about?" maxLength={300} />
             </div>
 
             <div className="relative">

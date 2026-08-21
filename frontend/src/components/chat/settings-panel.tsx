@@ -141,6 +141,28 @@ export function SettingsPanel() {
     }
   }
 
+  async function handleImmediateDelete() {
+    if (!currentUser) return
+    if (!confirm('Are you absolutely sure? This will immediately and permanently delete ALL your data including messages, files, keys, and profile. This action cannot be undone.')) {
+      return
+    }
+    setSaving(true)
+    try {
+      await deleteAccount()
+      await apiPost('/api/auth/logout')
+      await clearAllKeys()
+      await clearChatCache()
+      clearAttachmentCache()
+      setCurrentUser(null)
+      toast.success('Account immediately deleted. All data has been destroyed.')
+      window.location.reload()
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to delete account')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleLogoutConfirm() {
     if (confirm('Are you sure you want to sign out? Your active session will be closed.')) {
       await handleLogout()
@@ -307,10 +329,46 @@ export function SettingsPanel() {
               <Section icon={<Bell className="h-4 w-4" />} title="Preferences">
                 <div className="space-y-3">
                   <Row label="Notifications" desc="Get notified of new messages">
-                    <Switch defaultChecked />
+                    <Switch
+                      checked={
+                        typeof window !== 'undefined'
+                          ? localStorage.getItem('zc-notifications') !== 'false'
+                          : true
+                      }
+                      onCheckedChange={(checked) => {
+                        if (typeof window !== 'undefined') {
+                          localStorage.setItem('zc-notifications', String(checked))
+                        }
+                      }}
+                    />
+                  </Row>
+                  <Row label="Notification sounds" desc="Play sounds for new messages">
+                    <Switch
+                      checked={
+                        typeof window !== 'undefined'
+                          ? localStorage.getItem('zc-notificationSounds') !== 'false'
+                          : true
+                      }
+                      onCheckedChange={(checked) => {
+                        if (typeof window !== 'undefined') {
+                          localStorage.setItem('zc-notificationSounds', String(checked))
+                        }
+                      }}
+                    />
                   </Row>
                   <Row label="Read receipts" desc="Show others you read their messages">
-                    <Switch defaultChecked />
+                    <Switch
+                      checked={
+                        typeof window !== 'undefined'
+                          ? localStorage.getItem('zc-readReceipts') !== 'false'
+                          : true
+                      }
+                      onCheckedChange={(checked) => {
+                        if (typeof window !== 'undefined') {
+                          localStorage.setItem('zc-readReceipts', String(checked))
+                        }
+                      }}
+                    />
                   </Row>
                 </div>
               </Section>
@@ -384,6 +442,67 @@ export function SettingsPanel() {
                 </p>
               </div>
 
+              <Section icon={<Shield className="h-4 w-4" />} title="Privacy Preferences">
+                <div className="space-y-3">
+                  <Row label="Read receipts" desc="Show others you read their messages">
+                    <Switch
+                      checked={
+                        typeof window !== 'undefined'
+                          ? localStorage.getItem('zc-readReceipts') !== 'false'
+                          : true
+                      }
+                      onCheckedChange={(checked) => {
+                        if (typeof window !== 'undefined') {
+                          localStorage.setItem('zc-readReceipts', String(checked))
+                        }
+                      }}
+                    />
+                  </Row>
+                  <Row label="Typing indicators" desc="Show when you are typing a message">
+                    <Switch
+                      checked={
+                        typeof window !== 'undefined'
+                          ? localStorage.getItem('zc-typingIndicators') !== 'false'
+                          : true
+                      }
+                      onCheckedChange={(checked) => {
+                        if (typeof window !== 'undefined') {
+                          localStorage.setItem('zc-typingIndicators', String(checked))
+                        }
+                      }}
+                    />
+                  </Row>
+                  <Row label="Online status" desc="Show when you are online">
+                    <Switch
+                      checked={
+                        typeof window !== 'undefined'
+                          ? localStorage.getItem('zc-onlineStatus') !== 'false'
+                          : true
+                      }
+                      onCheckedChange={(checked) => {
+                        if (typeof window !== 'undefined') {
+                          localStorage.setItem('zc-onlineStatus', String(checked))
+                        }
+                      }}
+                    />
+                  </Row>
+                  <Row label="Last seen" desc="Show when you were last active">
+                    <Switch
+                      checked={
+                        typeof window !== 'undefined'
+                          ? localStorage.getItem('zc-lastSeen') !== 'false'
+                          : true
+                      }
+                      onCheckedChange={(checked) => {
+                        if (typeof window !== 'undefined') {
+                          localStorage.setItem('zc-lastSeen', String(checked))
+                        }
+                      }}
+                    />
+                  </Row>
+                </div>
+              </Section>
+
               <Section icon={<Shield className="h-4 w-4" />} title="Privacy Policy">
                 <div className="space-y-4 px-1 text-sm leading-relaxed text-muted-foreground">
                   <div>
@@ -426,6 +545,20 @@ export function SettingsPanel() {
                     <div className="flex-1">
                       <div className="text-sm font-medium">Delete account</div>
                       <div className="text-xs text-muted-foreground">Permanently delete server data</div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={handleImmediateDelete}
+                    disabled={saving}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-600/15 text-red-600 dark:text-red-400 border-2 border-red-500/40 transition-colors text-left zc-tap"
+                  >
+                    <div className="h-9 w-9 rounded-lg bg-red-600/20 flex items-center justify-center text-red-600 dark:text-red-400">
+                      <AlertTriangle className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-bold">Delete My Account Immediately</div>
+                      <div className="text-xs text-muted-foreground">Instant full data destruction — no recovery</div>
                     </div>
                   </button>
                 </div>

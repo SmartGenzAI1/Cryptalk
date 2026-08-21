@@ -1,17 +1,31 @@
 FROM node:20-alpine AS base
 
+FROM base AS deps
+WORKDIR /app
+COPY package.json bun.lock* ./
+RUN bun install --frozen-lockfile
+
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine AS runner
 WORKDIR /app
 
-# Install dependencies
-COPY package.json bun.lock* ./
-RUN npm install --legacy-peer-deps
+ENV NODE_ENV=production \
+    PORT=3000
 
-# Copy source
-COPY . .
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
 
-# Build (optional for dev)
-# RUN npm run build
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
 
 EXPOSE 3000
 
-CMD ["npm", "run", "dev", "--", "-H", "0.0.0.0"]
+CMD ["node", "server.js"]

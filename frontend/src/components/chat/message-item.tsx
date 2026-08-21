@@ -49,7 +49,7 @@ import { getSocket } from '@/hooks/use-socket'
 import { toggleReaction, toggleStar } from '@/lib/actions'
 import { motion, AnimatePresence } from 'framer-motion'
 import { lazy, Suspense } from 'react'
-import { apiGet, apiPatch, apiDelete } from '@/lib/api'
+import { apiPatch, apiDelete } from '@/lib/api'
 import { isAnimatedSticker, getAnimatedEmojiCodepoint, getAnimatedEmojisForText } from '@/lib/animated-stickers'
 
 const ForwardDialog = lazy(() => import('./forward-dialog').then(m => ({ default: m.ForwardDialog })))
@@ -188,11 +188,21 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
         userId: currentUser?.id,
         added: data.added,
       })
-      // locally refresh this message's reactions
-      const refreshed = await apiGet<{ messages: any[] }>(`/api/${message.chatId}/messages?limit=200`)
-      if (refreshed.messages) {
-        const m = refreshed.messages.find((x: any) => x.id === message.id)
-        if (m) updateMessage(message.chatId, m)
+      // optimistic local update instead of fetching 200 messages
+      const store = useChatStore.getState()
+      const msgs = store.messages[message.chatId] || []
+      const msgIdx = msgs.findIndex((m) => m.id === message.id)
+      if (msgIdx >= 0) {
+        const msg = msgs[msgIdx]
+        let reactions = [...msg.reactions]
+        if (data.added) {
+          if (currentUser && !reactions.some((r) => r.emoji === emoji && r.user.id === currentUser.id)) {
+            reactions = [...reactions, { id: 'tmp-' + Date.now(), emoji, user: currentUser }]
+          }
+        } else {
+          reactions = reactions.filter((r) => !(r.emoji === emoji && r.user.id === currentUser?.id))
+        }
+        updateMessage(message.chatId, { ...msg, reactions })
       }
       setShowQuickReact(false)
     } catch (e) {
@@ -576,6 +586,17 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
                         alt="shared image"
                         loading="lazy"
                         className="rounded-xl max-w-[280px] max-h-[280px] object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement
+                          target.style.display = 'none'
+                          const parent = target.parentElement
+                          if (parent && !parent.querySelector('.img-error-placeholder')) {
+                            const div = document.createElement('div')
+                            div.className = 'img-error-placeholder flex items-center gap-2 py-4 px-3 min-w-[180px]'
+                            div.innerHTML = '<span class="text-xs text-muted-foreground">Failed to load image</span>'
+                            parent.appendChild(div)
+                          }
+                        }}
                         onClick={() => setPreviewModal({ url: attachment.dataUrl!, name: 'Image', type: 'image' })}
                       />
                       <button
@@ -936,10 +957,6 @@ function MessageItemImpl({ message, isOwn, isFirstInGroup, isLastInGroup }: Mess
 }
 
 export const MessageItem = memo(MessageItemImpl, (prev, next) => {
-  // skip re-render when nothing visual changed.
-  // collections compared by reference — zustand always allocs new on update,
-  // so a ref change reliably signals a real content change (avoids the
-  // length-only pitfall where e.g. swap 👍 for ❤️ keeps length identical).
   const pm = prev.message
   const nm = next.message
   return (
@@ -956,6 +973,7 @@ export const MessageItem = memo(MessageItemImpl, (prev, next) => {
       pm.sender === nm.sender &&
       pm.reactions === nm.reactions &&
       pm.replyTo === nm.replyTo &&
+      pm.starred === nm.starred &&
       prev.isOwn === next.isOwn &&
       prev.isFirstInGroup === next.isFirstInGroup &&
       prev.isLastInGroup === next.isLastInGroup &&

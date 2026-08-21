@@ -10,10 +10,18 @@ env/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+.coverage
+htmlcov/
+coverage/
+
+# Build / dist
+/dist/
+/build/
 
 # Environment
 .env
-.env.local
+.env.*
+!.env.example
 
 # Database
 *.db
@@ -23,8 +31,16 @@ env/
 
 # Logs
 *.log
+*.log.*
 logs/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

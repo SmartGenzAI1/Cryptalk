@@ -37,7 +37,7 @@ export function ProfileDialog({ open, onOpenChange }: { open: boolean; onOpenCha
 function ProfileForm({ user, onSaved }: { user: SafeUser; onSaved: () => void }) {
   const setCurrentUser = useChatStore((s) => s.setCurrentUser)
   const [name, setName] = useState(user.name)
-  const [bio, setBio] = useState(user.bio)
+  const [bio, setBio] = useState(user.bio || '')
   const [icon, setIcon] = useState(user.avatarEmoji)
   const [color, setColor] = useState(user.avatarColor)
   const [saving, setSaving] = useState(false)

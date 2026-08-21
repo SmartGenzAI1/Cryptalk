@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -45,7 +46,8 @@ class ChatViewScreen extends StatefulWidget {
   State<ChatViewScreen> createState() => _ChatViewScreenState();
 }
 
-class _ChatViewScreenState extends State<ChatViewScreen> {
+class _ChatViewScreenState extends State<ChatViewScreen>
+    with WidgetsBindingObserver {
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
   final _audioPlayer = AudioPlayer();
@@ -61,10 +63,20 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   Message? _replyTo;
   int? _editingMessageIndex;
   bool _showScrollDown = false;
-  final List<String> _typingUsers = [];
+  final Map<String, String> _typingUsers = {};
   int? _selfDestructSeconds;
   bool _isPinned = false;
   bool _isMuted = false;
+  DateTime _lastTypingEmit = DateTime.fromMillisecondsSinceEpoch(0);
+
+  // In-chat search state
+  bool _searchOpen = false;
+  String _searchQuery = '';
+  List<Message> _searchResults = [];
+  int _searchIndex = 0;
+  Timer? _searchDebounce;
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
 
   // socket sub ids — cancelled in dispose so we only remove this screen's
   // listeners
@@ -102,6 +114,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _isPinned = widget.chat.pinnedAt != null;
     _isMuted = widget.chat.muted;
     _loadDraft();
@@ -109,6 +122,14 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     _joinChat();
     _setupSocketListeners();
     _scrollController.addListener(_onScroll);
+  }
+
+  // keep the newest message visible when the mobile keyboard opens
+  @override
+  void didChangeMetrics() {
+    if (mounted && MediaQuery.of(context).viewInsets.bottom > 0) {
+      _scrollToBottom();
+    }
   }
 
   void _loadDraft() {
@@ -141,6 +162,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   Future<void> _loadMessages() async {
     try {
       final chatService = context.read<ChatService>();
+      final socket = context.read<SocketService>();
       final messages = await chatService.getMessages(widget.chat.id);
       if (mounted) {
         setState(() {
@@ -150,6 +172,8 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       }
       _scrollToBottom();
       await chatService.markDelivered(widget.chat.id);
+      // Emit read status via socket so senders see read receipts
+      socket.sendMessageStatus(widget.chat.id, 'read');
     } catch (_) {
       if (mounted) {
         setState(() => _loading = false);
@@ -198,10 +222,9 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     final socket = context.read<SocketService>();
     _socketSubIds.add(socket.onMessage((data) async {
       if (data['chatId'] == widget.chat.id && data['message'] != null) {
-        // mounted check — message arriving during a navigation transition
-        // would crash on a disposed State
         if (!mounted) return;
         final msg = Message.fromJson(data['message']);
+        if (_messages.any((m) => m.id == msg.id)) return;
         msg.content = await CryptoService().decryptMessage(msg.content, widget.chat.id);
         setState(() => _messages.add(msg));
         _scrollToBottom();
@@ -210,19 +233,19 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     _socketSubIds.add(socket.onTyping((data) {
       if (data['chatId'] != widget.chat.id) return;
       if (!mounted) return;
+      final userId = data['userId']?.toString() ?? '';
+      final username = data['username'] ?? 'Someone';
+      if (userId.isEmpty) return;
       if (data['isTyping'] == true) {
-        final username = data['username'] ?? 'Someone';
         setState(() {
-          if (!_typingUsers.contains(username)) _typingUsers.add(username);
+          _typingUsers[userId] = username;
         });
-        // capture mounted in the delayed callback so setState-after-dispose
-        // can't happen if the user navigates away within the 3s window
         Future.delayed(const Duration(seconds: 3), () {
           if (!mounted) return;
-          setState(() => _typingUsers.remove(username));
+          setState(() => _typingUsers.remove(userId));
         });
       } else {
-        setState(() => _typingUsers.remove(data['username']));
+        setState(() => _typingUsers.remove(userId));
       }
     }));
     _socketSubIds.add(socket.onMessageUpdate((data) async {
@@ -322,7 +345,6 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         _replyTo = null;
         _selfDestructSeconds = null;
       });
-      socket.sendMessage(widget.chat.id, _messageToJson(msg));
       _scrollToBottom();
     } catch (e) {
       if (mounted) {
@@ -362,8 +384,83 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     FocusScope.of(context).requestFocus(FocusNode());
   }
 
+  void _toggleSearch() {
+    setState(() {
+      _searchOpen = !_searchOpen;
+      if (!_searchOpen) {
+        _searchQuery = '';
+        _searchResults = [];
+        _searchIndex = 0;
+        _searchController.clear();
+      } else {
+        _searchFocusNode.requestFocus();
+      }
+    });
+  }
+
+  void _onSearchChanged(String q) {
+    _searchQuery = q;
+    _searchDebounce?.cancel();
+    if (q.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _searchIndex = 0;
+      });
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+      _performSearch(q.trim());
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.isEmpty || !mounted) return;
+    try {
+      final chatService = context.read<ChatService>();
+      final results = await chatService.searchMessages(widget.chat.id, query);
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results;
+        _searchIndex = 0;
+      });
+      if (results.isNotEmpty) {
+        _scrollToMessage(results[0].id);
+      }
+    } catch (e) {
+      debugPrint('Search failed: $e');
+    }
+  }
+
+  void _navigateSearchResults(bool forward) {
+    if (_searchResults.isEmpty) return;
+    final next = forward
+        ? (_searchIndex + 1) % _searchResults.length
+        : (_searchIndex - 1 + _searchResults.length) % _searchResults.length;
+    setState(() => _searchIndex = next);
+    _scrollToMessage(_searchResults[next].id);
+  }
+
+  void _scrollToMessage(String messageId) {
+    final idx = _messages.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+    // Each message row is approximately 60px; scroll to approximate position
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        final targetOffset = (idx * 60.0) - 200.0;
+        _scrollController.animateTo(
+          targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
   void _onTypingChanged(String text) {
     _saveDraft(text);
+    final now = DateTime.now();
+    if (now.difference(_lastTypingEmit).inMilliseconds < 1500) return;
+    _lastTypingEmit = now;
     final auth = context.read<AuthService>();
     final socket = context.read<SocketService>();
     final user = auth.currentUser;
@@ -447,7 +544,6 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       if (mounted) {
         setState(() => _messages.add(msg));
       }
-      socket.sendMessage(widget.chat.id, _messageToJson(msg));
       _scrollToBottom();
     } on ApiException catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
@@ -479,14 +575,14 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       if (mounted) {
         setState(() => _messages.add(msg));
       }
-      socket.sendMessage(widget.chat.id, _messageToJson(msg));
       _scrollToBottom();
     } catch (e) { debugPrint('Error: $e'); }
   }
 
   Future<void> _sendReaction(String messageId, String emoji) async {
     try {
-      await context.read<ChatService>().toggleReaction(widget.chat.id, messageId, emoji);
+      final userId = context.read<AuthService>().currentUser?.id ?? '';
+      await context.read<ChatService>().toggleReaction(widget.chat.id, messageId, emoji, userId);
     } catch (e) { debugPrint('Error: $e'); }
   }
 
@@ -526,7 +622,6 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       if (mounted) {
         setState(() => _messages.add(msg));
       }
-      socket.sendMessage(widget.chat.id, _messageToJson(msg));
       _scrollToBottom();
     } on ApiException catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
@@ -573,6 +668,22 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.forward),
+              title: const Text('Forward'),
+              onTap: () {
+                Navigator.pop(context);
+                _showForwardDialog(msg);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.push_pin_outlined),
+              title: const Text('Pin'),
+              onTap: () async {
+                await context.read<ChatService>().pinMessage(msg.chatId, msg.id);
+                if (context.mounted) Navigator.pop(context);
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.star),
               title: const Text('Star'),
               onTap: () async {
@@ -616,6 +727,91 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  void _showForwardDialog(Message message) {
+    final chatService = context.read<ChatService>();
+    final auth = context.read<AuthService>();
+    List<Chat> chats = [];
+    final selectedChatIds = <String>{};
+    bool loading = true;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          if (loading) {
+            chatService.getChats().then((result) {
+              if (ctx.mounted) setSheetState(() { chats = result.where((c) => c.id != message.chatId).toList(); loading = false; });
+            });
+            return const SizedBox(height: 300, child: Center(child: CircularProgressIndicator()));
+          }
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('Forward to', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: chats.length,
+                    itemBuilder: (_, i) {
+                      final chat = chats[i];
+                      final selected = selectedChatIds.contains(chat.id);
+                      final title = chat.type == 'direct'
+                          ? (chat.members.where((m) => m.user.id != auth.currentUser?.id).firstOrNull?.user.name ?? chat.title)
+                          : (chat.type == 'saved' ? 'Saved Messages' : chat.title);
+                      return CheckboxListTile(
+                        value: selected,
+                        onChanged: (v) => setSheetState(() {
+                          if (v == true) selectedChatIds.add(chat.id); else selectedChatIds.remove(chat.id);
+                        }),
+                        title: Text(title),
+                        secondary: CircleAvatar(
+                          radius: 16,
+                          backgroundColor: Colors.teal,
+                          child: Text(title.isNotEmpty ? title[0].toUpperCase() : '?', style: const TextStyle(fontSize: 12)),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: selectedChatIds.isEmpty ? null : () async {
+                        try {
+                          await chatService.forwardMessage(message.id, selectedChatIds.toList());
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Forwarded to ${selectedChatIds.length} chat(s)')),
+                            );
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Forward failed: $e')),
+                            );
+                          }
+                        }
+                      },
+                      child: Text('Send (${selectedChatIds.length})'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -907,9 +1103,10 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
 
   String _typingLabel() {
     if (_typingUsers.isEmpty) return '';
-    if (_typingUsers.length == 1) return '${_typingUsers[0]} is typing…';
-    if (_typingUsers.length == 2) return '${_typingUsers[0]}, ${_typingUsers[1]} are typing…';
-    return '${_typingUsers.length} people are typing…';
+    final names = _typingUsers.values.toList();
+    if (names.length == 1) return '${names[0]} is typing…';
+    if (names.length == 2) return '${names[0]}, ${names[1]} are typing…';
+    return '${names.length} people are typing…';
   }
 
   Widget _buildHeaderSubtitle(BuildContext context, AppUser? me) {
@@ -1015,7 +1212,11 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _inputController.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _searchDebounce?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _typingTimer?.cancel();
@@ -1023,7 +1224,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     _audioPlayer.dispose();
     _record.dispose();
     // cancel ONLY this screen's socket subs, not every screen's
-    final socket = SocketService();
+    final socket = Provider.of<SocketService>(context, listen: false);
     for (final id in _socketSubIds) {
       socket.cancelSubscription(id);
     }
@@ -1158,6 +1359,11 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
           ),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Search in chat',
+            icon: Icon(Icons.search, color: _searchOpen ? Theme.of(context).colorScheme.primary : null),
+            onPressed: _toggleSearch,
+          ),
           PopupMenuButton<String>(
             tooltip: 'Chat options',
             icon: const Icon(Icons.more_vert),
@@ -1210,6 +1416,60 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       ),
       body: Column(
         children: [
+          if (_searchOpen)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: Row(
+                children: [
+                  const Icon(Icons.search, size: 20, color: Colors.grey),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      focusNode: _searchFocusNode,
+                      onChanged: _onSearchChanged,
+                      decoration: const InputDecoration(
+                        hintText: 'Search in this chat...',
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(vertical: 8),
+                      ),
+                      style: const TextStyle(fontSize: 14),
+                      onSubmitted: (_) => _navigateSearchResults(true),
+                    ),
+                  ),
+                  if (_searchResults.isNotEmpty)
+                    Text(
+                      '${_searchIndex + 1}/${_searchResults.length}',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  if (_searchResults.length > 1) ...[
+                    IconButton(
+                      tooltip: 'Previous result',
+                      icon: const Icon(Icons.keyboard_arrow_up, size: 20),
+                      onPressed: () => _navigateSearchResults(false),
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(),
+                    ),
+                    IconButton(
+                      tooltip: 'Next result',
+                      icon: const Icon(Icons.keyboard_arrow_down, size: 20),
+                      onPressed: () => _navigateSearchResults(true),
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                  IconButton(
+                    tooltip: 'Close search',
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: _toggleSearch,
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
+            ),
           if (_replyTo != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1428,6 +1688,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
                             },
                             minLines: 1,
                             maxLines: 5,
+                            maxLength: 10000,
                             textInputAction: TextInputAction.newline,
                             decoration: InputDecoration(
                               hintText: _editingMessageIndex != null
@@ -1530,7 +1791,8 @@ class _MessageBubble extends StatelessWidget {
               ? EdgeInsets.zero
               : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.75),
+              maxWidth: math.min(
+                  MediaQuery.of(context).size.width * 0.75, 480.0)),
           decoration: BoxDecoration(
             color: isFloating
                 ? Colors.transparent
@@ -1561,6 +1823,27 @@ class _MessageBubble extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (message.forwardedFrom != null && !isFloating)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.forward, size: 14, color: Colors.grey[500]),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Forwarded',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                          color: isOwn
+                              ? Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7)
+                              : Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               if (showSender && !isFloating)
                 Text(message.sender.name ?? 'Unknown',
                     style: TextStyle(

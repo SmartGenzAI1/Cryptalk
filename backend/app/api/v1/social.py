@@ -4,32 +4,36 @@ import secrets
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, and_, or_, delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
-from app.core.security import get_current_user_id, now_ms, sanitize_text
+from app.core.security import get_current_user_id, now_ms, sanitize_text, validate_hex_id
 from app.models import User, UserBlock, UserNickname, ConnectionRequest, Chat, ChatMember
 from app.services.serializers import serialize_user
 
 router = APIRouter(prefix="/social", tags=["social"])
 
+# TODO: All endpoints below manually call `get_current_user_id(request)` instead of
+# using FastAPI's `Depends(get_current_user_id)`. Refactor to use DI for consistency.
+
 
 # schemas
 
 class SendConnectionRequest(BaseModel):
-    to_username: str
+    to_username: str = Field(..., min_length=3, max_length=30)
 
 
 class SetNicknameRequest(BaseModel):
-    target_user_id: str
-    nickname: str
+    target_user_id: str = Field(..., min_length=24, max_length=24)
+    nickname: str = Field(..., min_length=1, max_length=50)
 
 
 class BlockRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=24, max_length=24)
 
 
 # connections
@@ -37,25 +41,20 @@ class BlockRequest(BaseModel):
 @router.get("/connections")
 async def list_connections(request: Request, db: AsyncSession = Depends(get_db)):
     uid = get_current_user_id(request)
-    sent = await db.execute(
+    # single query for both sent and received accepted connections
+    result = await db.execute(
         select(ConnectionRequest).where(
-            ConnectionRequest.from_user_id == uid,
             ConnectionRequest.status == "accepted",
-        )
-    )
-    received = await db.execute(
-        select(ConnectionRequest).where(
-            ConnectionRequest.to_user_id == uid,
-            ConnectionRequest.status == "accepted",
+            or_(
+                ConnectionRequest.from_user_id == uid,
+                ConnectionRequest.to_user_id == uid,
+            ),
         )
     )
     connected_ids = set()
-    for r in sent.scalars().all():
-        connected_ids.add(r.to_user_id)
-    for r in received.scalars().all():
-        connected_ids.add(r.from_user_id)
+    for r in result.scalars().all():
+        connected_ids.add(r.to_user_id if r.from_user_id == uid else r.from_user_id)
 
-    # batch-fetch all connected users in one query (was N queries)
     if not connected_ids:
         return {"connections": []}
     users_result = await db.execute(select(User).where(User.id.in_(connected_ids)))
@@ -102,6 +101,17 @@ async def send_connection_request(req: SendConnectionRequest, request: Request, 
     if target.id == uid:
         raise ValidationError("Cannot connect with yourself")
 
+    block_check = await db.execute(
+        select(UserBlock).where(
+            or_(
+                and_(UserBlock.blocker_id == uid, UserBlock.blocked_id == target.id),
+                and_(UserBlock.blocker_id == target.id, UserBlock.blocked_id == uid),
+            )
+        )
+    )
+    if block_check.scalar_one_or_none():
+        raise ValidationError("Cannot send connection request to this user")
+
     existing_result = await db.execute(
         select(ConnectionRequest).where(
             or_(
@@ -136,6 +146,8 @@ async def send_connection_request(req: SendConnectionRequest, request: Request, 
 
 @router.post("/accept/{request_id}")
 async def accept_connection(request_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    if not validate_hex_id(request_id):
+        raise ValidationError("Invalid request ID")
     uid = get_current_user_id(request)
     result = await db.execute(select(ConnectionRequest).where(ConnectionRequest.id == request_id))
     conn_req = result.scalar_one_or_none()
@@ -164,12 +176,23 @@ async def accept_connection(request_id: str, request: Request, db: AsyncSession 
         await db.flush()
         db.add(ChatMember(id=secrets.token_hex(12), chat_id=chat.id, user_id=uid, role="owner", joined_at=now_ms(), last_read_at=now_ms()))
         db.add(ChatMember(id=secrets.token_hex(12), chat_id=chat.id, user_id=conn_req.from_user_id, role="member", joined_at=now_ms(), last_read_at=now_ms()))
+        try:
+            await db.flush()
+        except IntegrityError:
+            # Race condition: another concurrent accept already created the
+            # direct chat. Discard the failed chat/members (rollback only
+            # objects added in this try block) and continue.
+            await db.rollback()
+            # Re-apply the status change that was rolled back
+            conn_req.status = "accepted"
 
     return {"ok": True}
 
 
 @router.post("/decline/{request_id}")
 async def decline_connection(request_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    if not validate_hex_id(request_id):
+        raise ValidationError("Invalid request ID")
     uid = get_current_user_id(request)
     result = await db.execute(select(ConnectionRequest).where(ConnectionRequest.id == request_id))
     conn_req = result.scalar_one_or_none()
@@ -186,6 +209,10 @@ async def block_user(req: BlockRequest, request: Request, db: AsyncSession = Dep
     uid = get_current_user_id(request)
     if req.user_id == uid:
         raise ValidationError("Cannot block yourself")
+
+    target_result = await db.execute(select(User).where(User.id == req.user_id))
+    if not target_result.scalar_one_or_none():
+        raise NotFoundError("User not found")
 
     existing = await db.execute(
         select(UserBlock).where(UserBlock.blocker_id == uid, UserBlock.blocked_id == req.user_id)
@@ -231,19 +258,15 @@ async def list_blocked(request: Request, db: AsyncSession = Depends(get_db)):
 
 @router.get("/is-blocked/{user_id}")
 async def is_blocked(user_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    if not validate_hex_id(user_id):
+        raise ValidationError("Invalid user ID")
     uid = get_current_user_id(request)
     result = await db.execute(
-        select(UserBlock).where(
-            or_(
-                and_(UserBlock.blocker_id == uid, UserBlock.blocked_id == user_id),
-                and_(UserBlock.blocker_id == user_id, UserBlock.blocked_id == uid),
-            )
-        )
+        select(UserBlock).where(UserBlock.blocker_id == uid, UserBlock.blocked_id == user_id)
     )
     block = result.scalar_one_or_none()
     return {
-        "blocked": block is not None and block.blocker_id == uid,
-        "blockedBy": block is not None and block.blocker_id == user_id,
+        "blocked": block is not None,
     }
 
 
@@ -277,6 +300,8 @@ async def set_nickname(req: SetNicknameRequest, request: Request, db: AsyncSessi
 
 @router.delete("/nickname/{target_user_id}")
 async def remove_nickname(target_user_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    if not validate_hex_id(target_user_id):
+        raise ValidationError("Invalid user ID")
     uid = get_current_user_id(request)
     await db.execute(
         delete(UserNickname).where(

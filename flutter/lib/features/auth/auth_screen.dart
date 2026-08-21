@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/auth_service.dart';
+import 'forgot_password_screen.dart';
 
 // Email+Password authentication screen matching web glassmorphic UI.
 class AuthScreen extends StatefulWidget {
@@ -21,6 +22,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isLogin = true;
   bool _loading = false;
   bool _obscurePassword = true;
+  bool _privacyConsent = false;
 
   @override
   void dispose() {
@@ -32,6 +34,19 @@ class _AuthScreenState extends State<AuthScreen> {
   Future<void> _submit() async {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
+
+    if (!_isLogin && !_privacyConsent) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You must agree to the privacy policy to create an account'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Color(0xFFEF4444),
+          ),
+        );
+      }
+      return;
+    }
 
     final email = _emailController.text.trim();
     final password = _passwordController.text;
@@ -61,7 +76,11 @@ class _AuthScreenState extends State<AuthScreen> {
 
   String? _validateEmail(String? v) {
     final t = (v ?? '').trim();
-    if (t.isEmpty) return 'Email is required';
+    if (t.isEmpty) return 'Email or username is required';
+    if (_isLogin) {
+      if (t.length < 3) return 'Enter your email or username';
+      return null;
+    }
     final re = RegExp(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$');
     if (!re.hasMatch(t)) return 'Enter a valid email';
     return null;
@@ -170,9 +189,9 @@ class _AuthScreenState extends State<AuthScreen> {
                 const SizedBox(height: 32),
 
                 // Email Input Label & Field
-                const Text(
-                  'Email',
-                  style: TextStyle(
+                Text(
+                  _isLogin ? 'Email or Username' : 'Email',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -182,13 +201,14 @@ class _AuthScreenState extends State<AuthScreen> {
                 TextFormField(
                   controller: _emailController,
                   style: const TextStyle(color: Colors.white, fontSize: 15),
+                  keyboardType: _isLogin ? TextInputType.text : TextInputType.emailAddress,
                   decoration: InputDecoration(
-                    hintText: 'you@example.com',
+                    hintText: _isLogin ? 'you@example.com or username' : 'you@example.com',
                     hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)),
                     filled: true,
                     fillColor: Colors.white.withValues(alpha: 0.05),
                     prefixIcon: Icon(
-                      Icons.mail_outline,
+                      _isLogin ? Icons.person_outline : Icons.mail_outline,
                       size: 20,
                       color: Colors.white.withValues(alpha: 0.5),
                     ),
@@ -221,7 +241,6 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                     ),
                   ),
-                  keyboardType: TextInputType.emailAddress,
                   textInputAction: TextInputAction.next,
                   autocorrect: false,
                   enableSuggestions: false,
@@ -297,6 +316,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                   ),
                   obscureText: _obscurePassword,
+                  maxLength: 200,
                   textInputAction: TextInputAction.done,
                   validator: _validatePassword,
                   onFieldSubmitted: (_) {
@@ -304,6 +324,51 @@ class _AuthScreenState extends State<AuthScreen> {
                   },
                 ),
                 const SizedBox(height: 28),
+
+                // Privacy Consent Checkbox (register only)
+                if (!_isLogin)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Checkbox(
+                          value: _privacyConsent,
+                          onChanged: (v) => setState(() => _privacyConsent = v ?? false),
+                          activeColor: const Color(0xFF10B981),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Text.rich(
+                              TextSpan(
+                                text: 'I agree to the ',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.6),
+                                  fontSize: 13,
+                                ),
+                                children: [
+                                  TextSpan(
+                                    text: 'Privacy Policy',
+                                    style: const TextStyle(
+                                      color: Color(0xFF34D399),
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: '. I understand that only my email, username, and password are stored. Messages are end-to-end encrypted and never stored on the server.',
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
                 // Emerald Gradient Submit Button
                 InkWell(
@@ -344,6 +409,34 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                   ),
                 ),
+                const SizedBox(height: 20),
+
+                // Forgot Password Link (login only)
+                if (_isLogin)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _loading
+                          ? null
+                          : () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const ForgotPasswordScreen(),
+                                ),
+                              ),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text(
+                        'Forgot Password?',
+                        style: TextStyle(
+                          color: Color(0xFF6B7280),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 20),
 
                 // Toggle Auth Mode Link

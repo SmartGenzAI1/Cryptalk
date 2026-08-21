@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/chat_service.dart';
@@ -89,11 +90,23 @@ class _FindTabState extends State<_FindTab> {
   final _searchController = TextEditingController();
   List<AppUser> _results = [];
   bool _loading = false;
+  Timer? _debounce;
 
   @override
   void dispose() {
     _searchController.dispose();
+    _debounce?.cancel();
     super.dispose();
+  }
+
+  // debounced so fast mobile typing doesn't fire a request per keystroke
+  void _onSearchChanged(String q) {
+    _debounce?.cancel();
+    if (q.trim().isEmpty) {
+      _search('');
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 350), () => _search(q));
   }
 
   Future<void> _search(String q) async {
@@ -147,7 +160,8 @@ class _FindTabState extends State<_FindTab> {
           padding: const EdgeInsets.all(12),
           child: TextField(
             controller: _searchController,
-            onChanged: _search,
+            onChanged: _onSearchChanged,
+            onSubmitted: _search,
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
               hintText: 'Search by username...',
@@ -269,7 +283,9 @@ class _RequestsTabState extends State<_RequestsTab> {
     try {
       final api = context.read<ChatService>().api;
       final data = await api.get('/api/social/requests');
-      final list = (data['requests'] as List).cast<Map<String, dynamic>>();
+      final list = (data['requests'] as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
       if (mounted) {
         setState(() {
           _requestIds =
@@ -462,26 +478,105 @@ class _ConnectionsTabState extends State<_ConnectionsTab> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          trailing: IconButton(
-            tooltip: 'Message',
-            icon: const Icon(Icons.chat_bubble_outline),
-            onPressed: () async {
-              try {
-                final chatService = context.read<ChatService>();
-                await chatService.createDirectChat(u.id);
-                if (context.mounted) Navigator.pop(context);
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                          'Failed: ${e.toString().replaceFirst('Exception: ', '')}'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                }
-              }
-            },
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'Message',
+                icon: const Icon(Icons.chat_bubble_outline, size: 20),
+                onPressed: () async {
+                  try {
+                    final chatService = context.read<ChatService>();
+                    await chatService.createDirectChat(u.id);
+                    if (context.mounted) Navigator.pop(context);
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Failed: ${e.toString().replaceFirst('Exception: ', '')}'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  }
+                },
+              ),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert, size: 20),
+                onSelected: (value) async {
+                  if (value == 'block') {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Block user?'),
+                        content: Text('Block @${u.username}? They won\'t be able to send you messages.'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                          FilledButton(
+                            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('Block'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true && context.mounted) {
+                      try {
+                        await context.read<ChatService>().blockUser(u.id);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('@${u.username} blocked'), behavior: SnackBarBehavior.floating),
+                        );
+                        _load();
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Failed: ${e.toString().replaceFirst('Exception: ', '')}'), behavior: SnackBarBehavior.floating),
+                        );
+                      }
+                    }
+                  } else if (value == 'nickname') {
+                    final controller = TextEditingController(text: u.name);
+                    final nickname = await showDialog<String>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Set nickname'),
+                        content: TextField(
+                          controller: controller,
+                          decoration: const InputDecoration(hintText: 'Nickname'),
+                          autofocus: true,
+                        ),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+                            child: const Text('Save'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (nickname != null && nickname.isNotEmpty && context.mounted) {
+                      try {
+                        final api = context.read<ChatService>().api;
+                        await api.post('/api/social/nickname', body: {
+                          'target_user_id': u.id,
+                          'nickname': nickname,
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Nickname set'), behavior: SnackBarBehavior.floating),
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Failed: ${e.toString().replaceFirst('Exception: ', '')}'), behavior: SnackBarBehavior.floating),
+                        );
+                      }
+                    }
+                  }
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'nickname', child: Text('Set nickname')),
+                  const PopupMenuItem(value: 'block', child: Text('Block', style: TextStyle(color: Colors.red))),
+                ],
+              ),
+            ],
           ),
         );
       },

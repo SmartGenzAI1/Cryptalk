@@ -95,6 +95,9 @@ async function deriveSharedSecret(
 }
 
 // HKDF-SHA256 for key derivation (RFC 5869)
+// Uses a fixed zero salt — both encrypt and decrypt must derive the same key
+// from the same shared secret. A random salt would produce different keys on
+// each call, breaking decryption.
 async function deriveEncryptionKey(sharedSecret: Uint8Array, context: string = 'cryptalk-message'): Promise<Uint8Array> {
   const cryptoObj = typeof window !== 'undefined' ? window.crypto : (await import('crypto')).webcrypto
   const key = await (cryptoObj as any).subtle.importKey(
@@ -108,7 +111,7 @@ async function deriveEncryptionKey(sharedSecret: Uint8Array, context: string = '
     {
       name: 'HKDF',
       hash: 'SHA-256',
-      salt: new Uint8Array(32),
+      salt: new Uint8Array(32), // fixed zero salt — deterministic across encrypt/decrypt
       info: toUTF8(context)
     },
     key,
@@ -122,7 +125,7 @@ async function deriveEncryptionKey(sharedSecret: Uint8Array, context: string = '
 export async function encryptMessage(
   plaintext: string,
   recipientPublicKeyBase64: string,
-  senderPrivateKey: Uint8Array
+  _senderPrivateKey?: Uint8Array // reserved for future signing
 ): Promise<EncryptedPayload> {
   await ensureReady()
 
@@ -172,7 +175,8 @@ export async function decryptMessage(
 
   const nonce = fromBase64(payload.nonce)
   const ciphertext = fromBase64(payload.ciphertext)
-  const mac = payload.mac ? fromBase64(payload.mac) : new Uint8Array(16)
+  if (!payload.mac) throw new Error('Missing message MAC')
+  const mac = fromBase64(payload.mac)
 
   // Re-combine ciphertext and MAC for libsodium input
   const combined = new Uint8Array(ciphertext.length + mac.length)
@@ -231,6 +235,7 @@ export async function decryptGroupMessage(
   groupKey: Uint8Array
 ): Promise<string> {
   await ensureReady()
+  if (!mac) throw new Error('Missing MAC in group message — integrity cannot be verified')
   const ciphertextBytes = fromBase64(ciphertext)
   const macBytes = fromBase64(mac)
   const combined = new Uint8Array(ciphertextBytes.length + macBytes.length)
@@ -261,6 +266,25 @@ export async function verifyPreKeySignature(
       fromBase64(signature),
       fromBase64(signedPreKeyPublic),
       fromBase64(signingPublicKey)
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Ed25519 signature verification
+export async function verifySignature(
+  message: Uint8Array,
+  signatureBase64: string,
+  signingPublicKeyBase64: string
+): Promise<boolean> {
+  await ensureReady()
+  try {
+    sodium.crypto_sign_verify_detached(
+      fromBase64(signatureBase64),
+      message,
+      fromBase64(signingPublicKeyBase64)
     )
     return true
   } catch {

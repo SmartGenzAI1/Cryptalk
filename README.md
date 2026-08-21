@@ -34,30 +34,49 @@
 
 ## Features
 
+### Privacy & Security
 - **End-to-End Encryption** — X25519 + ChaCha20-Poly1305. Server is zero-knowledge.
+- **90-Day Auto-Delete** — All message data automatically purged after 90 days (configurable, privacy mode enforced).
+- **Self-Destructing Messages** — Set expiration timer (10s to 1 week).
+- **Expiring Groups** — Auto-delete after 1-7 days.
+- **Minimal Data Collection** — No phone number required. Email-only authentication.
+- **Ephemeral File Storage** — Encrypted attachments wiped from Supabase on delivery.
+- **Account Deletion** — Permanently wipe all user data.
+- **ISP Resistance** — DNS-over-HTTPS, enforced HTTPS with HSTS, and privacy mode configuration.
+
+### Communication
+- **WebRTC Voice Calling** — Encrypted voice calls with 10-minute limit and DTLS-SRTP.
+- **WebRTC Video Calling** — End-to-end encrypted video with 3x ringtone for incoming calls.
+- **Voice Messages** — Real recording with Web Audio API, encrypted client-side before transmission.
+- **Message Sound Effects** — Send and receive notification sounds.
 - **3-Stage Delivery Engine** — ✓ sent, ✓✓ delivered, ✓✓ read (emerald) real-time state tracking.
 - **Auto-Rejoining Socket Lifecycle** — Automatic room re-joining on connect/reconnect and offline queue draining.
-- **Constant-Time Password Verification** — scrypt hashing + dummy salt execution for non-existent users + `hmac.compare_digest` timing attack protection.
-- **Email Authentication** — Cookie-authenticated sessions without phone number requirements.
-- **Voice Messages** — Real recording with Web Audio API, encrypted client-side before transmission.
+- **Offline Message Queue** — Messages queued and delivered when recipient comes online.
+
+### Messaging
 - **File Sharing** — Images, docs, voice up to 25MB, E2EE ciphertext stored in Supabase, auto-deleted on delivery.
+- **Media Previews** — WhatsApp and Telegram style previews for images, video, PDF, and documents.
 - **Message Reactions, Replies, Edit, Delete for Everyone**
-- **Self-Destructing Messages** — Set expiration timer (10s to 1 week).
+- **Read More Toggle** — Long messages collapsed with expandable view (250+ chars).
+- **Draft Messages** — Saved per chat, restored on switch.
+- **Unread Divider** — "New Messages" separator line.
+- **Cross-Chat Search** — Search across all conversations.
+
+### Groups & Social
 - **Groups & Channels** — Admin controls, kick, promote, transfer ownership.
-- **Expiring Groups** — Auto-delete after 1-7 days.
 - **Invite Links** — Shareable token URLs for group joins.
 - **Connections** — Find users by username, send/accept requests.
 - **Blocking & Nicknames** — Block users, set custom display names.
-- **Cross-Chat Search** — Search across all conversations.
 - **Report System** — Report users or content for abuse.
-- **Account Deletion** — Permanently wipe user data.
-- **Draft Messages** — Saved per chat, restored on switch.
-- **Unread Divider** — "New Messages" separator line.
+
+### UI & Platform
 - **Animated Stickers** — Lottie-based animated emoji.
 - **Custom SVG Avatars** — Unique geometric patterns.
 - **Dark/Light Theme** — 8 accent colors, 5 chat wallpapers.
 - **Fully Responsive** — Mobile bottom-nav, desktop three-column layout.
 - **Cross-Platform Flutter App** — iOS, Android, macOS, Windows, Linux.
+- **Email Authentication** — Cookie-authenticated sessions without phone number requirements.
+- **Forgot Password** — Email-based password reset flow.
 
 ---
 
@@ -71,11 +90,12 @@
                             │ HTTPS / WSS (Cookie Auth)
                             ▼
 ┌────────────────────────────────────────────────────────┐
-│                    Caddy / Render                      │
-│             TLS termination · CORS Gateway             │
+│                    Render (Free Tier)                   │
+│     Backend: FastAPI + Socket.IO · Frontend: Next.js   │
+│        TLS termination · CORS · Auto-deploy            │
 └─────────┬─────────────────────────────┬────────────────┘
           │                             │
-          ▼ :3000 (Vercel)              ▼ :8001 (Render)
+          ▼ :3000                       ▼ :8001
 ┌──────────────────────┐     ┌──────────────────────────┐
 │  Frontend (Next.js)  │     │  Backend (FastAPI+SIO)   │
 │  ──────────────────  │     │  ──────────────────────  │
@@ -88,8 +108,8 @@
                                ┌─────────┴─────────┐
                                ▼                   ▼
                       ┌──────────────┐    ┌──────────────┐
-                      │ SQLite (dev) │    │ Supabase PG  │
-                      │ / PostgreSQL │    │  (prod)      │
+                      │ Neon DB      │    │ Supabase PG  │
+                      │ (free tier)  │    │  (prod)      │
                       └──────────────┘    └──────────────┘
 ```
 
@@ -128,12 +148,19 @@ Cryptalk tracks message lifecycle progression across socket rooms and local UI s
 | Variable | Required | Description | Example / Recommended Value |
 |---|---|---|---|
 | `SESSION_SECRET` | Yes | 64-character hex secret for signing session HMAC cookies | `openssl rand -hex 32` |
-| `DATABASE_URL` | Yes | Async PostgreSQL connection string | `postgresql+asyncpg://postgres:pass@db.xxx.supabase.co:5432/postgres` |
-| `CORS_ORIGINS` | Yes | Allowed frontend origin URLs | `https://cryptalk.vercel.app` |
+| `NEON_DATABASE_URL` | Yes (prod) | Neon serverless PostgreSQL connection string | `postgresql://user:pass@ep-xxx.neon.tech/cryptalk?sslmode=require` |
+| `DATABASE_URL` | Alt | Supabase PostgreSQL connection string (alternative to Neon) | `postgresql+asyncpg://postgres:pass@db.xxx.supabase.co:5432/postgres` |
+| `CORS_ORIGINS` | Yes | Allowed frontend origin URLs | `https://your-app.onrender.com` |
 | `COOKIE_SECURE` | Yes | Enforces `Secure` flag on HTTP-only cookies | `true` in production |
 | `REDIS_URL` | Optional | Upstash Redis connection string for Socket.IO multi-node scaling | `rediss://default:pass@redis-xxx.upstash.io:6379` |
 | `SUPABASE_URL` | Yes | Supabase API endpoint for file storage | `https://xxx.supabase.co` |
 | `SUPABASE_KEY` | Yes | Supabase service role key for storage uploads | `eyJhbGciOi...` |
+| `SMTP_HOST` | Optional | SMTP server for email verification and password reset | `smtp.gmail.com` |
+| `SMTP_PORT` | Optional | SMTP port (default 587) | `587` |
+| `SMTP_USER` | Optional | SMTP username | `you@gmail.com` |
+| `SMTP_PASSWORD` | Optional | SMTP app password (not account password) | `your-app-password` |
+| `SMTP_FROM_EMAIL` | Optional | Sender email address | `noreply@yourdomain.com` |
+| `EMAIL_VERIFICATION_ENABLED` | Optional | Require email verification after registration | `false` |
 
 ### Frontend Environment Variables
 
@@ -177,19 +204,38 @@ flutter run
 
 ## Deployment
 
-### Backend → Render
+### Full Stack on Render (Free Tier)
+
+Both backend and frontend deploy on Render free tier using the included `render.yaml` blueprint:
 
 1. Push repository to GitHub.
-2. Create New Blueprint project on [Render.com](https://render.com) — Render auto-detects `render.yaml`.
-3. Set environment variables (`SESSION_SECRET`, `DATABASE_URL`, `CORS_ORIGINS`, `COOKIE_SECURE=true`, `SUPABASE_URL`, `SUPABASE_KEY`).
+2. Create a new **Blueprint** project on [Render.com](https://render.com) — Render auto-detects `render.yaml`.
+3. Set environment variables in the Render dashboard:
+   - **Backend**: `SESSION_SECRET`, `NEON_DATABASE_URL`, `CORS_ORIGINS`, `SUPABASE_URL`, `SUPABASE_KEY`, `SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD` (optional)
+   - **Frontend**: `BACKEND_URL` is auto-linked from the backend service
+4. Render deploys both services with Docker, auto-deploys on commit.
+
+### Backend → Render (Standalone)
+
+1. Create a new **Web Service** on [Render.com](https://render.com).
+2. Connect your GitHub repository, set root directory to `backend`.
+3. Set environment variables (`SESSION_SECRET`, `NEON_DATABASE_URL` or `DATABASE_URL`, `CORS_ORIGINS`, `COOKIE_SECURE=true`, `SUPABASE_URL`, `SUPABASE_KEY`).
 4. Render deploys `uvicorn app.main:asgi_app --host 0.0.0.0 --port $PORT`.
 
-### Frontend → Vercel
+### Frontend → Render (Standalone)
 
-1. Import project on [Vercel.com](https://vercel.com).
-2. Set **Root Directory** to `frontend`.
-3. Add environment variable `NEXT_PUBLIC_BACKEND_URL`.
-4. Deploy — Vercel runs `bun install` and `next build`.
+1. Create a new **Web Service** on [Render.com](https://render.com).
+2. Connect your GitHub repository, set root directory to `frontend`.
+3. Set `BACKEND_URL` to your backend service URL.
+4. Render runs `bun install && next build` and serves on port 3000.
+
+### Docker (Local Development)
+
+```bash
+docker compose up --build
+```
+
+Backend runs on `http://localhost:8001`, frontend on `http://localhost:3000`.
 
 ---
 
@@ -208,12 +254,33 @@ flutter run
 | Ephemeral Storage | Attachment files wiped automatically from storage on delivery |
 | SQL Injection Defense | SQLAlchemy parameterized queries |
 | Security Headers | X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy |
+| WebRTC Calls | DTLS-SRTP encryption on voice/video calls |
+
+---
+
+## Privacy Features
+
+| Feature | Details |
+|---|---|
+| Auto-Delete | All messages automatically purged after 90 days (configurable via `DATA_RETENTION_DAYS`) |
+| Privacy Mode | Enforces 90-day max retention, disables verbose logging (`PRIVACY_MODE=true`) |
+| Self-Destructing Messages | Per-message expiration (10s to 1 week) |
+| E2EE | X25519 + ChaCha20-Poly1305; private keys never leave device |
+| Ephemeral Files | Supabase blobs wiped immediately after delivery |
+| No Phone Required | Email-only authentication |
+| ISP Resistance | DNS-over-HTTPS, enforced HTTPS with HSTS (2-year max-age) |
+| Account Deletion | Permanent data wipe endpoint |
+| Minimal Logging | Configurable `MAX_LOG_LEVEL` (default WARNING in production) |
+| Cookie Security | HTTP-only, SameSite=Lax, Secure flag in production |
 
 ---
 
 ## Documentation
 
+- [CHANGELOG.md](CHANGELOG.md) — Recent changes and version history
 - [ARCHITECTURE.md](ARCHITECTURE.md) — System architecture, flow diagrams, security design
+- [SECURITY.md](SECURITY.md) — Vulnerability reporting and security policy
+- [CONTRIBUTING.md](CONTRIBUTING.md) — Contribution guidelines
 - [Backend README](backend/README.md) — API endpoints, Socket.IO handlers, backend security
 - [Frontend README](frontend/README.md) — UI components, Zustand state, socket hooks
 - [Flutter README](flutter/README.md) — Cross-platform client setup

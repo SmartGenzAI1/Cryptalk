@@ -3,7 +3,7 @@
 
 from typing import Any, Dict, List, Optional
 
-from app.core.security import ms_to_iso
+from app.core.security import decrypt_field, ms_to_iso
 from app.models import Chat, ChatMember, User
 
 def _get_deterministic_avatar(seed: str, is_chat: bool = False) -> tuple[str, str]:
@@ -27,19 +27,18 @@ def _get_deterministic_avatar(seed: str, is_chat: bool = False) -> tuple[str, st
     emoji = icons[(h + 1) % len(icons)]
     return color, emoji
 
-def serialize_user(u: Optional[User]) -> Optional[Dict[str, Any]]:
+def serialize_user(u: Optional[User], include_email: bool = False) -> Optional[Dict[str, Any]]:
     if u is None:
         return None
     
     seed = u.username or u.id or "default"
     det_color, det_emoji = _get_deterministic_avatar(seed)
     
-    return {
+    result = {
         "id": u.id,
-        "email": u.email,
         "username": u.username,
-        "name": u.name,
-        "bio": u.bio or "",
+        "name": decrypt_field(u.name),
+        "bio": decrypt_field(u.bio) or "",
         "avatarColor": det_color,
         "avatarEmoji": det_emoji,
         "isOnline": bool(u.is_online),
@@ -49,6 +48,9 @@ def serialize_user(u: Optional[User]) -> Optional[Dict[str, Any]]:
         "wallpaper": "dots",
         "hasE2EEKeys": bool(u.identity_public_key),
     }
+    if include_email:
+        result["email"] = decrypt_field(u.email)
+    return result
 
 def serialize_member(m: ChatMember) -> Dict[str, Any]:
     data = {

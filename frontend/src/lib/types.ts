@@ -66,6 +66,35 @@ export interface MessageWithSender {
   }>
 }
 
+// cached current user settings to avoid repeated localStorage reads
+let _cachedCurrentUserId: string | null = null
+let _cachedSettings: { avatarColor?: string; avatarEmoji?: string; accentColor?: string; wallpaper?: string } | null = null
+
+function _getCurrentUserSettings(): typeof _cachedSettings {
+  if (typeof window === 'undefined') return null
+  try {
+    const currentUserStr = localStorage.getItem('zc-currentUser')
+    if (!currentUserStr) { _cachedCurrentUserId = null; _cachedSettings = null; return null }
+    const curUser = JSON.parse(currentUserStr)
+    if (!curUser?.id) { _cachedCurrentUserId = null; _cachedSettings = null; return null }
+    if (curUser.id !== _cachedCurrentUserId) {
+      _cachedCurrentUserId = curUser.id
+      _cachedSettings = {
+        avatarColor: localStorage.getItem('zc-avatarColor') || undefined,
+        avatarEmoji: localStorage.getItem('zc-avatarEmoji') || undefined,
+        accentColor: localStorage.getItem('zc-accentColor') || undefined,
+        wallpaper: localStorage.getItem('zc-wallpaper') || undefined,
+      }
+    }
+    return _cachedSettings
+  } catch { return null }
+}
+
+export function invalidateCurrentUserCache() {
+  _cachedCurrentUserId = null
+  _cachedSettings = null
+}
+
 export function toSafeUser(u: any): SafeUser {
   const seed = u.username || u.id || 'default'
   let hash = 0
@@ -91,19 +120,12 @@ export function toSafeUser(u: any): SafeUser {
   let accentColor = u.accentColor || 'emerald'
   let wallpaper = u.wallpaper || 'dots'
 
-  if (typeof window !== 'undefined') {
-    const currentUserStr = localStorage.getItem('zc-currentUser')
-    if (currentUserStr) {
-      try {
-        const curUser = JSON.parse(currentUserStr)
-        if (curUser && curUser.id === u.id) {
-          avatarColor = localStorage.getItem('zc-avatarColor') || avatarColor
-          avatarEmoji = localStorage.getItem('zc-avatarEmoji') || avatarEmoji
-          accentColor = localStorage.getItem('zc-accentColor') || accentColor
-          wallpaper = localStorage.getItem('zc-wallpaper') || wallpaper
-        }
-      } catch (e) {}
-    }
+  const settings = _getCurrentUserSettings()
+  if (settings && _cachedCurrentUserId === u.id) {
+    avatarColor = settings.avatarColor || avatarColor
+    avatarEmoji = settings.avatarEmoji || avatarEmoji
+    accentColor = settings.accentColor || accentColor
+    wallpaper = settings.wallpaper || wallpaper
   }
 
   return {

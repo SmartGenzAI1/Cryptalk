@@ -45,6 +45,19 @@ export function VoiceCallModal({
   const localVideoRef = useRef<HTMLVideoElement | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pendingCandidatesRef = useRef<any[]>([])
+  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Escape key handler
+  useEffect(() => {
+    if (!open) return
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        endCall('Call dismissed')
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [open])
 
   // Maximum call limit: 10 minutes (600 seconds)
   const MAX_CALL_SECONDS = 600
@@ -143,6 +156,10 @@ export function VoiceCallModal({
       socket.off('ice-candidate', handleIceCandidate)
       socket.off('call-hangup', handleHangup)
       cleanupMedia()
+      if (closeTimeoutRef.current) {
+        clearTimeout(closeTimeoutRef.current)
+        closeTimeoutRef.current = null
+      }
     }
   }, [open, isIncoming])
 
@@ -260,14 +277,14 @@ export function VoiceCallModal({
 
   function toggleMute() {
     if (localStreamRef.current) {
-      localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = muted))
+      localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = !muted))
       setMuted(!muted)
     }
   }
 
   function toggleVideo() {
     if (localStreamRef.current) {
-      localStreamRef.current.getVideoTracks().forEach((t) => (t.enabled = videoOff))
+      localStreamRef.current.getVideoTracks().forEach((t) => (t.enabled = !videoOff))
       setVideoOff(!videoOff)
     }
   }
@@ -280,10 +297,14 @@ export function VoiceCallModal({
     cleanupMedia()
     setCallState('ended')
     if (reason) toast.info(reason)
-    setTimeout(onClose, 800)
+    closeTimeoutRef.current = setTimeout(onClose, 800)
   }
 
   function cleanupMedia() {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current)
+      closeTimeoutRef.current = null
+    }
     if (timerRef.current) {
       clearInterval(timerRef.current)
       timerRef.current = null
@@ -313,6 +334,8 @@ export function VoiceCallModal({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-3 sm:p-6"
+        role="dialog"
+        aria-modal="true"
       >
         <audio ref={remoteAudioRef} autoPlay />
 

@@ -1,6 +1,9 @@
 'use client'
 
 import { lazy, Suspense, useEffect } from 'react'
+import { ErrorBoundary } from '@/components/error-boundary'
+import { InstallPrompt } from '@/components/install-prompt'
+import { OfflineIndicator } from '@/components/offline-indicator'
 import { useChatStore } from '@/stores/chat-store'
 import { useSocket } from '@/hooks/use-socket'
 import { Sidebar } from './sidebar'
@@ -8,8 +11,7 @@ import { ChatList } from './chat-list'
 import { ChatWindow } from './chat-window'
 import { AccentApplier } from './accent-applier'
 import { MobileNav } from './mobile-nav'
-import { Toaster } from '@/components/ui/toaster'
-import { apiGet } from '@/lib/api'
+import { apiGet, setOnUnauthorized } from '@/lib/api'
 import { initE2EE } from '@/lib/e2ee'
 
 const ChatInfoPanel = lazy(() => import('./chat-info-panel').then(m => ({ default: m.ChatInfoPanel })))
@@ -26,6 +28,14 @@ import { getSocket } from '@/hooks/use-socket'
 
 export function ChatApp() {
   useSocket()
+
+  useEffect(() => {
+    setOnUnauthorized(() => {
+      setCurrentUser(null)
+    })
+    return () => setOnUnauthorized(null)
+  }, [setCurrentUser])
+
   const infoPanelOpen = useChatStore(s => s.infoPanelOpen)
   const settingsOpen = useChatStore(s => s.settingsOpen)
   const connectionsPanelOpen = useChatStore(s => s.connectionsPanelOpen)
@@ -45,8 +55,8 @@ export function ChatApp() {
     if (!socket) return
 
     const handleCallOffer = (data: any) => {
-      const matchChat = chats.find(c => c.id === data.chatId)
-      if (matchChat) {
+      const matchChat = useChatStore.getState().chats.find(c => c.id === data.chatId)
+      if (matchChat && !useChatStore.getState().settingsOpen && !useChatStore.getState().connectionsPanelOpen) {
         setGlobalCallChat(matchChat)
         setGlobalIncomingCallOffer(data)
         setGlobalCallModalOpen(true)
@@ -57,7 +67,7 @@ export function ChatApp() {
     return () => {
       socket.off('call-offer', handleCallOffer)
     }
-  }, [chats])
+  }, [])
 
   useEffect(() => {
     // 1. Try loading cached chats instantly from cache
@@ -120,6 +130,7 @@ export function ChatApp() {
 
   return (
     <div className="h-[100dvh] w-full flex flex-col overflow-hidden bg-background select-none">
+      <OfflineIndicator />
       <AccentApplier />
       <div className="flex-1 flex overflow-hidden relative">
         <Sidebar />
@@ -132,39 +143,49 @@ export function ChatApp() {
 
         {/* Global Right Overlay Panels for Desktop / Full-screen for Mobile */}
         {settingsOpen && (
-          <Suspense fallback={<PanelFallback />}>
-            <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-20 w-full md:w-[380px] shrink-0 h-full flex bg-background">
-              <SettingsPanel />
-            </div>
-          </Suspense>
+          <ErrorBoundary fallback={<PanelFallback />}>
+            <Suspense fallback={<PanelFallback />}>
+              <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-20 w-full md:w-[380px] shrink-0 h-full flex bg-background">
+                <SettingsPanel />
+              </div>
+            </Suspense>
+          </ErrorBoundary>
         )}
         {connectionsPanelOpen && (
-          <Suspense fallback={<PanelFallback />}>
-            <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-20 w-full md:w-[380px] shrink-0 h-full flex bg-background">
-              <ConnectionsPanel />
-            </div>
-          </Suspense>
+          <ErrorBoundary fallback={<PanelFallback />}>
+            <Suspense fallback={<PanelFallback />}>
+              <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-20 w-full md:w-[380px] shrink-0 h-full flex bg-background">
+                <ConnectionsPanel />
+              </div>
+            </Suspense>
+          </ErrorBoundary>
         )}
         {infoPanelOpen && activeChatId && (
-          <Suspense fallback={<PanelFallback />}>
-            <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-20 w-full md:w-[340px] shrink-0 h-full flex bg-background">
-              <ChatInfoPanel />
-            </div>
-          </Suspense>
+          <ErrorBoundary fallback={<PanelFallback />}>
+            <Suspense fallback={<PanelFallback />}>
+              <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-20 w-full md:w-[340px] shrink-0 h-full flex bg-background">
+                <ChatInfoPanel />
+              </div>
+            </Suspense>
+          </ErrorBoundary>
         )}
       </div>
       <MobileNav />
-      <Toaster />
 
       {/* Global Incoming Voice Call Modal */}
       <VoiceCallModal
         open={globalCallModalOpen}
-        onClose={() => setGlobalCallModalOpen(false)}
+        onClose={() => {
+          setGlobalCallModalOpen(false)
+          setGlobalIncomingCallOffer(null)
+          setGlobalCallChat(null)
+        }}
         chat={globalCallChat}
         currentUser={currentUser}
         isIncoming={true}
         incomingOfferData={globalIncomingCallOffer}
       />
+      <InstallPrompt />
     </div>
   )
 }

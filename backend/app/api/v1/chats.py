@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends
 
-from app.core.security import get_current_user_id
+from app.core.security import get_current_user_id, validate_hex_id
 from app.schemas import ChatCreate, ChatSettingsUpdate
 from app.services.chat_service import ChatService
 from app.services.deps import get_chat_service
@@ -43,6 +43,9 @@ async def get_chat(
     user_id: str = Depends(get_current_user_id),
     service: ChatService = Depends(get_chat_service),
 ):
+    if not validate_hex_id(chat_id):
+        from app.core.exceptions import ValidationError
+        raise ValidationError("Invalid chat ID")
     return {"chat": await service.get_chat(chat_id, user_id)}
 
 
@@ -53,6 +56,9 @@ async def update_settings(
     user_id: str = Depends(get_current_user_id),
     service: ChatService = Depends(get_chat_service),
 ):
+    if not validate_hex_id(chat_id):
+        from app.core.exceptions import ValidationError
+        raise ValidationError("Invalid chat ID")
     return await service.update_settings(
         chat_id, user_id, req.action, req.value,
     )
@@ -71,6 +77,9 @@ async def mark_chat_read(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    if not validate_hex_id(chat_id):
+        from app.core.exceptions import ValidationError
+        raise ValidationError("Invalid chat ID")
     user_id = get_current_user_id(request)
     repo = ChatRepository(db)
     member = await repo.get_member(chat_id, user_id)

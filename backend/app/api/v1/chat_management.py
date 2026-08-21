@@ -1,38 +1,48 @@
 import secrets
+import logging
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
-from sqlalchemy import select, delete
+from pydantic import BaseModel, Field
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.exceptions import ForbiddenError, NotFoundError, ValidationError
-from app.core.security import get_current_user_id, now_ms
+from app.core.security import get_current_user_id, now_ms, validate_hex_id
 from app.models import Chat, ChatMember, User, Report
 
 router = APIRouter(tags=["chat-management"])
 
+logger = logging.getLogger("cryptalk.chat_management")
+
+# TODO: All endpoints below manually call `get_current_user_id(request)` instead of
+# using FastAPI's `Depends(get_current_user_id)`. Refactor to use DI for consistency
+# with the rest of the codebase.
+
 
 class KickMemberRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=24, max_length=24)
 
 
 class PromoteRequest(BaseModel):
-    user_id: str
-    role: str
+    user_id: str = Field(..., min_length=24, max_length=24)
+    role: str = Field(..., pattern="^(admin|member)$")
 
 
 class TransferOwnershipRequest(BaseModel):
-    new_owner_id: str
+    new_owner_id: str = Field(..., min_length=24, max_length=24)
 
 
 class ReportRequest(BaseModel):
-    reported_id: str | None = None
-    chat_id: str | None = None
-    reason: str
+    reported_id: str | None = Field(None, min_length=24, max_length=24)
+    chat_id: str | None = Field(None, min_length=24, max_length=24)
+    reason: str = Field(..., min_length=1, max_length=500)
 
 
 @router.post("/chats/{chat_id}/leave")
 async def leave_chat(chat_id: str, request: Request = None, db: AsyncSession = Depends(get_db)):
+    if not validate_hex_id(chat_id):
+        raise ValidationError("Invalid chat ID")
     user_id = get_current_user_id(request)
 
     result = await db.execute(
@@ -43,24 +53,32 @@ async def leave_chat(chat_id: str, request: Request = None, db: AsyncSession = D
         raise NotFoundError("Not a member of this chat")
 
     await db.delete(member)
+    await db.flush()
 
-    chat_result = await db.execute(select(Chat).where(Chat.id == chat_id))
-    chat = chat_result.scalar_one_or_none()
-    if chat:
-        remaining_result = await db.execute(
-            select(ChatMember).where(ChatMember.chat_id == chat_id)
+    # use count instead of fetching all remaining members
+    count_result = await db.execute(
+        select(func.count(ChatMember.id)).where(ChatMember.chat_id == chat_id)
+    )
+    remaining_count = count_result.scalar() or 0
+
+    if remaining_count == 0:
+        await db.execute(delete(Chat).where(Chat.id == chat_id))
+    elif member.role == "owner" and remaining_count > 0:
+        # fetch only the first remaining member to promote
+        first_result = await db.execute(
+            select(ChatMember).where(ChatMember.chat_id == chat_id).limit(1)
         )
-        remaining_members = list(remaining_result.scalars().all())
-        if len(remaining_members) == 0:
-            await db.execute(delete(Chat).where(Chat.id == chat_id))
-        elif member.role == "owner" and remaining_members:
-            remaining_members[0].role = "owner"
+        first_member = first_result.scalar_one_or_none()
+        if first_member:
+            first_member.role = "owner"
 
     return {"ok": True}
 
 
 @router.delete("/chats/{chat_id}")
 async def delete_chat(chat_id: str, request: Request = None, db: AsyncSession = Depends(get_db)):
+    if not validate_hex_id(chat_id):
+        raise ValidationError("Invalid chat ID")
     user_id = get_current_user_id(request)
 
     result = await db.execute(select(Chat).where(Chat.id == chat_id))
@@ -81,29 +99,51 @@ async def delete_chat(chat_id: str, request: Request = None, db: AsyncSession = 
     if chat.type in ("group", "channel") and member.role != "owner":
         raise ForbiddenError("Only the chat owner can delete a group or channel")
 
+    if chat.type == "direct" and chat.created_by != user_id:
+        raise ForbiddenError("Only the chat creator can delete a direct chat")
+
+    await db.execute(delete(Report).where(Report.chat_id == chat_id))
+    await db.execute(delete(ChatMember).where(ChatMember.chat_id == chat_id))
     await db.execute(delete(Chat).where(Chat.id == chat_id))
     return {"ok": True}
 
 
 @router.post("/chats/{chat_id}/kick")
 async def kick_member(req: KickMemberRequest, chat_id: str, request: Request = None, db: AsyncSession = Depends(get_db)):
+    if not validate_hex_id(chat_id):
+        raise ValidationError("Invalid chat ID")
     user_id = get_current_user_id(request)
 
-    requester = await db.execute(
-        select(ChatMember).where(ChatMember.chat_id == chat_id, ChatMember.user_id == user_id)
+    result = await db.execute(
+        select(ChatMember).where(
+            ChatMember.chat_id == chat_id,
+            ChatMember.user_id.in_([user_id, req.user_id])
+        )
     )
-    requester_member = requester.scalar_one_or_none()
+    members = {m.user_id: m for m in result.scalars().all()}
+    requester_member = members.get(user_id)
     if not requester_member or requester_member.role not in ("owner", "admin"):
         raise ForbiddenError("Only admins can kick members")
 
-    target = await db.execute(
-        select(ChatMember).where(ChatMember.chat_id == chat_id, ChatMember.user_id == req.user_id)
-    )
-    target_member = target.scalar_one_or_none()
+    target_member = members.get(req.user_id)
     if not target_member:
         raise NotFoundError("Member not found")
+    if req.user_id == user_id:
+        raise ValidationError("Cannot kick yourself — use leave instead")
     if target_member.role == "owner":
         raise ForbiddenError("Cannot kick the owner")
+    if target_member.role == "admin" and requester_member.role != "owner":
+        raise ForbiddenError("Only the owner can kick admins")
+
+    # NOTE: Group encryption keys are not rotated when a member is kicked.
+    # A full key rotation protocol is needed to revoke the kicked member's access.
+    # Until that is implemented, the kicked member may still be able to decrypt
+    # messages received while they were a member.
+    if target_member.role in ("owner", "admin"):
+        logger.warning(
+            "Member %s with role %s kicked from chat %s — group keys NOT rotated",
+            req.user_id, target_member.role, chat_id,
+        )
 
     await db.delete(target_member)
     return {"ok": True}
@@ -111,24 +151,31 @@ async def kick_member(req: KickMemberRequest, chat_id: str, request: Request = N
 
 @router.post("/chats/{chat_id}/promote")
 async def promote_member(req: PromoteRequest, chat_id: str, request: Request = None, db: AsyncSession = Depends(get_db)):
+    if not validate_hex_id(chat_id):
+        raise ValidationError("Invalid chat ID")
     user_id = get_current_user_id(request)
 
-    requester = await db.execute(
-        select(ChatMember).where(ChatMember.chat_id == chat_id, ChatMember.user_id == user_id)
+    result = await db.execute(
+        select(ChatMember).where(
+            ChatMember.chat_id == chat_id,
+            ChatMember.user_id.in_([user_id, req.user_id])
+        )
     )
-    requester_member = requester.scalar_one_or_none()
-    if not requester_member or requester_member.role != "owner":
-        raise ForbiddenError("Only the owner can change roles")
+    members = {m.user_id: m for m in result.scalars().all()}
+    requester_member = members.get(user_id)
+    if not requester_member or requester_member.role not in ("owner", "admin"):
+        raise ForbiddenError("Only owners and admins can change roles")
 
     if req.role not in ("admin", "member"):
         raise ValidationError("Role must be admin or member")
 
-    target = await db.execute(
-        select(ChatMember).where(ChatMember.chat_id == chat_id, ChatMember.user_id == req.user_id)
-    )
-    target_member = target.scalar_one_or_none()
+    target_member = members.get(req.user_id)
     if not target_member:
         raise NotFoundError("Member not found")
+    if target_member.role == "owner":
+        raise ForbiddenError("Cannot change the owner's role")
+    if target_member.role == "admin" and requester_member.role != "owner":
+        raise ForbiddenError("Only the owner can change admin roles")
 
     target_member.role = req.role
     return {"ok": True, "role": req.role}
@@ -136,27 +183,37 @@ async def promote_member(req: PromoteRequest, chat_id: str, request: Request = N
 
 @router.post("/chats/{chat_id}/transfer")
 async def transfer_ownership(req: TransferOwnershipRequest, chat_id: str, request: Request = None, db: AsyncSession = Depends(get_db)):
+    if not validate_hex_id(chat_id):
+        raise ValidationError("Invalid chat ID")
     user_id = get_current_user_id(request)
 
-    owner = await db.execute(
-        select(ChatMember).where(ChatMember.chat_id == chat_id, ChatMember.user_id == user_id)
+    result = await db.execute(
+        select(ChatMember, Chat).where(
+            ChatMember.chat_id == chat_id,
+            ChatMember.user_id.in_([user_id, req.new_owner_id]),
+            Chat.id == chat_id,
+        )
     )
-    owner_member = owner.scalar_one_or_none()
+    rows = result.all()
+    owner_member = None
+    target_member = None
+    chat = None
+    for member, c in rows:
+        if member.user_id == user_id:
+            owner_member = member
+        elif member.user_id == req.new_owner_id:
+            target_member = member
+        if c.id == chat_id:
+            chat = c
+
     if not owner_member or owner_member.role != "owner":
         raise ForbiddenError("Only the owner can transfer ownership")
-
-    target = await db.execute(
-        select(ChatMember).where(ChatMember.chat_id == chat_id, ChatMember.user_id == req.new_owner_id)
-    )
-    target_member = target.scalar_one_or_none()
     if not target_member:
         raise NotFoundError("Member not found")
 
     owner_member.role = "admin"
     target_member.role = "owner"
 
-    chat_result = await db.execute(select(Chat).where(Chat.id == chat_id))
-    chat = chat_result.scalar_one_or_none()
     if chat:
         chat.created_by = req.new_owner_id
 
@@ -165,6 +222,8 @@ async def transfer_ownership(req: TransferOwnershipRequest, chat_id: str, reques
 
 @router.post("/chats/{chat_id}/invite")
 async def generate_invite_link(chat_id: str, request: Request = None, db: AsyncSession = Depends(get_db)):
+    if not validate_hex_id(chat_id):
+        raise ValidationError("Invalid chat ID")
     user_id = get_current_user_id(request)
 
     member = await db.execute(
@@ -182,6 +241,7 @@ async def generate_invite_link(chat_id: str, request: Request = None, db: AsyncS
 
     if not chat.invite_token:
         chat.invite_token = secrets.token_urlsafe(16)
+        chat.invite_token_expiry = now_ms() + (7 * 24 * 60 * 60 * 1000)  # 7 days
 
     return {"token": chat.invite_token}
 
@@ -194,6 +254,11 @@ async def join_chat_by_token(token: str, request: Request = None, db: AsyncSessi
     chat = chat_result.scalar_one_or_none()
     if not chat:
         raise NotFoundError("Invalid invite link")
+
+    if hasattr(chat, 'invite_token_expiry') and chat.invite_token_expiry:
+        now_utc_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        if now_utc_ms > chat.invite_token_expiry:
+            raise ValidationError("Invite link has expired")
 
     existing = await db.execute(
         select(ChatMember).where(ChatMember.chat_id == chat.id, ChatMember.user_id == user_id)
@@ -240,6 +305,7 @@ async def delete_account(request: Request = None, db: AsyncSession = Depends(get
     user_id = get_current_user_id(request)
 
     await db.execute(delete(ChatMember).where(ChatMember.user_id == user_id))
+    await db.execute(delete(Chat).where(Chat.created_by == user_id))
     await db.execute(delete(UserBlock).where(UserBlock.blocker_id == user_id))
     await db.execute(delete(UserBlock).where(UserBlock.blocked_id == user_id))
     await db.execute(delete(UserNickname).where(UserNickname.owner_id == user_id))
@@ -254,7 +320,7 @@ async def delete_account(request: Request = None, db: AsyncSession = Depends(get
         user.username = None
         user.name = None
         user.email = None
-        user.password_hash = "deleted"
+        user.password_hash = None
         user.bio = ""
         user.is_online = False
         user.is_onboarded = False

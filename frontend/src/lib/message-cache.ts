@@ -8,6 +8,9 @@ const MAX_CACHED_PER_CHAT = 1000
 let dbPromise: Promise<IDBDatabase> | null = null
 
 function openDB(): Promise<IDBDatabase> {
+  if (typeof window === 'undefined' || typeof indexedDB === 'undefined') {
+    return Promise.reject(new Error('IndexedDB is not available in this environment'))
+  }
   if (dbPromise) return dbPromise
   dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
@@ -103,10 +106,6 @@ async function decryptData(ciphertext: string, iv: string, key: CryptoKey): Prom
 // cache messages for a chat (replaces existing). keeps last MAX_CACHED_PER_CHAT.
 export async function cacheMessages(chatId: string, messages: any[]): Promise<void> {
   try {
-    const db = await openDB()
-    const tx = db.transaction(STORE_NAME, 'readwrite')
-    const store = tx.objectStore(STORE_NAME)
-
     const { loadIdentityKey } = await import('./key-store')
     const identityKey = await loadIdentityKey()
     
@@ -114,6 +113,10 @@ export async function cacheMessages(chatId: string, messages: any[]): Promise<vo
     if (identityKey?.encryption?.privateKey) {
       cacheKey = await getCacheKey(identityKey.encryption.privateKey)
     }
+
+    const db = await openDB()
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    const store = tx.objectStore(STORE_NAME)
 
     const toCache = messages.slice(-MAX_CACHED_PER_CHAT)
     for (const msg of toCache) {
@@ -138,9 +141,9 @@ export async function cacheMessages(chatId: string, messages: any[]): Promise<vo
       }
     }
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       tx.oncomplete = () => resolve()
-      tx.onerror = () => resolve()
+      tx.onerror = () => reject(tx.error)
     })
   } catch (e) {
     console.warn('Failed to cache messages:', e)
@@ -211,8 +214,9 @@ export async function clearChatCache(chatId?: string): Promise<void> {
     } else {
       store.clear()
     }
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
     })
   } catch (e) {
     console.warn('Failed to clear cache:', e)

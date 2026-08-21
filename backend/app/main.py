@@ -1,6 +1,7 @@
 # cryptalk backend
 
 import logging
+import time
 from contextlib import asynccontextmanager
 
 import socketio
@@ -17,46 +18,152 @@ from app.core.exceptions import (
     unhandled_exception_handler,
 )
 from app.core.rate_limit import RateLimitMiddleware
+from app.middleware.privacy import PrivacyMiddleware
 from app.models import Base
 from app.realtime.connection_manager import manager
 from app.realtime.handlers import register_handlers
 
+_effective_log_level = getattr(logging, settings.MAX_LOG_LEVEL.upper(), logging.WARNING)
+if settings.DEBUG and _effective_log_level > logging.INFO:
+    _effective_log_level = logging.INFO
+
+import re as _re
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=_effective_log_level,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+
+
+class _PrivacyFilter(logging.Filter):
+    """Redact any PII (emails, usernames, IPs, user IDs) that accidentally reaches loggers."""
+    _PATTERNS = [
+        (_re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b"), "[EMAIL REDACTED]"),
+        (_re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), "[IP REDACTED]"),
+        (_re.compile(r"\buser:\s*[0-9a-f]{8}"), "user: [REDACTED]"),
+        (_re.compile(r"\b(?:userId|user_id)[=:]\s*[\"']?[0-9a-f]{8}"), "userId: [REDACTED]"),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            for pat, repl in self._PATTERNS:
+                record.msg = pat.sub(repl, record.msg)
+        return True
+
+
 logger = logging.getLogger("cryptalk")
+logger.addFilter(_PrivacyFilter())
+
+_redis_health_client = None
 
 if settings.has_sentry:
     import sentry_sdk
     sentry_sdk.init(
         dsn=settings.SENTRY_DSN,
-        traces_sample_rate=0.1,
-        profiles_sample_rate=0.1,
+        traces_sample_rate=0.0,
+        profiles_sample_rate=0.0,
     )
-    logger.info("Sentry initialized")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.core.database import engine
     from sqlalchemy import text
+
+    if settings.is_neon:
+        logger.info("Database: Neon (serverless PostgreSQL)")
+    elif settings.is_postgres:
+        logger.info("Database: PostgreSQL")
+    else:
+        logger.info("Database: SQLite")
+
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-            # Ensure pushToken and pushPlatform columns exist in User table (Postgres/SQLite)
             try:
-                await conn.execute(text("ALTER TABLE \"User\" ADD COLUMN IF NOT EXISTS \"pushToken\" VARCHAR"))
-                await conn.execute(text("ALTER TABLE \"User\" ADD COLUMN IF NOT EXISTS \"pushPlatform\" VARCHAR"))
+                await conn.execute(text('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastSeenOptIn" BOOLEAN DEFAULT 0'))
             except Exception:
+                pass
+            try:
+                await conn.execute(text('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "privacySettings" TEXT'))
+            except Exception:
+                pass
+            try:
+                await conn.execute(text('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastActiveAt" TIMESTAMP'))
+            except Exception:
+                pass
+            try:
+                await conn.execute(text(
+                    'CREATE INDEX IF NOT EXISTS ix_user_last_active_at '
+                    'ON "User" ("lastActiveAt")'
+                ))
+            except Exception:
+                pass
+            try:
+                await conn.execute(text('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "dataRetentionConsent" BOOLEAN DEFAULT 0'))
+            except Exception:
+                pass
+            try:
+                await conn.execute(text('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "emailLookup" VARCHAR(64)'))
+            except Exception:
+                pass
+            try:
+                await conn.execute(text('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pushToken" VARCHAR(1024)'))
+            except Exception:
+                pass
+            try:
+                await conn.execute(text('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pushPlatform" VARCHAR(16)'))
+            except Exception:
+                pass
+            if settings.is_postgres:
                 try:
-                    await conn.execute(text("ALTER TABLE \"User\" ADD COLUMN \"pushToken\" VARCHAR"))
+                    await conn.execute(text('ALTER TABLE "User" ALTER COLUMN "email" TYPE VARCHAR(512)'))
                 except Exception:
                     pass
-                try:
-                    await conn.execute(text("ALTER TABLE \"User\" ADD COLUMN \"pushPlatform\" VARCHAR"))
-                except Exception:
-                    pass
+
+            # one-time backfill: encrypt legacy rows that predate field encryption
+            from app.core.security import encrypt_field, lookup_hash
+            from app.core.database import async_session_factory
+            from app.models import User as UserModel
+            from sqlalchemy import or_, select as _sa_select
+            try:
+                async with async_session_factory() as db:
+                    result = await db.execute(
+                        _sa_select(UserModel).where(
+                            or_(
+                                (UserModel.email.isnot(None)) & (UserModel.email_lookup.is_(None)),
+                                UserModel.name.notlike("gAAAA%"),
+                                UserModel.bio.notlike("gAAAA%"),
+                            )
+                        )
+                    )
+                    migrated = 0
+                    for u in result.scalars().all():
+                        changed = False
+                        if u.email and not u.email.startswith("gAAAA"):
+                            plain_email = u.email
+                            u.email = encrypt_field(plain_email)
+                            u.email_lookup = lookup_hash(plain_email)
+                            changed = True
+                        if u.name and not u.name.startswith("gAAAA"):
+                            u.name = encrypt_field(u.name)
+                            changed = True
+                        if u.bio and not u.bio.startswith("gAAAA"):
+                            u.bio = encrypt_field(u.bio)
+                            changed = True
+                        if getattr(u, "push_token", None) and not u.push_token.startswith("gAAAA"):
+                            u.push_token = encrypt_field(u.push_token)
+                            changed = True
+                        if changed:
+                            migrated += 1
+                    if migrated:
+                        await db.commit()
+                        logger.info("Encrypted %d legacy user rows", migrated)
+            except Exception:
+                logger.warning("Field-encryption backfill skipped (will retry on startup)")
 
             # Convert standard integer timestamp columns to BIGINT for Postgres compatibility
             if settings.is_postgres:
@@ -77,16 +184,16 @@ async def lifespan(app: FastAPI):
                 ]:
                     try:
                         await conn.execute(text(f"ALTER TABLE \"{table}\" ALTER COLUMN \"{col}\" TYPE BIGINT"))
-                    except Exception as e:
-                        logger.warning(f"Failed to alter column {table}.{col} to BIGINT: {e}")
+                    except Exception:
+                        pass
 
             await conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_chatmember_user "
                 "ON \"ChatMember\" (\"userId\")"
             ))
         logger.info("Database tables + indexes ensured")
-    except Exception as e:
-        logger.error(f"Database startup initialization skipped (will retry on demand): {e}")
+    except Exception:
+        logger.error("Database startup initialization skipped (will retry on demand)")
 
     if settings.has_redis:
         try:
@@ -94,69 +201,83 @@ async def lifespan(app: FastAPI):
             client = aioredis.from_url(settings.REDIS_URL)
             await client.ping()
             await client.close()
-            logger.info("Redis connection verified successfully at startup")
         except Exception as e:
             if settings.is_postgres:
-                logger.critical(f"FATAL: Redis connection failed in production mode: {e}")
-                raise RuntimeError(f"Redis connection failed in production mode: {e}")
-            else:
-                logger.warning(f"Redis connection failed, continuing in development mode: {e}")
+                logger.critical("Redis connection failed in production mode")
+                raise RuntimeError("Redis connection failed in production mode")
 
     # start background media cleanup
     import asyncio
     from app.core.cleanup import start_cleanup_loop, stop_cleanup_loop
     cleanup_task = asyncio.create_task(start_cleanup_loop())
+    logger.info(
+        "Privacy purge active: users inactive > %d days will be permanently deleted",
+        settings.DATA_RETENTION_DAYS,
+    )
 
     yield
 
     # shutdown
     stop_cleanup_loop()
     cleanup_task.cancel()
+    await asyncio.gather(cleanup_task, return_exceptions=True)
     from app.core.storage import StorageService
     await StorageService.close()
     from app.core.database import engine
     await engine.dispose()
-    logger.info("Shutting down...")
 
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    docs_url="/docs" if not settings.is_postgres else None,
-    redoc_url="/redoc" if not settings.is_postgres else None,
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
     lifespan=lifespan,
 )
 
 # gzip base64 message lists — big wins on mobile
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
+app.add_middleware(PrivacyMiddleware)
+
 app.add_middleware(
     RateLimitMiddleware,
     limits={
-        "/api/auth/login": (10, 60),
-        "/api/auth/register": (5, 60),
+        "/api/auth/login": (5, 60),
+        "/api/auth/register": (3, 300),
+        "/api/auth/login-legacy": (5, 60),
+        "/health": (10, 60),
         "/api/": (120, 60),
     },
 )
 
-_cors_origins_raw = settings.CORS_ORIGINS.strip() if settings.CORS_ORIGINS else "*"
+_cors_origins_raw = settings.CORS_ORIGINS.strip() if settings.CORS_ORIGINS else ""
 
-if _cors_origins_raw == "*":
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origin_regex=r"https?://.*",
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-else:
-    _cors_origins = [o.strip().rstrip("/") for o in _cors_origins_raw.split(",") if o.strip()]
+if _cors_origins_raw == "*" and settings.is_postgres:
+    logger.warning("CORS wildcard '*' is NOT allowed in production — falling back to same-origin")
+    _cors_origins_raw = ""
+
+_is_wildcard = _cors_origins_raw == "*"
+_cors_origins = [] if _is_wildcard else [
+    o.strip().rstrip("/") for o in _cors_origins_raw.split(",") if o.strip()
+]
+
+if _cors_origins:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept"],
+    )
+else:
+    # wildcard (dev only) or unset: credentials are never allowed with a wildcard
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"] if _is_wildcard else [],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] if _is_wildcard else [],
+        allow_headers=["Authorization", "Content-Type", "Accept"] if _is_wildcard else [],
     )
 
 @app.middleware("http")
@@ -167,10 +288,10 @@ async def limit_request_body(request: Request, call_next):
             cl_int = int(cl)
         except (ValueError, TypeError):
             return JSONResponse(status_code=400, content={"error": "bad_content_length"})
-        if cl_int > 40 * 1024 * 1024:
+        if cl_int > 4 * 1024 * 1024:
             # uploads enforce their own cap inside the handler
             if not request.url.path.startswith("/api/uploads"):
-                return JSONResponse(status_code=413, content={"error": "too_large", "message": "Request body exceeds 40MB limit"})
+                return JSONResponse(status_code=413, content={"error": "too_large", "message": "Request body exceeds 4MB limit"})
     return await call_next(request)
 
 app.add_exception_handler(DomainError, domain_error_handler)
@@ -205,12 +326,24 @@ async def security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-XSS-Protection"] = "0"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
-    if settings.is_postgres:
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
+    response.headers["X-DNS-Prefetch-Control"] = "off"
+    response.headers["X-Download-Options"] = "noopen"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+    response.headers["Expect-CT"] = "max-age=86400, enforce"
+    hsts_max = settings.HSTS_MAX_AGE
+    if hsts_max > 0:
+        response.headers["Strict-Transport-Security"] = f"max-age={hsts_max}; includeSubDomains; preload"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; "
+        "font-src 'self'; connect-src 'self' wss:; frame-ancestors 'none'; form-action 'self'; "
+        "base-uri 'self'; object-src 'none'; media-src 'self'"
+    )
     return response
 
 app.include_router(api_router)
@@ -226,49 +359,49 @@ async def health():
     from app.core.database import engine
     from sqlalchemy import text
     db_ok = False
-    redis_ok = False
+    redis_ok = True
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         db_ok = True
-    except Exception as e:
-        logger.error(f"Health check: DB connection failed: {e}")
+    except Exception:
+        logger.error("Health check: DB connection failed")
 
     if settings.has_redis:
+        global _redis_health_client
         try:
             import redis.asyncio as aioredis
-            client = aioredis.from_url(settings.REDIS_URL)
-            await client.ping()
-            await client.close()
-            redis_ok = True
-        except Exception as e:
-            logger.error(f"Health check: Redis connection failed: {e}")
-    else:
-        redis_ok = True
+            if _redis_health_client is None:
+                _redis_health_client = aioredis.from_url(settings.REDIS_URL)
+            await _redis_health_client.ping()
+        except Exception:
+            logger.error("Health check: Redis connection failed")
+            _redis_health_client = None
+            redis_ok = False
 
-    if not db_ok or not redis_ok:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "error",
-                "database": "ok" if db_ok else "failed",
-                "redis": "ok" if redis_ok else "failed",
-                "sentry": settings.has_sentry,
-            }
-        )
+    healthy = db_ok and redis_ok
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={
+            "status": "healthy" if healthy else "unhealthy",
+            "database": "connected" if db_ok else "disconnected",
+            "version": settings.APP_VERSION,
+            "uptime": round(time.time() - _START_TIME, 2),
+        },
+    )
 
-    return {
-        "status": "ok",
-        "online_users": len(manager.all_online_user_ids()),
-        "database": "ok",
-        "redis": "ok" if settings.has_redis else "not_configured",
-        "sentry": settings.has_sentry,
-    }
+
+@app.get("/db-status")
+async def db_status():
+    if not settings.DEBUG:
+        return JSONResponse(status_code=403, content={"error": "only available in DEBUG mode"})
+    from app.core.database import get_database_info
+    info = await get_database_info()
+    return info
 
 
 # Restrict Socket.IO origins to CORS_ORIGINS settings in production
-socketio_cors = [o.strip() for o in settings.CORS_ORIGINS.split(",")] if settings.CORS_ORIGINS != "*" else "*"
+socketio_cors = "*" if _is_wildcard else _cors_origins
 
 sio = socketio.AsyncServer(
     async_mode="asgi",
@@ -287,12 +420,11 @@ if settings.has_redis:
             ping_timeout=settings.SOCKETIO_PING_TIMEOUT,
             ping_interval=settings.SOCKETIO_PING_INTERVAL,
         )
-        logger.info("Socket.IO using Redis adapter for multi-process scaling")
     except Exception as e:
         if settings.is_postgres:
-            logger.critical(f"FATAL: Redis adapter initialization failed in production: {e}")
-            raise RuntimeError(f"Redis adapter initialization failed in production: {e}")
-        logger.warning(f"Redis connection failed, falling back to in-memory: {e}")
+            logger.critical("Redis adapter initialization failed in production")
+            raise RuntimeError("Redis adapter initialization failed in production")
+        logger.warning("Redis connection failed, falling back to in-memory")
 
 register_handlers(sio)
 
@@ -310,5 +442,7 @@ if __name__ == "__main__":
         host=settings.HOST,
         port=settings.PORT,
         reload=settings.DEBUG,
-        log_level="info",
+        workers=1,
+        log_level="warning",
+        no_access_log=True,
     )

@@ -20,13 +20,20 @@ class Settings(BaseSettings):
 
     DB_PATH: str = os.environ.get("DB_PATH", "./db/cryptalk.db")
 
-    SESSION_SECRET: str = os.environ.get(
-        "SESSION_SECRET", "cryptalk-production-session-secret-key-stable-32bytes"
-    )
-    COOKIE_NAME: str = "tc_session"
-    COOKIE_MAX_AGE: int = 2592000
+    # Neon DB (serverless PostgreSQL) settings
+    NEON_DATABASE_URL: str = os.environ.get("NEON_DATABASE_URL", "")
+    NEON_POOL_SIZE: int = 2
+    NEON_MAX_OVERFLOW: int = 1
+    NEON_SSL_MODE: str = "require"
 
-    CORS_ORIGINS: str = os.environ.get("CORS_ORIGINS", "*")
+    SESSION_SECRET: str = os.environ.get("SESSION_SECRET", "CHANGE_ME_IN_PRODUCTION")
+    COOKIE_NAME: str = "tc_session"
+    COOKIE_MAX_AGE: int = 2592000  # 30 days
+
+    # cleanup intervals (seconds) — configurable for privacy tuning
+    CLEANUP_INTERVAL_SECONDS: int = int(os.environ.get("CLEANUP_INTERVAL_SECONDS", 0))  # 0 = auto
+
+    CORS_ORIGINS: str = os.environ.get("CORS_ORIGINS", "http://localhost:3000")
 
     SOCKETIO_PING_TIMEOUT: int = 60
     SOCKETIO_PING_INTERVAL: int = 25
@@ -36,6 +43,15 @@ class Settings(BaseSettings):
 
     # sentry
     SENTRY_DSN: str = os.environ.get("SENTRY_DSN", "")
+
+    # email (SMTP)
+    SMTP_HOST: str = os.environ.get("SMTP_HOST", "")
+    SMTP_PORT: int = int(os.environ.get("SMTP_PORT", "587"))
+    SMTP_USER: str = os.environ.get("SMTP_USER", "")
+    SMTP_PASSWORD: str = os.environ.get("SMTP_PASSWORD", "")
+    SMTP_FROM_EMAIL: str = os.environ.get("SMTP_FROM_EMAIL", "")
+    SMTP_USE_TLS: bool = os.environ.get("SMTP_USE_TLS", "true").lower() == "true"
+    EMAIL_VERIFICATION_ENABLED: bool = os.environ.get("EMAIL_VERIFICATION_ENABLED", "false").lower() == "true"
 
     WELCOME_CHANNEL_ID: str = os.environ.get("WELCOME_CHANNEL_ID", "welcome-channel")
 
@@ -54,6 +70,24 @@ class Settings(BaseSettings):
     MAX_MEMBERS_PER_GROUP: int = 256
 
     OFFLINE_QUEUE_TTL: int = 86400  # 24h in seconds
+
+    # push notifications — payloads must never contain message content
+    PUSH_NOTIFICATIONS_ENABLED: bool = os.environ.get("PUSH_NOTIFICATIONS_ENABLED", "false").lower() in ("true", "1", "yes")
+
+    # privacy settings
+    DATA_RETENTION_DAYS: int = int(os.environ.get("DATA_RETENTION_DAYS", 90))
+    MAX_LOG_LEVEL: str = os.environ.get("MAX_LOG_LEVEL", "WARNING")
+    PRIVACY_MODE: bool = os.environ.get("PRIVACY_MODE", "true").lower() in ("true", "1", "yes")
+
+    # minimal data collection
+    MINIMAL_DATA_COLLECTION: bool = os.environ.get("MINIMAL_DATA_COLLECTION", "true").lower() in ("true", "1", "yes")
+    ANONYMIZE_LOGS: bool = os.environ.get("ANONYMIZE_LOGS", "true").lower() in ("true", "1", "yes")
+    STRIP_FILE_METADATA: bool = os.environ.get("STRIP_FILE_METADATA", "true").lower() in ("true", "1", "yes")
+
+    # anti-surveillance
+    ENABLE_DNS_OVER_HTTPS: bool = os.environ.get("ENABLE_DNS_OVER_HTTPS", "true").lower() in ("true", "1", "yes")
+    FORCE_HTTPS: bool = os.environ.get("FORCE_HTTPS", "true").lower() in ("true", "1", "yes")
+    HSTS_MAX_AGE: int = int(os.environ.get("HSTS_MAX_AGE", "63072000"))
 
     AVATAR_COLORS: List[str] = [
         "emerald", "violet", "rose", "amber",
@@ -77,6 +111,15 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
+        # Priority: NEON_DATABASE_URL > DATABASE_URL > SQLite
+        neon_raw = self.NEON_DATABASE_URL.strip()
+        if neon_raw:
+            if neon_raw.startswith("postgresql://") and not neon_raw.startswith("postgresql+"):
+                return neon_raw.replace("postgresql://", "postgresql+asyncpg://", 1)
+            if neon_raw.startswith("postgres://"):
+                return neon_raw.replace("postgres://", "postgresql+asyncpg://", 1)
+            return neon_raw
+
         raw = os.environ.get("DATABASE_URL", "")
         if raw.startswith("postgres"):
             if raw.startswith("postgres://"):
@@ -91,12 +134,20 @@ class Settings(BaseSettings):
         return self.database_url.startswith("postgresql")
 
     @property
+    def is_neon(self) -> bool:
+        return bool(self.NEON_DATABASE_URL.strip()) or "neon.tech" in self.database_url
+
+    @property
     def has_redis(self) -> bool:
         return bool(self.REDIS_URL)
 
     @property
     def has_sentry(self) -> bool:
         return bool(self.SENTRY_DSN)
+
+    @property
+    def has_smtp(self) -> bool:
+        return bool(self.SMTP_HOST and self.SMTP_USER and self.SMTP_PASSWORD)
 
     @property
     def has_supabase(self) -> bool:
@@ -107,10 +158,17 @@ class Settings(BaseSettings):
         return True
 
     def validate(self) -> None:
-        if not self.SESSION_SECRET:
+        if not self.SESSION_SECRET or len(self.SESSION_SECRET) < 32:
             raise RuntimeError(
-                "SESSION_SECRET must be set. Generate one with: openssl rand -hex 32"
+                "SESSION_SECRET must be set and at least 32 characters. Generate one with: openssl rand -hex 32"
             )
+        assert self.SESSION_SECRET != "CHANGE_ME_IN_PRODUCTION", "SESSION_SECRET must be changed from the default sentinel"
+        # enforce 30-day max session expiry
+        if self.COOKIE_MAX_AGE > 2592000:
+            self.COOKIE_MAX_AGE = 2592000
+        # privacy mode: cap data retention
+        if self.PRIVACY_MODE and self.DATA_RETENTION_DAYS > 90:
+            self.DATA_RETENTION_DAYS = 90
         if self.is_postgres:
             if self.SENTRY_DSN and not (self.SENTRY_DSN.startswith("http://") or self.SENTRY_DSN.startswith("https://")):
                 raise RuntimeError("SENTRY_DSN must be a valid HTTP/HTTPS URL in production.")

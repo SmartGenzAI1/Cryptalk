@@ -2,19 +2,31 @@
 # process-local singleton; swap dicts for redis pub/sub in multi-process.
 
 from typing import Dict, Set
-import redis
+import redis.asyncio as aioredis
 from app.core.config import settings
 import logging
 
 logger = logging.getLogger("cryptalk.realtime")
 
-# Shared Redis client (synchronous, with automatic response decoding)
+# Shared Redis client (async, with automatic response decoding)
 _redis_client = None
-if settings.has_redis:
+_redis_init_done = False
+
+
+async def _get_redis():
+    global _redis_client, _redis_init_done
+    if _redis_init_done:
+        return _redis_client
+    _redis_init_done = True
+    if not settings.has_redis:
+        return None
     try:
-        _redis_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        _redis_client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        await _redis_client.ping()
     except Exception as e:
         logger.warning(f"ConnectionManager failed to connect to Redis: {e}")
+        _redis_client = None
+    return _redis_client
 
 
 class ConnectionManager:
@@ -24,7 +36,7 @@ class ConnectionManager:
         # socket_id -> user_id (reverse lookup for disconnect)
         self._socket_user: Dict[str, str] = {}
 
-    def add(self, sid: str, user_id: str) -> bool:
+    async def add(self, sid: str, user_id: str) -> bool:
         # returns True if the user just came online globally (or locally as fallback)
         self._socket_user[sid] = user_id
         is_first_local = False
@@ -34,43 +46,45 @@ class ConnectionManager:
         else:
             self._user_sockets[user_id].add(sid)
 
-        if _redis_client:
+        rc = await _get_redis()
+        if rc:
             try:
                 # Add socket ID to user's socket set in Redis
-                _redis_client.sadd(f"online_user:{user_id}", sid)
+                await rc.sadd(f"online_user:{user_id}", sid)
                 # Keep keys alive for 24 hours of inactivity max
-                _redis_client.expire(f"online_user:{user_id}", 86400)
-                
+                await rc.expire(f"online_user:{user_id}", 86400)
+
                 # Check if this user was already tracked globally
-                was_global_online = _redis_client.sismember("online_users", user_id)
+                was_global_online = await rc.sismember("online_users", user_id)
                 if not was_global_online:
-                    _redis_client.sadd("online_users", user_id)
+                    await rc.sadd("online_users", user_id)
                     return True
                 return False
             except Exception as e:
                 logger.error(f"Redis error in ConnectionManager.add: {e}")
-                
+
         return is_first_local
 
-    def remove(self, sid: str) -> str | None:
+    async def remove(self, sid: str) -> str | None:
         # returns the user_id if they're now fully offline globally
         user_id = self._socket_user.pop(sid, None)
         if user_id is None:
             return None
-            
+
         sockets = self._user_sockets.get(user_id)
         if sockets:
             sockets.discard(sid)
             if not sockets:
                 del self._user_sockets[user_id]
 
-        if _redis_client:
+        rc = await _get_redis()
+        if rc:
             try:
-                _redis_client.srem(f"online_user:{user_id}", sid)
+                await rc.srem(f"online_user:{user_id}", sid)
                 # If no more socket connections globally, mark them offline
-                if _redis_client.scard(f"online_user:{user_id}") == 0:
-                    _redis_client.srem("online_users", user_id)
-                    _redis_client.delete(f"online_user:{user_id}")
+                if await rc.scard(f"online_user:{user_id}") == 0:
+                    await rc.srem("online_users", user_id)
+                    await rc.delete(f"online_user:{user_id}")
                     return user_id
                 return None
             except Exception as e:
@@ -84,10 +98,11 @@ class ConnectionManager:
     def get_user_id(self, sid: str) -> str | None:
         return self._socket_user.get(sid)
 
-    def is_online(self, user_id: str) -> bool:
-        if _redis_client:
+    async def is_online(self, user_id: str) -> bool:
+        rc = await _get_redis()
+        if rc:
             try:
-                return bool(_redis_client.sismember("online_users", user_id))
+                return bool(await rc.sismember("online_users", user_id))
             except Exception as e:
                 logger.error(f"Redis error in ConnectionManager.is_online: {e}")
         return user_id in self._user_sockets
@@ -99,10 +114,11 @@ class ConnectionManager:
         # to rooms and direct sids under the hood.
         return self._user_sockets.get(user_id, set())
 
-    def all_online_user_ids(self) -> Set[str]:
-        if _redis_client:
+    async def all_online_user_ids(self) -> Set[str]:
+        rc = await _get_redis()
+        if rc:
             try:
-                members = _redis_client.smembers("online_users")
+                members = await rc.smembers("online_users")
                 return set(members) if members else set()
             except Exception as e:
                 logger.error(f"Redis error in ConnectionManager.all_online_user_ids: {e}")

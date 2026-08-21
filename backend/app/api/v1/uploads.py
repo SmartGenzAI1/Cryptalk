@@ -1,8 +1,10 @@
 # file upload endpoints — e2ee ciphertext storage in supabase.
 # client encrypts then POSTs ciphertext; we store it and return a URL.
 # when supabase isn't configured we tell the client to fall back to base64.
+# Original filenames are NEVER stored; only random UUIDs are used for storage paths.
 
 import logging
+import os
 import secrets
 from typing import Optional
 
@@ -10,7 +12,7 @@ from fastapi import APIRouter, Depends, File, Header, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.security import get_current_user_id, sanitize_filename
+from app.core.security import get_current_user_id
 from app.core.storage import (
     FileTooLargeError,
     QuotaExceededError,
@@ -22,11 +24,18 @@ logger = logging.getLogger("cryptalk.uploads")
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
-
-def _safe_filename(name: Optional[str]) -> str:
-    if not name:
-        return "file"
-    return sanitize_filename(name)
+_ALLOWED_MIME_PREFIXES = (
+    "image/",
+    "video/",
+    "audio/",
+    "application/pdf",
+    "application/zip",
+    "application/x-zip",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument",
+    "text/plain",
+    "application/octet-stream",
+)
 
 
 @router.post("")
@@ -78,6 +87,14 @@ async def upload_attachment(
             status_code=400, content={"error": "empty_file", "message": "Uploaded file is empty"}
         )
 
+    # validate MIME type against allowlist
+    content_type = file.content_type or "application/octet-stream"
+    if not any(content_type.startswith(prefix) for prefix in _ALLOWED_MIME_PREFIXES):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_content_type", "message": "File type not allowed"},
+        )
+
     # total storage quota check
     try:
         await StorageService.check_quota(size)
@@ -99,36 +116,40 @@ async def upload_attachment(
                 "quota": settings.STORAGE_QUOTA_BYTES,
             },
         )
-    except StorageError as e:
-        logger.warning("Quota check failed: %s", e)
+    except StorageError:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "storage_error",
+                "message": "Storage service error",
+            },
+        )
 
-    # upload to supabase
+    # strip file metadata if configured
+    if settings.STRIP_FILE_METADATA:
+        content_type = "application/octet-stream"
+        data = bytes(blob)
+
+    # upload to supabase — use only random IDs, never store original filename
     rand_id = secrets.token_hex(8)
-    safe_name = _safe_filename(file.filename)
-    path = f"files/{user_id}/{rand_id}/{safe_name}"
-    content_type = file.content_type or "application/octet-stream"
+    path = f"files/{rand_id}/blob"
 
     try:
         url = await StorageService.upload_file(path, data, content_type)
-    except StorageError as e:
-        logger.error("Upload failed with storage error: %s", e)
+    except StorageError:
         return JSONResponse(
-            status_code=200,
-            content={"fallback": True, "message": f"Storage upload failed ({e}) — fall back to base64"},
+            status_code=503,
+            content={"error": "storage_error", "message": "Storage upload failed - fall back to base64"},
         )
     if not url:
         return JSONResponse(
-            status_code=200,
-            content={"fallback": True, "message": "Storage unreachable — fall back to base64"},
+            status_code=503,
+            content={"error": "storage_unreachable", "message": "Storage unreachable - fall back to base64"},
         )
 
-    logger.info("Uploaded %d bytes to %s for user %s", size, path, user_id)
     return {
         "url": url,
         "path": path,
-        "size": size,
-        "contentType": content_type,
-        "fileName": safe_name,
         "fallback": False,
     }
 

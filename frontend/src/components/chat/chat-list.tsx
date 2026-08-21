@@ -271,7 +271,7 @@ export function ChatList() {
 
   // prefetch messages on hover >300ms; reads store lazily to avoid re-renders
   const prefetchTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
-  function schedulePrefetch(chat: ChatListItem) {
+  const schedulePrefetch = useCallback((chat: ChatListItem) => {
     if (prefetchTimers.current.has(chat.id)) return
     const cur = useChatStore.getState().messages[chat.id]
     if (cur && cur.length > 0) return
@@ -280,14 +280,14 @@ export function ChatList() {
       void prefetchChat(chat)
     }, 300)
     prefetchTimers.current.set(chat.id, t)
-  }
-  function cancelPrefetch(chatId: string) {
+  }, [])
+  const cancelPrefetch = useCallback((chatId: string) => {
     const t = prefetchTimers.current.get(chatId)
     if (t) {
       clearTimeout(t)
       prefetchTimers.current.delete(chatId)
     }
-  }
+  }, [])
   useEffect(() => {
     const timers = prefetchTimers.current
     return () => {
@@ -348,7 +348,7 @@ export function ChatList() {
     }
   }
 
-  async function openChat(chat: ChatListItem) {
+  const openChat = useCallback(async (chat: ChatListItem) => {
     setActiveChatId(chat.id)
     setInfoPanelOpen(false)
     setMessagesLoading(chat.id, true)
@@ -413,10 +413,7 @@ export function ChatList() {
 
         // 4. mark messages as delivered (recipient opened the chat)
         if (chat.type !== 'saved') {
-          // surface errors so delivery receipts don't silently break
-          apiPost(`/api/${chat.id}/messages/delivered`).catch((e) =>
-            console.warn('mark_delivered failed:', e)
-          )
+          // Only emit via socket; ChatWindow handles HTTP mark-read
           getSocket()?.emit('message-status', {
             chatId: chat.id,
             status: 'delivered',
@@ -440,9 +437,9 @@ export function ChatList() {
     } finally {
       setMessagesLoading(chat.id, false)
     }
-  }
+  }, [setActiveChatId, setInfoPanelOpen, setMessagesLoading, setMessages, setActiveChat, updateChatListItem])
 
-  async function togglePin(chat: ChatListItem) {
+  const togglePin = useCallback(async (chat: ChatListItem) => {
     const newValue = !chat.pinnedAt
     updateChatListItem(chat.id, { pinnedAt: newValue ? new Date().toISOString() : null })
     try {
@@ -451,9 +448,9 @@ export function ChatList() {
     } catch {
       updateChatListItem(chat.id, { pinnedAt: newValue ? null : new Date().toISOString() })
     }
-  }
+  }, [updateChatListItem])
 
-  async function toggleMute(chat: ChatListItem) {
+  const toggleMute = useCallback(async (chat: ChatListItem) => {
     const newValue = !chat.muted
     updateChatListItem(chat.id, { muted: newValue })
     try {
@@ -462,7 +459,7 @@ export function ChatList() {
     } catch {
       updateChatListItem(chat.id, { muted: !newValue })
     }
-  }
+  }, [updateChatListItem])
 
   // renderChat function replaced by memoized ChatListItemView component
 
