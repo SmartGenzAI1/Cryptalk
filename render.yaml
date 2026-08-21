@@ -14,7 +14,7 @@ services:
       - key: SESSION_SECRET
         sync: false
       - key: CORS_ORIGINS
-        value: "https://cryptalk.vercel.app,http://localhost:3000"
+        value: "https://cryptalk-three.vercel.app,http://localhost:3000"
 
       # === DATABASE (Supabase PostgreSQL — required) ===
       - key: DATABASE_URL
