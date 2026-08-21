@@ -19,7 +19,7 @@ Root Directory must be set to `frontend`.
 
 | Variable | Value | Required |
 |----------|-------|----------|
-| NEXT_PUBLIC_BACKEND_URL | https://cryptalk-api.onrender.com | Yes |
+| NEXT_PUBLIC_BACKEND_URL | https://cryptalk-backend-30yc.onrender.com | Yes |
 | NEXT_PUBLIC_SUPABASE_URL | Your Supabase project URL | Yes |
 | NEXT_PUBLIC_SUPABASE_ANON_KEY | Your Supabase anon key | Yes |
 | NEXT_PUBLIC_APP_URL | https://your-app.vercel.app | Yes |
@@ -27,7 +27,7 @@ Root Directory must be set to `frontend`.
 Notes:
 
 - `NEXT_PUBLIC_BACKEND_URL` must match your Render service name exactly
-  (render.yaml defines the backend as `cryptalk-api` → `https://cryptalk-api.onrender.com`).
+  (render.yaml defines the backend as `cryptalk-api` → `https://cryptalk-backend-30yc.onrender.com`).
 - `NEXT_PUBLIC_APP_URL` must match your real Vercel domain; it is also what you put in
   the backend's `CORS_ORIGINS`.
 - The Supabase **anon** key is safe to expose client-side. Never use the service key here.
@@ -170,7 +170,7 @@ NEXT_PUBLIC_BACKEND_PORT=8001     # API client appends ?XTransformPort=8001 to r
 
 ```bash
 BACKEND_URL=http://10.0.2.2:8001          # Android emulator → host machine
-# BACKEND_URL=https://cryptalk-api.onrender.com   # production build
+# BACKEND_URL=https://cryptalk-backend-30yc.onrender.com   # production build
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-supabase-anon-key
 ```
@@ -193,7 +193,7 @@ iOS simulator can use `http://localhost:8001`; physical devices need your LAN IP
    - [ ] Update `CORS_ORIGINS` with your real Vercel domain
 4. **Vercel** — import repo, Root Directory = `frontend`, set the four `NEXT_PUBLIC_*` vars from §1.
 5. **Redeploy frontend** after any `NEXT_PUBLIC_*` change (build-time inlined).
-6. **Verify**: `https://cryptalk-api.onrender.com/health` returns 200 → register a user → send a message → upload a file.
+6. **Verify**: `https://cryptalk-backend-30yc.onrender.com/health` returns 200 → register a user → send a message → upload a file.
 
 ---
 

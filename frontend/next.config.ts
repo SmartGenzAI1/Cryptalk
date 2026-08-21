@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const backendUrl = process.env.BACKEND_URL || "http://localhost:8001";
+const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
 const backendHost = backendUrl.replace(/^https?:\/\//, '');
 
 const securityHeaders = [

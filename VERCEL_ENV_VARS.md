@@ -4,7 +4,7 @@ Set these EXACTLY in **Vercel Dashboard → cryptalk frontend Project → Settin
 
 | Variable | Value | Environment | Description |
 |----------|-------|-------------|-------------|
-| `NEXT_PUBLIC_BACKEND_URL` | `https://cryptalk-api.onrender.com` | Production | Backend API URL |
+| `NEXT_PUBLIC_BACKEND_URL` | `https://cryptalk-backend-30yc.onrender.com` | Production | Backend API URL |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://xxx.supabase.co` | Production | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhbG...` | Production | Supabase anonymous key |
 | `NEXT_PUBLIC_APP_URL` | `https://cryptalk.vercel.app` | Production | Frontend URL |
@@ -13,6 +13,8 @@ Set these EXACTLY in **Vercel Dashboard → cryptalk frontend Project → Settin
 
 - All four variables are `NEXT_PUBLIC_*` → they are inlined into the client bundle at build time.
   After changing any of them, you must **redeploy** for changes to take effect.
+- `NEXT_PUBLIC_BACKEND_URL` also controls the CSP `connect-src` directive (via `next.config.ts`).
+  If this is missing, the browser will block all API calls to the backend.
 - Replace `https://xxx.supabase.co` with your real Supabase project URL
   (Supabase Dashboard → Settings → API → Project URL).
 - Replace `eyJhbG...` with your real Supabase anon/public key
