@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from datetime import datetime, timezone
 import os
+import re
 import secrets
 
 from app.core.database import get_db
