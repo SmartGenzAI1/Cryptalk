@@ -10,21 +10,18 @@ from sqlalchemy.orm import declarative_base
 
 from app.core.config import settings
 
-_connect_args = {
-    "ssl": "require",
-}
 _engine_kwargs = {
     "echo": settings.DEBUG,
     "pool_pre_ping": True,
-    "pool_size": settings.NEON_POOL_SIZE,
-    "max_overflow": settings.NEON_MAX_OVERFLOW,
+    "pool_size": 2,          # Supabase free tier has limited connections
+    "max_overflow": 1,
     "pool_timeout": 30,
     "pool_recycle": 300,
 }
 
 engine = create_async_engine(
     settings.database_url,
-    connect_args=_connect_args,
+    connect_args={"statement_cache_size": 0},  # required for PgBouncer (Supabase pooler)
     **_engine_kwargs,
 )
 
@@ -68,7 +65,7 @@ async def test_connection() -> bool:
 async def get_database_info() -> Dict[str, Any]:
     pool = engine.pool
     status = {
-        "database_type": "Neon (serverless PostgreSQL)",
+        "database_type": "Supabase PostgreSQL",
         "connected": False,
         "pool_size": pool.size(),
         "checked_in": pool.checkedin(),

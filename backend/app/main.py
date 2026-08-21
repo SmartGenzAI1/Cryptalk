@@ -73,12 +73,7 @@ async def lifespan(app: FastAPI):
     from app.core.database import engine
     from sqlalchemy import text
 
-    if settings.is_neon:
-        logger.info("Database: Neon (serverless PostgreSQL)")
-    elif settings.is_postgres:
-        logger.info("Database: PostgreSQL")
-    else:
-        logger.info("Database: SQLite")
+    logger.info("Database: Supabase PostgreSQL")
 
     try:
         async with engine.begin() as conn:

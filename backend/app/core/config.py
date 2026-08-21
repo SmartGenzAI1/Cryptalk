@@ -18,11 +18,8 @@ class Settings(BaseSettings):
     PORT: int = int(os.environ.get("PORT", "8001"))
     DEBUG: bool = False
 
-    # Neon DB (serverless PostgreSQL) — the only database option
-    NEON_DATABASE_URL: str = os.environ.get("NEON_DATABASE_URL", "")
-    NEON_POOL_SIZE: int = 2
-    NEON_MAX_OVERFLOW: int = 1
-    NEON_SSL_MODE: str = "require"
+    # Supabase PostgreSQL — the only database option
+    DATABASE_URL: str = os.environ.get("DATABASE_URL", "")
 
     SESSION_SECRET: str = os.environ.get("SESSION_SECRET", "CHANGE_ME_IN_PRODUCTION")
     COOKIE_NAME: str = "tc_session"
@@ -109,25 +106,21 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        neon_raw = self.NEON_DATABASE_URL.strip()
-        if not neon_raw:
+        url = self.DATABASE_URL.strip()
+        if not url:
             raise RuntimeError(
-                "NEON_DATABASE_URL is required. Get one at neon.tech — free tier works great. "
-                "Example: postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/cryptalk?sslmode=require"
+                "DATABASE_URL is required. Get it from Supabase Dashboard → Settings → Database → "
+                "Connection string → URI. Example: postgresql://postgres:PASSWORD@db.YOUR_PROJECT.supabase.co:5432/postgres"
             )
-        if neon_raw.startswith("postgresql://") and not neon_raw.startswith("postgresql+"):
-            return neon_raw.replace("postgresql://", "postgresql+asyncpg://", 1)
-        if neon_raw.startswith("postgres://"):
-            return neon_raw.replace("postgres://", "postgresql+asyncpg://", 1)
-        return neon_raw
+        if url.startswith("postgresql://") and not url.startswith("postgresql+"):
+            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if url.startswith("postgres://"):
+            return url.replace("postgres://", "postgresql+asyncpg://", 1)
+        return url
 
     @property
     def is_postgres(self) -> bool:
-        return True  # always True — Neon is PostgreSQL
-
-    @property
-    def is_neon(self) -> bool:
-        return True  # always True — Neon is the only DB option
+        return True  # always True — Supabase is PostgreSQL
 
     @property
     def has_redis(self) -> bool:
@@ -159,9 +152,9 @@ class Settings(BaseSettings):
             self.COOKIE_MAX_AGE = 2592000
         if self.PRIVACY_MODE and self.DATA_RETENTION_DAYS > 90:
             self.DATA_RETENTION_DAYS = 90
-        if not self.NEON_DATABASE_URL.strip():
+        if not self.DATABASE_URL.strip():
             raise RuntimeError(
-                "NEON_DATABASE_URL is required. Get one free at neon.tech"
+                "DATABASE_URL is required. Get it from Supabase Dashboard → Settings → Database → Connection string → URI"
             )
         if self.SENTRY_DSN and not (self.SENTRY_DSN.startswith("http://") or self.SENTRY_DSN.startswith("https://")):
             raise RuntimeError("SENTRY_DSN must be a valid HTTP/HTTPS URL.")

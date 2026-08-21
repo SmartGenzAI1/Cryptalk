@@ -18,7 +18,7 @@ The app **will not start** without these two:
 | Key | Value | Notes |
 |---|---|---|
 | `SESSION_SECRET` | *(generate — see below)* | Must be ≥ 32 chars or the app raises a RuntimeError on boot (`app/core/config.py:158`) |
-| One database URL | *(see Section 3)* | `NEON_DATABASE_URL` **or** `DATABASE_URL`. If neither is set, the app falls back to SQLite (ephemeral on Render — data lost on every deploy) |
+| One database URL | *(see Section 4)* | `DATABASE_URL` (Supabase PostgreSQL). If not set, the app falls back to SQLite (ephemeral on Render — data lost on every deploy) |
 
 ### Generate SESSION_SECRET
 
@@ -48,7 +48,7 @@ Example value: `a3f9c2e81b7d4f6a9c0e5d8b2f7a4c1e9d6b3f8a5c2e7d4b9f6a3c0e5d8b2f7a
 | Key | Set in dashboard? | Example / Value |
 |---|---|---|
 | `SESSION_SECRET` | ✅ Yes — secret | `openssl rand -hex 32` output |
-| `NEON_DATABASE_URL` *or* `DATABASE_URL` | ✅ Yes — secret | See Section 3 (set only ONE) |
+| `DATABASE_URL` | ✅ Yes — secret | Supabase PostgreSQL connection string (see Section 4) |
 | `SUPABASE_URL` | ✅ Yes | `https://YOURPROJECT.supabase.co` |
 | `SUPABASE_KEY` | ✅ Yes — secret | Supabase service_role key (see Section 4) |
 | `SMTP_USER` | ⚙️ Only if email enabled | `you@gmail.com` |
@@ -76,24 +76,10 @@ These are already committed in `render.yaml` with safe defaults:
 
 ---
 
-## 4. Step-by-step: Database (choose ONE)
+## 4. Step-by-step: Database (Supabase PostgreSQL — required)
 
 The app resolves its DB in this priority order (`app/core/config.py:111`):
-**`NEON_DATABASE_URL` → `DATABASE_URL` → SQLite fallback.**
-
-### Option A — Neon (recommended, free tier)
-
-1. Go to [neon.tech](https://neon.tech) → sign up → **Create project** (name it `cryptalk`).
-2. On the dashboard, copy the connection string from **Connection Details**. It looks like:
-   ```
-   postgresql://USER:PASSWORD@ep-xxxxx.us-east-2.aws.neon.tech/cryptalk?sslmode=require
-   ```
-3. In Render → cryptalk-api → Environment → add:
-   - Key: `NEON_DATABASE_URL`
-   - Value: paste the string exactly (keep `?sslmode=require`)
-4. Leave `DATABASE_URL` empty/unset.
-
-### Option B — Supabase PostgreSQL
+**`DATABASE_URL` → SQLite fallback.**
 
 1. Go to [supabase.com](https://supabase.com) → your project → **Connect** (top bar).
 2. Copy the **connection pooler** string (port `6543`, recommended for serverless/free tiers):
@@ -104,7 +90,6 @@ The app resolves its DB in this priority order (`app/core/config.py:111`):
 3. In Render → cryptalk-api → Environment → add:
    - Key: `DATABASE_URL`
    - Value: paste the string
-4. Leave `NEON_DATABASE_URL` unset.
 
 ---
 
@@ -187,7 +172,7 @@ Change `SMTP_HOST` in render.yaml (or dashboard):
 
 All defined in `backend/app/core/config.py`:
 
-`PORT`, `DEBUG`, `DB_PATH`, `NEON_DATABASE_URL`, `SESSION_SECRET`, `COOKIE_NAME`,
+`PORT`, `DEBUG`, `DB_PATH`, `SESSION_SECRET`, `COOKIE_NAME`,
 `COOKIE_MAX_AGE`, `CORS_ORIGINS`, `REDIS_URL`, `SENTRY_DSN`, `SMTP_HOST`, `SMTP_PORT`,
 `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_USE_TLS`,
 `EMAIL_VERIFICATION_ENABLED`, `WELCOME_CHANNEL_ID`, `SUPABASE_URL`, `SUPABASE_KEY`,

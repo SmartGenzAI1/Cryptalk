@@ -44,7 +44,7 @@ Variables marked `sync: false` in render.yaml must be entered manually — Rende
 |----------|-------|----------|
 | SESSION_SECRET | Generate: python -c "import secrets; print(secrets.token_hex(32))" | Yes |
 | CORS_ORIGINS | https://your-app.vercel.app | Yes |
-| NEON_DATABASE_URL | postgresql://user:pass@ep-xxx.neon.tech/cryptalk?sslmode=require | Yes |
+| DATABASE_URL | postgresql://postgres:PASSWORD@db.xxx.supabase.co:5432/postgres | Yes |
 | SUPABASE_URL | https://xxx.supabase.co | Yes |
 | SUPABASE_KEY | your_supabase_service_key | Yes |
 | REDIS_URL | rediss://xxx.upstash.io | Optional |
@@ -70,11 +70,12 @@ Variables marked `sync: false` in render.yaml must be entered manually — Rende
 - Must include your production Vercel domain; keep localhost only if you develop against prod.
 - Default in render.yaml: `https://cryptalk.vercel.app,http://localhost:3000`.
 
-#### Neon DB (required)
-- The only database option. Get one free at neon.tech.
-- Format: `postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/cryptalk?sslmode=require`
-- Pool auto-tuned via `NEON_POOL_SIZE=2`, `NEON_MAX_OVERFLOW=1` to fit Neon's free-tier connection limit
+#### DATABASE_URL (required)
+- The only database setting. Supabase PostgreSQL — the same project that provides file storage.
+- Get it from **Supabase Dashboard → Settings → Database → Connection string → URI**.
+- Format: `postgresql://postgres:PASSWORD@db.YOUR_PROJECT.supabase.co:5432/postgres`
 - Any `postgres://` / `postgresql://` URL is automatically converted to `postgresql+asyncpg://` internally
+  (`config.py` → `database_url` property). The app refuses to boot if unset.
 
 #### SUPABASE_URL / SUPABASE_KEY (required)
 - Used for file storage (images, documents). Get both from **Supabase Dashboard → Settings → API**.
@@ -142,7 +143,7 @@ All have safe defaults in `backend/app/core/config.py`; set only if you need to 
 ```bash
 PORT=8001
 DEBUG=False
-NEON_DATABASE_URL=postgresql://user:password@ep-xxx.neon.tech/cryptalk?sslmode=require
+DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@db.YOUR_PROJECT.supabase.co:5432/postgres
 SESSION_SECRET=<python -c "import secrets; print(secrets.token_hex(32))">
 COOKIE_NAME=tc_session
 COOKIE_MAX_AGE=2592000
@@ -180,18 +181,19 @@ iOS simulator can use `http://localhost:8001`; physical devices need your LAN IP
 
 ## 5. Production Deploy Checklist
 
-1. **Neon** — create project at neon.tech → copy connection string → set `NEON_DATABASE_URL`.
-2. **Supabase** — create project → Settings → API → copy Project URL, `anon` key, `service_role` key → create `cryptalk` bucket.
-3. **Upstash** (optional) — create Redis DB → copy `rediss://` URL.
-4. **Render** — New Blueprint from repo (uses `render.yaml`) → fill all `sync: false` secrets:
+1. **Supabase** — create one project at supabase.com:
+   - Database: Settings → Database → Connection string → URI → set as `DATABASE_URL`.
+   - Storage: Settings → API → copy Project URL + `service_role` key → set as `SUPABASE_URL` / `SUPABASE_KEY` → create `cryptalk` bucket.
+2. **Upstash** (optional) — create Redis DB → copy `rediss://` URL.
+3. **Render** — New Blueprint from repo (uses `render.yaml`) → fill all `sync: false` secrets:
    - [ ] `SESSION_SECRET` (≥ 32 chars)
-   - [ ] `NEON_DATABASE_URL`
+   - [ ] `DATABASE_URL`
    - [ ] `SUPABASE_URL` + `SUPABASE_KEY`
    - [ ] `REDIS_URL`, `SENTRY_DSN`, SMTP vars (optional)
    - [ ] Update `CORS_ORIGINS` with your real Vercel domain
-5. **Vercel** — import repo, Root Directory = `frontend`, set the four `NEXT_PUBLIC_*` vars from §1.
-6. **Redeploy frontend** after any `NEXT_PUBLIC_*` change (build-time inlined).
-7. **Verify**: `https://cryptalk-api.onrender.com/health` returns 200 → register a user → send a message → upload a file.
+4. **Vercel** — import repo, Root Directory = `frontend`, set the four `NEXT_PUBLIC_*` vars from §1.
+5. **Redeploy frontend** after any `NEXT_PUBLIC_*` change (build-time inlined).
+6. **Verify**: `https://cryptalk-api.onrender.com/health` returns 200 → register a user → send a message → upload a file.
 
 ---
 
@@ -205,7 +207,7 @@ Cross-check of every variable against its source of truth:
 | DEBUG | ✅ | ✅ | ✅ | — | — |
 | SESSION_SECRET | ✅ | ✅ | ✅ | — | — |
 | CORS_ORIGINS | ✅ | ✅ | ✅ | — | — |
-| NEON_DATABASE_URL | ✅ | ✅ | ✅ | — | — |
+| DATABASE_URL | ✅ | ✅ | ✅ | — | — |
 | SUPABASE_URL / SUPABASE_KEY | ✅ | ✅ | ✅ | — | — |
 | SUPABASE_BUCKET | ✅ | — | — | — | — |
 | REDIS_URL | ✅ | ✅ | ✅ | — | — |

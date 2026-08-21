@@ -105,12 +105,12 @@
 │  • Room auto-rejoin  │     │  • Brute-force lockout   │
 └──────────────────────┘     └───────────┬──────────────┘
                                          │
-                               ┌─────────┴─────────┐
-                               ▼                   ▼
-                      ┌──────────────┐    ┌──────────────┐
-                      │ Neon DB      │    │ Supabase PG  │
-                      │ (free tier)  │    │  (prod)      │
-                      └──────────────┘    └──────────────┘
+                                ┌─────────┴─────────┐
+                                ▼                   ▼
+                       ┌──────────────┐    ┌──────────────┐
+                       │  Supabase    │    │  Supabase    │
+                       │  PostgreSQL  │    │   Storage    │
+                       └──────────────┘    └──────────────┘
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed flow diagrams.
@@ -148,8 +148,7 @@ Cryptalk tracks message lifecycle progression across socket rooms and local UI s
 | Variable | Required | Description | Example / Recommended Value |
 |---|---|---|---|
 | `SESSION_SECRET` | Yes | 64-character hex secret for signing session HMAC cookies | `openssl rand -hex 32` |
-| `NEON_DATABASE_URL` | Yes (prod) | Neon serverless PostgreSQL connection string | `postgresql://user:pass@ep-xxx.neon.tech/cryptalk?sslmode=require` |
-| `DATABASE_URL` | Alt | Supabase PostgreSQL connection string (alternative to Neon) | `postgresql+asyncpg://postgres:pass@db.xxx.supabase.co:5432/postgres` |
+| `DATABASE_URL` | Yes | Supabase PostgreSQL connection string (the only database) | `postgresql://postgres:pass@db.xxx.supabase.co:5432/postgres` |
 | `CORS_ORIGINS` | Yes | Allowed frontend origin URLs | `https://your-app.onrender.com` |
 | `COOKIE_SECURE` | Yes | Enforces `Secure` flag on HTTP-only cookies | `true` in production |
 | `REDIS_URL` | Optional | Upstash Redis connection string for Socket.IO multi-node scaling | `rediss://default:pass@redis-xxx.upstash.io:6379` |
@@ -211,7 +210,7 @@ Both backend and frontend deploy on Render free tier using the included `render.
 1. Push repository to GitHub.
 2. Create a new **Blueprint** project on [Render.com](https://render.com) — Render auto-detects `render.yaml`.
 3. Set environment variables in the Render dashboard:
-   - **Backend**: `SESSION_SECRET`, `NEON_DATABASE_URL`, `CORS_ORIGINS`, `SUPABASE_URL`, `SUPABASE_KEY`, `SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD` (optional)
+   - **Backend**: `SESSION_SECRET`, `DATABASE_URL`, `CORS_ORIGINS`, `SUPABASE_URL`, `SUPABASE_KEY`, `SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD` (optional)
    - **Frontend**: `BACKEND_URL` is auto-linked from the backend service
 4. Render deploys both services with Docker, auto-deploys on commit.
 
@@ -219,7 +218,7 @@ Both backend and frontend deploy on Render free tier using the included `render.
 
 1. Create a new **Web Service** on [Render.com](https://render.com).
 2. Connect your GitHub repository, set root directory to `backend`.
-3. Set environment variables (`SESSION_SECRET`, `NEON_DATABASE_URL` or `DATABASE_URL`, `CORS_ORIGINS`, `COOKIE_SECURE=true`, `SUPABASE_URL`, `SUPABASE_KEY`).
+3. Set environment variables (`SESSION_SECRET`, `DATABASE_URL`, `CORS_ORIGINS`, `COOKIE_SECURE=true`, `SUPABASE_URL`, `SUPABASE_KEY`).
 4. Render deploys `uvicorn app.main:asgi_app --host 0.0.0.0 --port $PORT`.
 
 ### Frontend → Render (Standalone)
@@ -284,7 +283,8 @@ Backend runs on `http://localhost:8001`, frontend on `http://localhost:3000`.
 - [Backend README](backend/README.md) — API endpoints, Socket.IO handlers, backend security
 - [Frontend README](frontend/README.md) — UI components, Zustand state, socket hooks
 - [Flutter README](flutter/README.md) — Cross-platform client setup
-- [Supabase Setup](supabase/README.md) — PostgreSQL schema & RLS policies
+- [Supabase Setup](backend/docs/supabase-setup.md) — Supabase database & storage setup guide
+- [Supabase Schema](supabase/README.md) — PostgreSQL schema & RLS policies
 
 ---
 
