@@ -21,7 +21,10 @@ _engine_kwargs = {
 
 engine = create_async_engine(
     settings.database_url,
-    connect_args={"statement_cache_size": 0},  # required for PgBouncer (Supabase pooler)
+    connect_args={
+        "statement_cache_size": 0,   # SQLAlchemy cache — required for PgBouncer
+        "prepare_threshold": 0,      # asyncpg prepared statements — must be 0 with PgBouncer
+    },
     **_engine_kwargs,
 )
 
