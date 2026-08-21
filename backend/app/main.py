@@ -327,18 +327,9 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
     response.headers["X-DNS-Prefetch-Control"] = "off"
     response.headers["X-Download-Options"] = "noopen"
-    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
-    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
-    response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
-    response.headers["Expect-CT"] = "max-age=86400, enforce"
     hsts_max = settings.HSTS_MAX_AGE
     if hsts_max > 0:
         response.headers["Strict-Transport-Security"] = f"max-age={hsts_max}; includeSubDomains; preload"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; "
-        "font-src 'self'; connect-src 'self' wss:; frame-ancestors 'none'; form-action 'self'; "
-        "base-uri 'self'; object-src 'none'; media-src 'self'"
-    )
     return response
 
 app.include_router(api_router)

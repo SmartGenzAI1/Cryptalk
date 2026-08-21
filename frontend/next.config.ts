@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const backendUrl = process.env.BACKEND_URL || "http://localhost:8001";
+const backendHost = backendUrl.replace(/^https?:\/\//, '');
 
 const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
@@ -10,11 +11,20 @@ const securityHeaders = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), interest-cohort=()" },
   { key: "X-DNS-Prefetch-Control", value: "off" },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
-  { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
-  { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
   { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
-  { key: "Expect-CT", value: "max-age=86400, enforce" },
-  { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' wss:; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'; media-src 'self'" },
+  { key: "Content-Security-Policy", value: [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https://*.supabase.co https://*.supabase.in",
+    "font-src 'self' data:",
+    `connect-src 'self' https://${backendHost} wss://${backendHost} https://*.supabase.co`,
+    "media-src 'self' blob:",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+  ].join('; ') },
 ];
 
 const nextConfig: NextConfig = {
