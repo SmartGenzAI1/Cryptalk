@@ -149,8 +149,9 @@ class PrivacyMiddleware(BaseHTTPMiddleware):
             response.headers[k] = v
 
         # Remove server-identifying headers
-        response.headers.pop("server", None)
-        response.headers.pop("x-powered-by", None)
+        for _hdr in ("server", "x-powered-by"):
+            if _hdr in response.headers:
+                del response.headers[_hdr]
 
         # Slow-response logging (possible abuse / DoS)
         if elapsed > 5.0:
