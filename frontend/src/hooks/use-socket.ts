@@ -56,7 +56,10 @@ export function useSocket() {
     if (!currentUser || initialised.current) return
     initialised.current = true
 
-    let socketUrl = window.location.origin
+    // Vercel serverless doesn't support WebSocket upgrades through rewrites,
+    // so socket must connect directly to the backend.
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
+    let socketUrl = backendUrl || window.location.origin
     // Enforce WSS in production
     if (process.env.NODE_ENV === 'production' && socketUrl.startsWith('ws://')) {
       socketUrl = socketUrl.replace(/^ws:\/\//, 'wss://')

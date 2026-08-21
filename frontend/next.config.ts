@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
 
+const backendPublicUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+
 const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
   { key: "X-Frame-Options", value: "DENY" },
@@ -17,7 +19,7 @@ const securityHeaders = [
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https://*.supabase.co https://*.supabase.in",
     "font-src 'self' data:",
-    "connect-src 'self' wss: https://*.supabase.co",
+    `connect-src 'self' wss: https://*.supabase.co${backendPublicUrl ? ` ${backendPublicUrl}` : ""}`,
     "media-src 'self' blob:",
     "frame-ancestors 'none'",
     "form-action 'self'",
