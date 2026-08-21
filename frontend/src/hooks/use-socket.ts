@@ -95,7 +95,7 @@ export function useSocket() {
 
     // Auto-reconnect when tab regains focus or comes back online
     function handleVisibilityOrOnline() {
-      if (socket && !socket.connected && !socket.connecting) {
+      if (socket && !socket.connected) {
         socket.connect()
       }
     }
