@@ -19,7 +19,7 @@ class UserService:
         user = await self.users.get_by_id(user_id)
         if not user:
             raise NotFoundError("User not found")
-        await self.users.update(user_id, last_active_at=datetime.now(timezone.utc))
+        await self.users.update(user_id, last_active_at=datetime.now(timezone.utc).replace(tzinfo=None))
         user = await self.users.get_by_id(user_id)
         user.email = decrypt_field(user.email)
         user.name = decrypt_field(user.name)
@@ -46,7 +46,7 @@ class UserService:
         patch["is_online"] = True
         from app.core.security import now_ms
         patch["last_seen"] = now_ms()
-        patch["last_active_at"] = datetime.now(timezone.utc)
+        patch["last_active_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
         user = await self.users.update(user_id, **patch)
         user.email = decrypt_field(user.email)
         user.name = decrypt_field(user.name)

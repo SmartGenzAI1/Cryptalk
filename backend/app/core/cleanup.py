@@ -190,7 +190,7 @@ async def cleanup_all_inactive_users() -> int:
 
     days = settings.DATA_RETENTION_DAYS
     cutoff_ms = now_ms() - (days * 24 * 60 * 60 * 1000)
-    cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff_dt = (datetime.now(timezone.utc) - timedelta(days=days)).replace(tzinfo=None)
     purged_count = 0
 
     try:
