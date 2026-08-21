@@ -1,26 +1,10 @@
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || ''
-const BACKEND_PORT = process.env.NEXT_PUBLIC_BACKEND_PORT || process.env.BACKEND_PORT || '8001'
-
 let _onUnauthorized: (() => void) | null = null
 export function setOnUnauthorized(fn: (() => void) | null) {
   _onUnauthorized = fn
 }
 
 function buildUrl(path: string): string {
-  let url: string
-  if (BACKEND_URL) {
-    url = `${BACKEND_URL}${path}`
-  } else if (process.env.NEXT_PUBLIC_BACKEND_PORT) {
-    const sep = path.includes('?') ? '&' : '?'
-    url = `${path}${sep}XTransformPort=${BACKEND_PORT}`
-  } else {
-    url = path
-  }
-  // Enforce HTTPS in production
-  if (process.env.NODE_ENV === 'production' && url.startsWith('http://')) {
-    url = url.replace(/^http:\/\//, 'https://')
-  }
-  return url
+  return path
 }
 
 function getHeaders(contentType: string | null = 'application/json') {

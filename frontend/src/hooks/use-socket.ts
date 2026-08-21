@@ -56,10 +56,7 @@ export function useSocket() {
     if (!currentUser || initialised.current) return
     initialised.current = true
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || ''
-    let socketUrl = backendUrl
-      ? backendUrl
-      : `/?XTransformPort=${process.env.NEXT_PUBLIC_BACKEND_PORT || '8001'}`
+    let socketUrl = window.location.origin
     // Enforce WSS in production
     if (process.env.NODE_ENV === 'production' && socketUrl.startsWith('ws://')) {
       socketUrl = socketUrl.replace(/^ws:\/\//, 'wss://')

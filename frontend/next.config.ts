@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
 const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
-const backendHost = backendUrl.replace(/^https?:\/\//, '');
 
 const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
@@ -18,7 +17,7 @@ const securityHeaders = [
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https://*.supabase.co https://*.supabase.in",
     "font-src 'self' data:",
-    `connect-src 'self' https://${backendHost} wss://${backendHost} https://*.supabase.co`,
+    "connect-src 'self' wss: https://*.supabase.co",
     "media-src 'self' blob:",
     "frame-ancestors 'none'",
     "form-action 'self'",
