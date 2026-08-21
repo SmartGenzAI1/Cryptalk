@@ -29,13 +29,6 @@ import { getSocket } from '@/hooks/use-socket'
 export function ChatApp() {
   useSocket()
 
-  useEffect(() => {
-    setOnUnauthorized(() => {
-      setCurrentUser(null)
-    })
-    return () => setOnUnauthorized(null)
-  }, [setCurrentUser])
-
   const infoPanelOpen = useChatStore(s => s.infoPanelOpen)
   const settingsOpen = useChatStore(s => s.settingsOpen)
   const connectionsPanelOpen = useChatStore(s => s.connectionsPanelOpen)
@@ -45,6 +38,13 @@ export function ChatApp() {
   const setChats = useChatStore(s => s.setChats)
   const setCurrentUser = useChatStore(s => s.setCurrentUser)
   const setE2eeEnabled = useChatStore(s => s.setE2eeEnabled)
+
+  useEffect(() => {
+    setOnUnauthorized(() => {
+      setCurrentUser(null)
+    })
+    return () => setOnUnauthorized(null)
+  }, [setCurrentUser])
 
   const [globalCallModalOpen, setGlobalCallModalOpen] = useState(false)
   const [globalIncomingCallOffer, setGlobalIncomingCallOffer] = useState<any>(null)
