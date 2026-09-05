@@ -31,9 +31,11 @@ export function InstallPrompt() {
     const shouldShow = !dismissedTime || now - dismissedTime > 7 * 24 * 60 * 60 * 1000
 
     const handler = (e: Event) => {
-      e.preventDefault()
-      setDeferredPrompt(e)
-      if (shouldShow) setShow(true)
+      if (shouldShow) {
+        e.preventDefault()
+        setDeferredPrompt(e)
+        setShow(true)
+      }
     }
 
     window.addEventListener('beforeinstallprompt', handler)

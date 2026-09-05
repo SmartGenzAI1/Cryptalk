@@ -117,11 +117,7 @@ export function ChatApp() {
           if (mounted) setE2eeEnabled(e2eeStatus.isE2EEEnabled)
         } catch {}
       } catch (e: any) {
-        console.error('failed to load chats', e)
-        if (mounted) {
-          setCurrentUser(null)
-          if (typeof window !== 'undefined') localStorage.removeItem('tc_token')
-        }
+        console.warn('Background sync failed to refresh chats/user, keeping cached session:', e)
       }
     })()
     return () => { mounted = false }

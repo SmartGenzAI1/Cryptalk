@@ -1,12 +1,11 @@
 /* Cryptalk Service Worker */
-const CACHE_VERSION = 'cryptalk-v1';
+const CACHE_VERSION = 'cryptalk-v2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const OFFLINE_URL = '/offline.html';
 
-// Pre-cached static assets
+// Pre-cached static assets (do NOT pre-cache root '/' to avoid caching stale HTML & CSP headers)
 const STATIC_ASSETS = [
-  '/',
   '/offline.html',
   '/manifest.json',
   '/logo.png',
@@ -17,14 +16,15 @@ const STATIC_ASSETS = [
 
 // Install: pre-cache static assets
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) =>
       Promise.allSettled(STATIC_ASSETS.map((url) => cache.add(url)))
-    ).then(() => self.skipWaiting())
+    )
   );
 });
 
-// Activate: clean up old caches
+// Activate: clean up all old caches immediately and take control
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -44,8 +44,8 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// Helper: is this an API/data request?
-function isApiRequest(url) {
+// Helper: is this an API, websocket, or cross-origin data request?
+function isApiOrDynamicRequest(url) {
   return (
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/socket') ||
@@ -57,9 +57,8 @@ function isApiRequest(url) {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
 
-  // Only handle GET requests
+  // Never intercept non-GET requests
   if (request.method !== 'GET') {
-    // Queue non-GET requests for background sync when offline
     if (!navigator.onLine && isSyncableRequest(request)) {
       queueFailedRequest(request);
     }
@@ -71,13 +70,22 @@ self.addEventListener('fetch', (event) => {
   // Skip non-http(s)
   if (!url.protocol.startsWith('http')) return;
 
-  if (isApiRequest(url)) {
-    // Network-first strategy for API calls
-    event.respondWith(networkFirst(request));
-  } else {
-    // Cache-first strategy for static assets & pages
-    event.respondWith(cacheFirst(request));
+  // NEVER intercept API, socket, Supabase, or external backend requests in the service worker!
+  // Let the browser make direct network requests so CSP and cookies work naturally without SW interference.
+  if (isApiOrDynamicRequest(url)) {
+    return;
   }
+
+  // Navigation requests (HTML pages): ALWAYS network-first to get latest CSP headers and scripts
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request).catch(() => caches.match(OFFLINE_URL))
+    );
+    return;
+  }
+
+  // Static assets (images, fonts, scripts): cache-first fallback
+  event.respondWith(cacheFirst(request));
 });
 
 function isSyncableRequest(request) {

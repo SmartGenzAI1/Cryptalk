@@ -19,24 +19,31 @@ export function SWRegister() {
           scope: '/',
         })
 
-        // Detect a waiting service worker (new version available)
-        if (registration.waiting && navigator.serviceWorker.controller) {
-          setWaitingWorker(registration.waiting)
-          setUpdateReady(true)
+        // When a new version is waiting, immediately activate it
+        if (registration.waiting) {
+          registration.waiting.postMessage({ type: 'SKIP_WAITING' })
         }
 
         registration.addEventListener('updatefound', () => {
           const installing = registration?.installing
           if (!installing) return
           installing.addEventListener('statechange', () => {
-            if (
-              installing.state === 'installed' &&
-              navigator.serviceWorker.controller
-            ) {
-              setWaitingWorker(installing)
-              setUpdateReady(true)
+            if (installing.state === 'installed') {
+              if (navigator.serviceWorker.controller) {
+                // Auto activate new service worker
+                installing.postMessage({ type: 'SKIP_WAITING' })
+              }
             }
           })
+        })
+
+        // Listen for controller changes and reload once to apply clean state
+        let refreshing = false
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!refreshing) {
+            refreshing = true
+            window.location.reload()
+          }
         })
 
         // Listen for sync completion messages from the SW
