@@ -270,3 +270,21 @@ extMuted = !muted\, then \	.enabled = !nextMuted; setMuted(nextMuted)\. |
 | **Preload Console Warning** | \<link rel="preload" href="/logo.png">\ unused by Next.js \<Image priority>\ | Removed manual \<link rel="preload">\ from \<head>\. |
 | **Mobile Empty State Trap** | Mobile sidebar hidden when \ctiveChatId\ set; no back arrow in empty state | Added mobile back button in empty state view to clear \ctiveChatId\. |
 | **State Leaks on Logout** | \	c_token\ remained in \localStorage\ on logout | Synchronously remove \	c_token\, \zc-currentUser\, and \zc-chats\ in \setCurrentUser(null)\. |
+| **CI Pytest Collection Failures** | `aiosqlite` missing in `requirements.txt`; `SESSION_SECRET` < 32 chars in test files; `PytestDeprecationWarning` for unconfigured loop scope | Added `aiosqlite==0.21.0`, configured `pytest.ini` with `asyncio_default_fixture_loop_scope = function`, set `SESSION_SECRET` >= 32 chars in all test fixtures, and aligned CI environment to SQLite fallback. |
+
+---
+
+## 12. Pytest & CI/CD Testing Rules
+
+1. **`pytest.ini` Configuration** (`backend/pytest.ini`):
+   - `asyncio_mode = auto`
+   - `asyncio_default_fixture_loop_scope = function` (required by `pytest-asyncio >= 0.25.0` to eliminate deprecation warnings)
+   - `filterwarnings = ignore::DeprecationWarning`
+
+2. **Session Secret in Tests**:
+   - `SESSION_SECRET` must **always** be >= 32 characters in all test files (`tests/conftest.py`, `test_security.py`, `test_api.py`) and CI workflows.
+   - `backend/app/core/config.py` raises `RuntimeError` during settings initialization if `len(SESSION_SECRET) < 32`.
+
+3. **CI Database Isolation**:
+   - In GitHub Actions CI runners where PostgreSQL is not provisioned, set `DATABASE_URL: ""` to automatically trigger SQLite async (`aiosqlite`) fallback.
+   - `aiosqlite` must remain in `backend/requirements.txt`.
