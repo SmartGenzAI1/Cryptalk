@@ -67,13 +67,17 @@ def serialize_member(m: ChatMember) -> Dict[str, Any]:
 
 def serialize_chat(
     chat: Chat,
-    member: ChatMember,
+    member: Optional[ChatMember] = None,
 ) -> Dict[str, Any]:
     seed = chat.title or chat.id or "group"
     det_color, det_emoji = _get_deterministic_avatar(seed, is_chat=True)
     if chat.type == "saved":
         det_color, det_emoji = "emerald", "bookmark"
         
+    members_list = []
+    if "members" in chat.__dict__ and chat.members:
+        members_list = [serialize_member(m) for m in chat.members]
+
     return {
         "id": chat.id,
         "type": chat.type,
@@ -85,10 +89,10 @@ def serialize_chat(
         "createdAt": ms_to_iso(chat.created_at),
         "updatedAt": ms_to_iso(chat.updated_at),
         "expiresAt": ms_to_iso(chat.expires_at) if hasattr(chat, 'expires_at') and chat.expires_at else None,
-        "lastReadAt": ms_to_iso(member.last_read_at),
-        "role": member.role,
-        "pinnedAt": ms_to_iso(member.pinned_at) if member.pinned_at else None,
-        "muted": bool(member.muted),
-        "chatKey": member.chat_key,
-        "members": [serialize_member(m) for m in (chat.members or [])],
+        "lastReadAt": ms_to_iso(member.last_read_at) if member else None,
+        "role": member.role if member else "member",
+        "pinnedAt": ms_to_iso(member.pinned_at) if member and member.pinned_at else None,
+        "muted": bool(member.muted) if member else False,
+        "chatKey": member.chat_key if member else None,
+        "members": members_list,
     }

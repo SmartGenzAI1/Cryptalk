@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # Supabase PostgreSQL — the only database option
     DATABASE_URL: str = os.environ.get("DATABASE_URL", "")
 
-    SESSION_SECRET: str = os.environ.get("SESSION_SECRET", "CHANGE_ME_IN_PRODUCTION")
+    SESSION_SECRET: str = os.environ.get("SESSION_SECRET", "dev_secret_session_key_min_32_characters_for_cryptalk_local")
     COOKIE_NAME: str = "tc_session"
     COOKIE_MAX_AGE: int = 2592000  # 30 days
 
@@ -108,10 +108,7 @@ class Settings(BaseSettings):
     def database_url(self) -> str:
         url = self.DATABASE_URL.strip()
         if not url:
-            raise RuntimeError(
-                "DATABASE_URL is required. Get it from Supabase Dashboard → Settings → Database → "
-                "Connection string → URI. Example: postgresql://postgres:PASSWORD@db.YOUR_PROJECT.supabase.co:5432/postgres"
-            )
+            return "sqlite+aiosqlite:///./cryptalk_local.db"
         if url.startswith("postgresql://") and not url.startswith("postgresql+"):
             return url.replace("postgresql://", "postgresql+asyncpg://", 1)
         if url.startswith("postgres://"):
@@ -120,7 +117,10 @@ class Settings(BaseSettings):
 
     @property
     def is_postgres(self) -> bool:
-        return True  # always True — Supabase is PostgreSQL
+        url = self.DATABASE_URL.strip().lower()
+        if not url:
+            return False
+        return url.startswith("postgres://") or url.startswith("postgresql://") or url.startswith("postgresql+")
 
     @property
     def has_redis(self) -> bool:
@@ -147,15 +147,20 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "SESSION_SECRET must be set and at least 32 characters. Generate one with: openssl rand -hex 32"
             )
-        assert self.SESSION_SECRET != "CHANGE_ME_IN_PRODUCTION", "SESSION_SECRET must be changed from the default sentinel"
+        is_prod = (
+            os.environ.get("ENVIRONMENT", "").lower() in ("production", "prod")
+            or os.environ.get("NODE_ENV", "").lower() in ("production", "prod")
+        )
+        if is_prod:
+            assert self.SESSION_SECRET != "CHANGE_ME_IN_PRODUCTION", "SESSION_SECRET must be changed from the default sentinel"
+            if not self.DATABASE_URL.strip():
+                raise RuntimeError(
+                    "DATABASE_URL is required. Get it from Supabase Dashboard → Settings → Database → Connection string → URI"
+                )
         if self.COOKIE_MAX_AGE > 2592000:
             self.COOKIE_MAX_AGE = 2592000
         if self.PRIVACY_MODE and self.DATA_RETENTION_DAYS > 90:
             self.DATA_RETENTION_DAYS = 90
-        if not self.DATABASE_URL.strip():
-            raise RuntimeError(
-                "DATABASE_URL is required. Get it from Supabase Dashboard → Settings → Database → Connection string → URI"
-            )
         if self.SENTRY_DSN and not (self.SENTRY_DSN.startswith("http://") or self.SENTRY_DSN.startswith("https://")):
             raise RuntimeError("SENTRY_DSN must be a valid HTTP/HTTPS URL.")
 

@@ -10,20 +10,24 @@ from sqlalchemy.orm import declarative_base
 
 from app.core.config import settings
 
-_engine_kwargs = {
+_connect_args: Dict[str, Any] = {}
+_engine_kwargs: Dict[str, Any] = {
     "echo": settings.DEBUG,
     "pool_pre_ping": True,
-    "pool_size": 2,          # Supabase free tier has limited connections
-    "max_overflow": 1,
-    "pool_timeout": 30,
-    "pool_recycle": 300,
 }
+
+if not settings.is_postgres:
+    _connect_args = {"check_same_thread": False}
+else:
+    _connect_args = {"statement_cache_size": 0}  # Disables asyncpg prepared statement cache for PgBouncer
+    _engine_kwargs["pool_size"] = 2
+    _engine_kwargs["max_overflow"] = 1
+    _engine_kwargs["pool_timeout"] = 30
+    _engine_kwargs["pool_recycle"] = 300
 
 engine = create_async_engine(
     settings.database_url,
-    connect_args={
-        "statement_cache_size": 0,   # Disables asyncpg prepared statement cache — required for PgBouncer
-    },
+    connect_args=_connect_args,
     **_engine_kwargs,
 )
 

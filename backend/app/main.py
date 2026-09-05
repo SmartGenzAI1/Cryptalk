@@ -426,6 +426,7 @@ app.state.sio = sio
 app.state.sio_manager = manager
 
 asgi_app = socketio.ASGIApp(sio, app)
+socket_app = asgi_app
 
 
 if __name__ == "__main__":

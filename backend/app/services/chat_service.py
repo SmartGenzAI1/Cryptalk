@@ -99,20 +99,18 @@ class ChatService:
 
         existing = await self.chats.find_direct_chat(user_id, other_id)
         if existing:
-            member = await self.chats.get_member(existing.id, user_id)
-            return serialize_chat(existing, member)
+            return await self.get_chat(existing.id, user_id)
 
         try:
             chat = await self.chats.create(type="direct", title="Direct", created_by=user_id)
             await self.chats.add_member(chat.id, user_id, role="owner")
             await self.chats.add_member(chat.id, other_id, role="member")
-            return serialize_chat(chat, await self.chats.get_member(chat.id, user_id))
+            return await self.get_chat(chat.id, user_id)
         except IntegrityError:
             # concurrent creation race — re-query for the chat that won
             existing = await self.chats.find_direct_chat(user_id, other_id)
             if existing:
-                member = await self.chats.get_member(existing.id, user_id)
-                return serialize_chat(existing, member)
+                return await self.get_chat(existing.id, user_id)
             raise
 
     async def _create_group(
@@ -173,8 +171,7 @@ class ChatService:
             self.chats.db.add(member_obj)
         await self.chats.db.flush()
 
-        member = await self.chats.get_member(chat.id, user_id)
-        return serialize_chat(chat, member)
+        return await self.get_chat(chat.id, user_id)
 
     async def update_settings(
         self, chat_id: str, user_id: str, action: str,

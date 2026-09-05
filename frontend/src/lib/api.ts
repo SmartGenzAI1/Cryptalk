@@ -3,8 +3,14 @@ export function setOnUnauthorized(fn: (() => void) | null) {
   _onUnauthorized = fn
 }
 
+const NEXT_PUBLIC_BACKEND_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || '').replace(/\/$/, '')
+
 function buildUrl(path: string): string {
-  return path
+  const normalized = path.startsWith('/') ? path : `/${path}`
+  if (NEXT_PUBLIC_BACKEND_URL) {
+    return `${NEXT_PUBLIC_BACKEND_URL}${normalized}`
+  }
+  return normalized
 }
 
 function getHeaders(contentType: string | null = 'application/json') {

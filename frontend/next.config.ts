@@ -1,8 +1,10 @@
 import type { NextConfig } from "next";
 
-const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
-
-const backendPublicUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+const productionBackend = "https://cryptalk-backend-30yc.onrender.com";
+const backendUrl =
+  process.env.BACKEND_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  (process.env.NODE_ENV === "production" ? productionBackend : "http://localhost:8001");
 
 const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
@@ -17,10 +19,10 @@ const securityHeaders = [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: https://*.supabase.co https://*.supabase.in",
+    "img-src 'self' data: blob: https://*.supabase.co https://*.supabase.in https://*.supabase.com https://*.onrender.com",
     "font-src 'self' data:",
-    `connect-src 'self' ws: wss: https://*.supabase.co https://*.supabase.in${backendPublicUrl ? ` ${backendPublicUrl}` : ""}`,
-    "media-src 'self' blob: https://*.supabase.co https://*.supabase.in",
+    "connect-src 'self' https://*.onrender.com https://cryptalk-backend-30yc.onrender.com wss://cryptalk-backend-30yc.onrender.com ws: wss: https://*.supabase.co https://*.supabase.in https://*.supabase.com http://localhost:* ws://localhost:*",
+    "media-src 'self' blob: https://*.supabase.co https://*.supabase.in https://*.supabase.com https://*.onrender.com",
     "frame-ancestors 'none'",
     "form-action 'self'",
     "base-uri 'self'",
@@ -41,6 +43,8 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       { protocol: "https", hostname: "**.supabase.co" },
       { protocol: "https", hostname: "**.supabase.in" },
+      { protocol: "https", hostname: "**.supabase.com" },
+      { protocol: "https", hostname: "**.onrender.com" },
     ],
   },
   async headers() {
