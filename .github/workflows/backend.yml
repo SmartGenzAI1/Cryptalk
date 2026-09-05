@@ -49,7 +49,7 @@ jobs:
       - name: Run tests
         run: python -m pytest tests/ -v
         env:
-          NEON_DATABASE_URL: "postgresql://test:test@localhost:5432/test"
+          DATABASE_URL: ""
           SESSION_SECRET: ci-test-only-not-a-real-secret-32chars!
 
       - name: Smoke test
@@ -58,5 +58,5 @@ jobs:
           sleep 5
           curl -sf http://localhost:8001/health | grep -q '"status":"healthy"' && echo "Smoke test passed"
         env:
-          NEON_DATABASE_URL: "postgresql://test:test@localhost:5432/test"
+          DATABASE_URL: ""
           SESSION_SECRET: ci-test-only-not-a-real-secret-32chars!

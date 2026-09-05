@@ -1,35 +1,34 @@
 import pytest
 import os
 
-os.environ.setdefault("DB_PATH", "/tmp/cryptalk-test.db")
-os.environ.setdefault("SESSION_SECRET", "test-secret-do-not-use-in-production")
+os.environ.setdefault("SESSION_SECRET", "test-secret-do-not-use-in-production-32chars")
 
 from app.core.security import hash_password, verify_password, create_session_token, verify_session_token
 from app.core.security import validate_username, validate_password, sanitize_text
 
 
 class TestPasswordHashing:
-    def test_hash_and_verify(self):
+    async def test_hash_and_verify(self):
         password = "mySecurePass123"
-        hashed = hash_password(password)
+        hashed = await hash_password(password)
         assert hashed != password
         assert ":" in hashed
-        assert verify_password(password, hashed)
+        assert await verify_password(password, hashed)
 
-    def test_wrong_password_fails(self):
-        hashed = hash_password("correct")
-        assert not verify_password("wrong", hashed)
+    async def test_wrong_password_fails(self):
+        hashed = await hash_password("correct")
+        assert not await verify_password("wrong", hashed)
 
-    def test_empty_password_fails(self):
-        hashed = hash_password("somepass")
-        assert not verify_password("", hashed)
+    async def test_empty_password_fails(self):
+        hashed = await hash_password("somepass")
+        assert not await verify_password("", hashed)
 
-    def test_different_salts(self):
-        h1 = hash_password("same")
-        h2 = hash_password("same")
+    async def test_different_salts(self):
+        h1 = await hash_password("same")
+        h2 = await hash_password("same")
         assert h1 != h2
-        assert verify_password("same", h1)
-        assert verify_password("same", h2)
+        assert await verify_password("same", h1)
+        assert await verify_password("same", h2)
 
 
 class TestSessionTokens:

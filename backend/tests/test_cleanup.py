@@ -27,8 +27,8 @@ async def test_cleanup_files():
          patch("app.core.storage.StorageService._ensure_token", AsyncMock(return_value="token")), \
          patch("app.core.storage.StorageService._get_client", return_value=mock_client), \
          patch("app.core.storage.StorageService._headers", return_value={}), \
-         patch("app.core.storage.StorageService.delete_file", AsyncMock(return_value=True)) as mock_delete:
+         patch("app.core.storage.StorageService.delete_files", AsyncMock(return_value=True)) as mock_delete:
          
         deleted = await cleanup_expired_files()
         assert deleted == 1
-        mock_delete.assert_called_once_with("files/file1.png")
+        mock_delete.assert_called_once_with(["file1.png"])
