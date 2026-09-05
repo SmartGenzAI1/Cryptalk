@@ -38,17 +38,8 @@ export function InstallPrompt() {
 
     window.addEventListener('beforeinstallprompt', handler)
 
-    // On mobile Android, show banner after 3 seconds even if beforeinstallprompt is deferred
-    let timer: NodeJS.Timeout | null = null
-    if (android && shouldShow) {
-      timer = setTimeout(() => {
-        setShow(true)
-      }, 3000)
-    }
-
     return () => {
       window.removeEventListener('beforeinstallprompt', handler)
-      if (timer) clearTimeout(timer)
     }
   }, [])
 

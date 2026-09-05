@@ -1,3 +1,4 @@
+import secrets
 from typing import AsyncGenerator, Dict, Any
 
 from sqlalchemy import event, text
@@ -19,7 +20,13 @@ _engine_kwargs: Dict[str, Any] = {
 if not settings.is_postgres:
     _connect_args = {"check_same_thread": False}
 else:
-    _connect_args = {"statement_cache_size": 0}  # Disables asyncpg prepared statement cache for PgBouncer
+    # PgBouncer transaction/statement pooler compatibility:
+    # Completely disable statement cache and use unique statement names to prevent DuplicatePreparedStatementError
+    _connect_args = {
+        "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
+        "prepared_statement_name_func": lambda: f"__asyncpg_{secrets.token_hex(6)}__",
+    }
     _engine_kwargs["pool_size"] = 2
     _engine_kwargs["max_overflow"] = 1
     _engine_kwargs["pool_timeout"] = 30
