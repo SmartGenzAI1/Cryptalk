@@ -24,7 +24,7 @@ chat_router = APIRouter(tags=["messages"])
 # using FastAPI's `Depends(get_current_user_id)`. Refactor to use DI for consistency.
 
 class MessageCreate(BaseModel):
-    content: str = Field(..., max_length=10000)
+    content: str = Field(..., max_length=10_000_000)
     type: Literal["text", "sticker", "voice", "image", "file"] = "text"
     replyToId: Optional[str] = Field(None, max_length=48)
     duration: Optional[int] = Field(None, ge=1, le=3600)

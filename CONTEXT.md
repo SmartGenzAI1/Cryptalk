@@ -288,3 +288,7 @@ extMuted = !muted\, then \	.enabled = !nextMuted; setMuted(nextMuted)\. |
 3. **CI Database Isolation**:
    - In GitHub Actions CI runners where PostgreSQL is not provisioned, set `DATABASE_URL: ""` to automatically trigger SQLite async (`aiosqlite`) fallback.
    - `aiosqlite` must remain in `backend/requirements.txt`.
+| **Upload Fallback 422 Unprocessable Content** | `MessageCreate.content` and `sanitize_text` capped at 10,000 chars, rejecting inline base64 image/file data | Raised `MessageCreate.content` and `_MAX_CONTENT_LENGTH` to 10,000,000 (10MB) to allow encrypted base64 file payloads when Supabase storage is unavailable. |
+| **Missing Columns UndefinedColumn on Render** | Existing Supabase PostgreSQL schema lacked columns `identityPublicKey`, `signingPublicKey`, `isOnboarded`, etc. | Added idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for all `User`, `Chat`, and `ChatMember` columns in backend startup `lifespan`. |
+| **Cross-Origin Cookie Dropping in API Client** | `frontend/src/lib/api.ts` used `credentials: 'same-origin'`, omitting auth cookies on cross-origin requests to Render | Changed to `credentials: 'include'` and set `xhr.withCredentials = true` in `apiUploadFile`. |
+| **Android PWA & APK Install Experience** | Install prompt was hidden from login screens and lacked official branding / APK direct download | Mounted branded `<InstallPrompt />` globally in `layout.tsx` featuring the real app icon and direct APK release link for Android users. |

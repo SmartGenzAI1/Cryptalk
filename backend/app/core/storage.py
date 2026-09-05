@@ -96,6 +96,22 @@ class StorageService:
             )
             if res.status_code in (200, 201):
                 return cls.public_url(path)
+            if res.status_code in (400, 404) and "not found" in res.text.lower():
+                try:
+                    await client.post(
+                        f"{settings.SUPABASE_URL}/storage/v1/bucket",
+                        headers=cls._headers(token, "application/json"),
+                        json={"id": settings.SUPABASE_BUCKET, "name": settings.SUPABASE_BUCKET, "public": True},
+                    )
+                    retry_res = await client.post(
+                        f"{settings.SUPABASE_URL}/storage/v1/object/{settings.SUPABASE_BUCKET}/{path}",
+                        headers=cls._headers(token, content_type),
+                        content=data,
+                    )
+                    if retry_res.status_code in (200, 201):
+                        return cls.public_url(path)
+                except Exception:
+                    pass
             logger.warning("Upload failed for %s: %s %s", path, res.status_code, res.text[:200])
         except Exception as e:
             logger.warning("Upload error for %s: %s", path, e)

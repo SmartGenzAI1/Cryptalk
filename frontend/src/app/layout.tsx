@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { SWRegister } from "@/components/sw-register";
+import { InstallPrompt } from "@/components/install-prompt";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -78,6 +79,7 @@ export default function RootLayout({
           <Toaster />
           <SonnerToaster richColors position="top-center" />
           <SWRegister />
+          <InstallPrompt />
         </ThemeProvider>
       </body>
     </html>

@@ -36,10 +36,17 @@ class ValidationError(DomainError):
     status_code = 422
     error_code = "validation_error"
 
+def _add_cors_headers(response: JSONResponse, request: Request) -> JSONResponse:
+    origin = request.headers.get("origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Vary"] = "Origin"
+    return response
+
 # exception handlers
 async def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
-
-    return JSONResponse(
+    res = JSONResponse(
         status_code=exc.status_code,
         content={
             "error": exc.error_code,
@@ -47,15 +54,16 @@ async def domain_error_handler(request: Request, exc: DomainError) -> JSONRespon
             "details": exc.details,
         },
     )
+    return _add_cors_headers(res, request)
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-
     import logging
     logging.exception("Unhandled error: %s", exc)
-    return JSONResponse(
+    res = JSONResponse(
         status_code=500,
         content={
             "error": "internal_error",
             "message": "An unexpected error occurred",
         },
     )
+    return _add_cors_headers(res, request)

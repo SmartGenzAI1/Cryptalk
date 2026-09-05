@@ -80,39 +80,39 @@ async def lifespan(app: FastAPI):
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-            try:
-                await conn.execute(text('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastSeenOptIn" BOOLEAN DEFAULT 0'))
-            except Exception:
-                pass
-            try:
-                await conn.execute(text('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "privacySettings" TEXT'))
-            except Exception:
-                pass
-            try:
-                await conn.execute(text('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastActiveAt" TIMESTAMP'))
-            except Exception:
-                pass
+            for col_sql in [
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastSeenOptIn" BOOLEAN DEFAULT 0',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "privacySettings" TEXT',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastActiveAt" TIMESTAMP',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "dataRetentionConsent" BOOLEAN DEFAULT 0',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "emailLookup" VARCHAR(64)',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pushToken" VARCHAR(1024)',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pushPlatform" VARCHAR(16)',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "identityPublicKey" VARCHAR(1024)',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "signingPublicKey" VARCHAR(1024)',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "signedPreKeyPublic" VARCHAR(2048)',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "signedPreKeySignature" VARCHAR(1024)',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isOnboarded" BOOLEAN DEFAULT 0',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isEmailVerified" BOOLEAN DEFAULT 0',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "emailVerificationToken" VARCHAR(128)',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "passwordResetToken" VARCHAR(128)',
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "passwordResetExpires" BIGINT',
+                'ALTER TABLE "Chat" ADD COLUMN IF NOT EXISTS "inviteToken" VARCHAR(64)',
+                'ALTER TABLE "Chat" ADD COLUMN IF NOT EXISTS "inviteTokenExpiry" BIGINT',
+                'ALTER TABLE "ChatMember" ADD COLUMN IF NOT EXISTS "chatKey" VARCHAR(2048)',
+                'ALTER TABLE "ChatMember" ADD COLUMN IF NOT EXISTS "pinnedAt" BIGINT',
+                'ALTER TABLE "ChatMember" ADD COLUMN IF NOT EXISTS "muted" BOOLEAN DEFAULT 0',
+            ]:
+                try:
+                    await conn.execute(text(col_sql))
+                except Exception:
+                    pass
+
             try:
                 await conn.execute(text(
                     'CREATE INDEX IF NOT EXISTS ix_user_last_active_at '
                     'ON "User" ("lastActiveAt")'
                 ))
-            except Exception:
-                pass
-            try:
-                await conn.execute(text('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "dataRetentionConsent" BOOLEAN DEFAULT 0'))
-            except Exception:
-                pass
-            try:
-                await conn.execute(text('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "emailLookup" VARCHAR(64)'))
-            except Exception:
-                pass
-            try:
-                await conn.execute(text('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pushToken" VARCHAR(1024)'))
-            except Exception:
-                pass
-            try:
-                await conn.execute(text('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pushPlatform" VARCHAR(16)'))
             except Exception:
                 pass
             if settings.is_postgres:
@@ -290,10 +290,10 @@ async def limit_request_body(request: Request, call_next):
             cl_int = int(cl)
         except (ValueError, TypeError):
             return JSONResponse(status_code=400, content={"error": "bad_content_length"})
-        if cl_int > 4 * 1024 * 1024:
+        if cl_int > settings.MAX_FILE_SIZE_BYTES:
             # uploads enforce their own cap inside the handler
             if not request.url.path.startswith("/api/uploads"):
-                return JSONResponse(status_code=413, content={"error": "too_large", "message": "Request body exceeds 4MB limit"})
+                return JSONResponse(status_code=413, content={"error": "too_large", "message": f"Request body exceeds {settings.MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB limit"})
     return await call_next(request)
 
 app.add_exception_handler(DomainError, domain_error_handler)

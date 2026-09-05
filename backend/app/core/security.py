@@ -115,19 +115,24 @@ def now_ms() -> int:
 
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
-def ms_to_iso(ms: Optional[int]) -> str:
-
+def ms_to_iso(ms: Any) -> str:
     if ms is None:
         return datetime.now(timezone.utc).isoformat()
+    if isinstance(ms, datetime):
+        if ms.tzinfo is None:
+            return ms.replace(tzinfo=timezone.utc).isoformat()
+        return ms.isoformat()
     if isinstance(ms, str):
         try:
             ms = int(ms)
         except ValueError:
-            raise ValueError(f"Cannot convert string '{ms}' to timestamp")
-    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
+            return ms
+    try:
+        return datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc).isoformat()
+    except Exception:
+        return datetime.now(timezone.utc).isoformat()
 
 def iso_to_ms(iso_str: str) -> int:
-
     try:
         dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
         return int(dt.timestamp() * 1000)
@@ -140,7 +145,7 @@ import re
 
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{3,30}$")
 _HEX_ID_RE = re.compile(r"^[a-f0-9]{24}$")
-_MAX_CONTENT_LENGTH = 10_000
+_MAX_CONTENT_LENGTH = 10_000_000
 _MAX_TITLE_LENGTH = 100
 _MAX_BIO_LENGTH = 500
 

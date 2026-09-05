@@ -2,7 +2,6 @@
 
 import { lazy, Suspense, useEffect } from 'react'
 import { ErrorBoundary } from '@/components/error-boundary'
-import { InstallPrompt } from '@/components/install-prompt'
 import { OfflineIndicator } from '@/components/offline-indicator'
 import { useChatStore } from '@/stores/chat-store'
 import { useSocket } from '@/hooks/use-socket'
@@ -185,7 +184,6 @@ export function ChatApp() {
         isIncoming={true}
         incomingOfferData={globalIncomingCallOffer}
       />
-      <InstallPrompt />
     </div>
   )
 }

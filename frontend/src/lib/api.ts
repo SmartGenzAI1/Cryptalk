@@ -63,7 +63,7 @@ export async function apiGet<T = any>(path: string, timeoutMs: number = 30000): 
   try {
     const res = await fetch(buildUrl(path), {
       headers: getHeaders(null),
-      credentials: 'same-origin',
+      credentials: 'include',
       signal,
     })
     if (!res.ok) {
@@ -87,7 +87,7 @@ export async function apiPost<T = any>(path: string, body?: any, timeoutMs: numb
       method: 'POST',
       headers: getHeaders(),
       body: body ? JSON.stringify(body) : undefined,
-      credentials: 'same-origin',
+      credentials: 'include',
       signal,
     })
     if (res.ok && path.includes('/auth/logout')) {
@@ -121,7 +121,7 @@ export async function apiPatch<T = any>(path: string, body?: any, timeoutMs: num
       method: 'PATCH',
       headers: getHeaders(),
       body: body ? JSON.stringify(body) : undefined,
-      credentials: 'same-origin',
+      credentials: 'include',
       signal,
     })
     if (!res.ok) {
@@ -146,7 +146,7 @@ export async function apiPut<T = any>(path: string, body?: any, timeoutMs: numbe
       method: 'PUT',
       headers: getHeaders(),
       body: body ? JSON.stringify(body) : undefined,
-      credentials: 'same-origin',
+      credentials: 'include',
       signal,
     })
     if (!res.ok) {
@@ -170,7 +170,7 @@ export async function apiDelete<T = any>(path: string, timeoutMs: number = 30000
     const res = await fetch(buildUrl(path), {
       method: 'DELETE',
       headers: getHeaders(null),
-      credentials: 'same-origin',
+      credentials: 'include',
       signal,
     })
     if (!res.ok) {
@@ -221,6 +221,7 @@ export async function apiUploadFile(
     return new Promise<UploadResult>((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       xhr.open('POST', buildUrl(path), true)
+      xhr.withCredentials = true
 
       const token = typeof window !== 'undefined' ? localStorage.getItem('tc_token') : null
       if (token) {
@@ -256,7 +257,7 @@ export async function apiUploadFile(
     method: 'POST',
     body: formData,
     headers: getHeaders(null),
-    credentials: 'same-origin',
+    credentials: 'include',
   })
 
   const data = await res.json().catch(() => ({} as UploadResult))

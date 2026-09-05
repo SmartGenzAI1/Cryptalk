@@ -1,14 +1,21 @@
 {
-  "name": "Cryptalk - Encrypted Messaging",
+  "name": "Cryptalk — Encrypted Messenger",
   "short_name": "Cryptalk",
-  "description": "End-to-end encrypted messaging",
+  "description": "End-to-end encrypted messaging with voice and video calls.",
   "start_url": "/",
+  "id": "/",
   "display": "standalone",
-  "background_color": "#000000",
+  "background_color": "#090d16",
   "theme_color": "#10b981",
   "orientation": "portrait-primary",
-  "categories": ["messaging", "social"],
+  "categories": ["messaging", "social", "communication"],
   "icons": [
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",
@@ -20,6 +27,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/logo-small.png",
+      "sizes": "64x64",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }
