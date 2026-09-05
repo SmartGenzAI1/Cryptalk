@@ -23,6 +23,8 @@ from app.models import Base
 from app.realtime.connection_manager import manager
 from app.realtime.handlers import register_handlers
 
+_START_TIME = time.time()
+
 _effective_log_level = getattr(logging, settings.MAX_LOG_LEVEL.upper(), logging.WARNING)
 if settings.DEBUG and _effective_log_level > logging.INFO:
     _effective_log_level = logging.INFO
@@ -256,24 +258,29 @@ _is_wildcard = _cors_origins_raw == "*"
 _cors_origins = [] if _is_wildcard else [
     o.strip().rstrip("/") for o in _cors_origins_raw.split(",") if o.strip()
 ]
+for _default_origin in ["http://localhost:3000", "https://cryptalk-three.vercel.app"]:
+    if _default_origin not in _cors_origins:
+        _cors_origins.append(_default_origin)
 
-if _cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_cors_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Accept"],
-    )
-else:
-    # wildcard (dev only) or unset: credentials are never allowed with a wildcard
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"] if _is_wildcard else [],
-        allow_credentials=False,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] if _is_wildcard else [],
-        allow_headers=["Authorization", "Content-Type", "Accept"] if _is_wildcard else [],
-    )
+_allowed_headers = [
+    "Authorization",
+    "Content-Type",
+    "Accept",
+    "Origin",
+    "X-Requested-With",
+    "Cache-Control",
+    "Pragma",
+    "If-None-Match",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins if not _is_wildcard else ["*"],
+    allow_origin_regex=r"^https://.*\.vercel\.app$",
+    allow_credentials=True if not _is_wildcard else False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=_allowed_headers,
+)
 
 @app.middleware("http")
 async def limit_request_body(request: Request, call_next):
@@ -323,7 +330,7 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "0"
     response.headers["Referrer-Policy"] = "no-referrer"
-    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+    response.headers["Permissions-Policy"] = "camera=(self), microphone=(self), geolocation=(), interest-cohort=()"
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
     response.headers["X-DNS-Prefetch-Control"] = "off"
     response.headers["X-Download-Options"] = "noopen"

@@ -31,22 +31,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 logger.warning("Failed to initialize Redis for rate limiting, falling back to in-memory")
 
     def _client_key(self, request: Request) -> str:
-        real_ip = request.headers.get("x-real-ip", "").strip()
+        cf_ip = request.headers.get("cf-connecting-ip", "").strip()
+        if cf_ip:
+            return cf_ip
         forwarded = request.headers.get("x-forwarded-for", "")
         ips = [i.strip() for i in forwarded.split(",") if i.strip()]
-
-        # Mitigate x-real-ip spoofing: prefer x-forwarded-for (set by trusted proxy)
-        # over x-real-ip which can be set by any client
         if ips:
-            ip = ips[-1]
-        elif request.client and request.client.host:
-            ip = request.client.host
-        elif real_ip:
-            ip = real_ip
-        else:
-            ip = "unknown"
-
-        return ip
+            return ips[0]
+        real_ip = request.headers.get("x-real-ip", "").strip()
+        if real_ip:
+            return real_ip
+        if request.client and request.client.host:
+            return request.client.host
+        return "unknown"
 
     def _user_key(self, request: Request) -> str | None:
         token = request.cookies.get("__Host-tc_session") or request.cookies.get(settings.COOKIE_NAME)

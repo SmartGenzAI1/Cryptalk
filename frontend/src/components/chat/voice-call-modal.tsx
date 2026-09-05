@@ -40,6 +40,7 @@ export function VoiceCallModal({
 
   const peerRef = useRef<RTCPeerConnection | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
+  const remoteStreamRef = useRef<MediaStream | null>(null)
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null)
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null)
   const localVideoRef = useRef<HTMLVideoElement | null>(null)
@@ -147,10 +148,6 @@ export function VoiceCallModal({
     socket.on('ice-candidate', handleIceCandidate)
     socket.on('call-hangup', handleHangup)
 
-    if (!isIncoming) {
-      startOutgoingCall()
-    }
-
     return () => {
       socket.off('call-answer', handleAnswer)
       socket.off('ice-candidate', handleIceCandidate)
@@ -161,7 +158,25 @@ export function VoiceCallModal({
         closeTimeoutRef.current = null
       }
     }
-  }, [open, isIncoming])
+  }, [open])
+
+  // Initiate outgoing call once target user and chat are loaded
+  useEffect(() => {
+    if (!open || isIncoming || !otherUser || !chat || callState !== 'calling' || peerRef.current) return
+    startOutgoingCall()
+  }, [open, isIncoming, otherUser, chat, callState])
+
+  // Re-attach video streams whenever call connects or video elements mount
+  useEffect(() => {
+    if (callState === 'connected' && isVideoCall) {
+      if (localVideoRef.current && localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current
+      }
+      if (remoteVideoRef.current && remoteStreamRef.current) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current
+      }
+    }
+  }, [callState, isVideoCall])
 
   function startDurationTimer() {
     if (timerRef.current) clearInterval(timerRef.current)
@@ -222,6 +237,7 @@ export function VoiceCallModal({
 
     pc.ontrack = (event) => {
       if (event.streams[0]) {
+        remoteStreamRef.current = event.streams[0]
         if (remoteAudioRef.current) remoteAudioRef.current.srcObject = event.streams[0]
         if (isVideoCall && remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0]
       }
@@ -277,15 +293,17 @@ export function VoiceCallModal({
 
   function toggleMute() {
     if (localStreamRef.current) {
-      localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = !muted))
-      setMuted(!muted)
+      const nextMuted = !muted
+      localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = !nextMuted))
+      setMuted(nextMuted)
     }
   }
 
   function toggleVideo() {
     if (localStreamRef.current) {
-      localStreamRef.current.getVideoTracks().forEach((t) => (t.enabled = !videoOff))
-      setVideoOff(!videoOff)
+      const nextVideoOff = !videoOff
+      localStreamRef.current.getVideoTracks().forEach((t) => (t.enabled = !nextVideoOff))
+      setVideoOff(nextVideoOff)
     }
   }
 
@@ -317,6 +335,7 @@ export function VoiceCallModal({
       peerRef.current.close()
       peerRef.current = null
     }
+    remoteStreamRef.current = null
   }
 
   if (!open || !otherUser) return null

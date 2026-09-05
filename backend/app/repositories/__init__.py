@@ -77,10 +77,14 @@ class UserRepository:
         return await self.get_by_id(user_id)
 
     async def delete_inactive_users(self, days: int = 90) -> List[str]:
+        from datetime import datetime, timezone, timedelta
+        cutoff_dt = (datetime.now(timezone.utc) - timedelta(days=days)).replace(tzinfo=None)
         cutoff_ms = now_ms() - (days * 24 * 60 * 60 * 1000)
         result = await self.db.execute(
             select(User).where(
-                (User.last_seen < cutoff_ms) | ((User.last_seen.is_(None)) & (User.created_at < cutoff_ms))
+                ((User.last_active_at < cutoff_dt) | (User.last_active_at.is_(None))) &
+                ((User.last_seen < cutoff_ms) | (User.last_seen.is_(None))) &
+                (User.created_at < cutoff_ms)
             )
         )
         inactive_users = list(result.scalars().all())

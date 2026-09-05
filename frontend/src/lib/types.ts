@@ -14,6 +14,7 @@ export interface SafeUser {
   accentColor?: string
   wallpaper?: string
   email?: string
+  isOnboarded?: boolean
 }
 
 export interface ChatWithMembers {
@@ -140,6 +141,7 @@ export function toSafeUser(u: any): SafeUser {
     accentColor,
     wallpaper,
     email: u.email ?? '',
+    isOnboarded: Boolean(u.isOnboarded ?? u.is_onboarded ?? true),
   }
 }
 

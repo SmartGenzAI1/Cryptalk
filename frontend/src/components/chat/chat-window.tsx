@@ -253,6 +253,22 @@ export function ChatWindow() {
   if (!activeChat || !activeChatId) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center zc-wallpaper-dots p-6 select-none relative overflow-y-auto">
+        {activeChatId && (
+          <div className="absolute top-4 left-4 z-20 md:hidden">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 rounded-full bg-card/80 border border-border/50"
+              onClick={() => {
+                setActiveChatId(null)
+                setActiveChat(null)
+              }}
+              aria-label="Back to chat list"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </div>
+        )}
         <div className="absolute h-96 w-96 rounded-full bg-emerald-500/10 dark:bg-emerald-500/15 blur-3xl animate-pulse pointer-events-none" />
 
         <motion.div

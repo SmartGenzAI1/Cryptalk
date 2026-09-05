@@ -122,12 +122,16 @@ async def send_message(
 
     if sio:
         await sio.emit("message", payload, room=f"chat:{chat_id}")
+        await sio.emit("message", payload, room=f"user:{user_id}")
+        for m_id in all_member_ids:
+            if m_id != user_id:
+                await sio.emit("message", payload, room=f"user:{m_id}")
 
     if manager:
         for m_id in all_member_ids:
             if m_id == user_id:
                 continue
-            if not manager.get_sockets_for_user(m_id):
+            if not await manager.is_online(m_id):
                 await enqueue_message(m_id, payload)
 
     return {"message": msg}
@@ -146,11 +150,6 @@ async def mark_delivered(
     if not member:
         raise ForbiddenError("Not a member of this chat")
 
-    result = await db.execute(
-        select(ChatMember.user_id).where(ChatMember.chat_id == chat_id)
-    )
-    all_member_ids = [row[0] for row in result.all()]
-
     sio = getattr(request.app.state, "sio", None)
     if sio:
         status_payload = {
@@ -158,21 +157,43 @@ async def mark_delivered(
             "userId": user_id,
             "status": "delivered",
         }
-        manager = getattr(request.app.state, "sio_manager", None)
-        if manager:
-            delivered_any = False
-            for m_id in all_member_ids:
-                if m_id == user_id:
-                    continue
-                for target_sid in manager.get_sockets_for_user(m_id):
-                    await sio.emit("message-status", status_payload, to=target_sid)
-                    delivered_any = True
-            if not delivered_any:
-                await sio.emit("message-status", status_payload, room=f"chat:{chat_id}")
-        else:
-            await sio.emit("message-status", status_payload, room=f"chat:{chat_id}")
+        await sio.emit("message-status", status_payload, room=f"chat:{chat_id}")
 
     return {"ok": True}
+
+@chat_router.post("/{chat_id}/messages/read")
+@chat_router.post("/{chat_id}/mark-read")
+async def mark_read(
+    chat_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    if not validate_hex_id(chat_id):
+        raise ValidationError("Invalid chat ID")
+    user_id = get_current_user_id(request)
+    repo = ChatRepository(db)
+    member = await repo.get_member(chat_id, user_id)
+    if not member:
+        raise ForbiddenError("Not a member of this chat")
+
+    from app.core.security import now_ms
+    read_timestamp = now_ms()
+    await repo.update_member(member.id, last_read_at=read_timestamp)
+
+    sio = getattr(request.app.state, "sio", None)
+    if sio:
+        await sio.emit(
+            "message-status",
+            {
+                "chatId": chat_id,
+                "userId": user_id,
+                "status": "read",
+                "lastReadAt": read_timestamp,
+            },
+            room=f"chat:{chat_id}",
+        )
+
+    return {"ok": True, "lastReadAt": read_timestamp}
 
 from fastapi import Query
 

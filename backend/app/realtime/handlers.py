@@ -76,31 +76,58 @@ async def _share_chat(user_a: str, user_b: str) -> bool:
         return result.first() is not None
 
 
-def _auth_from_environ(environ: dict) -> str | None:
+def _auth_from_environ(environ: dict, auth: dict = None) -> str | None:
+    # 1. Handshake auth dict: auth: { token: ... }
+    if isinstance(auth, dict):
+        token = auth.get("token")
+        if token and isinstance(token, str):
+            uid = verify_session_token(token)
+            if uid:
+                return uid
+
+    # 2. Handshake query string: ?token=...
+    from urllib.parse import parse_qs
+    qs = environ.get("QUERY_STRING", "")
+    if qs:
+        try:
+            params = parse_qs(qs)
+            token_list = params.get("token")
+            if token_list and token_list[0]:
+                uid = verify_session_token(token_list[0])
+                if uid:
+                    return uid
+        except Exception:
+            pass
+
+    # 3. HTTP Cookie header
     from http.cookies import SimpleCookie
     cookie_header = environ.get("HTTP_COOKIE", "")
-    if not cookie_header:
-        return None
-    jar = SimpleCookie()
-    try:
-        jar.load(cookie_header)
-    except Exception:
-        return None
-    morsel = jar.get("__Host-tc_session") or jar.get(settings.COOKIE_NAME)
-    if not morsel:
-        return None
-    return verify_session_token(morsel.value)
+    if cookie_header:
+        jar = SimpleCookie()
+        try:
+            jar.load(cookie_header)
+            morsel = (
+                jar.get("__Host-tc_session")
+                or jar.get(settings.COOKIE_NAME)
+                or jar.get("tc_session")
+            )
+            if morsel:
+                return verify_session_token(morsel.value)
+        except Exception:
+            pass
+
+    return None
 
 
 def register_handlers(sio: socketio.AsyncServer) -> None:
 
     @sio.event
     async def connect(sid: str, environ: dict, auth: dict = None) -> bool | None:
-        user_id = _auth_from_environ(environ)
+        user_id = _auth_from_environ(environ, auth)
 
         if not user_id:
             if not settings.ANONYMIZE_LOGS:
-                logger.warning("Socket rejected: no valid session cookie")
+                logger.warning("Socket rejected: no valid session token or cookie")
             await sio.emit("auth-error", {"message": "Not authenticated"}, to=sid)
             return False
         await manager.add(sid, user_id)
@@ -237,13 +264,15 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
         for member_id in all_member_ids:
             if member_id == user_id or member_id in blocked_by or member_id in delivered_to:
                 continue
-            member_sids = manager.get_sockets_for_user(member_id)
-            if member_sids:
+            is_online = await manager.is_online(member_id)
+            if is_online:
                 delivered_to.add(member_id)
-                for target_sid in member_sids:
-                    await sio.emit("message", payload, to=target_sid)
+                await sio.emit("message", payload, room=f"user:{member_id}")
             else:
                 await enqueue_message(member_id, payload)
+
+        # Multi-tab / multi-device sync for sender's other tabs
+        await sio.emit("message", payload, room=f"user:{user_id}", skip_sid=sid)
 
     @sio.on("typing")
     async def on_typing(sid: str, data: dict) -> None:
@@ -444,8 +473,7 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
         for member_id in member_ids:
             if member_id == user_id:
                 continue
-            for target_sid in manager.get_sockets_for_user(member_id):
-                await sio.emit("chat-updated", {"chat": chat, "chatId": chat_id}, to=target_sid)
+            await sio.emit("chat-updated", {"chat": chat, "chatId": chat_id}, room=f"user:{member_id}")
 
     @sio.on("call-offer")
     async def on_call_offer(sid: str, data: dict) -> None:
@@ -460,8 +488,7 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
         if len(json.dumps(data, default=str)) > _MAX_RELAY_BYTES:
             return
         data["callerUserId"] = user_id
-        for target_sid in manager.get_sockets_for_user(target_user_id):
-            await sio.emit("call-offer", data, to=target_sid)
+        await sio.emit("call-offer", data, room=f"user:{target_user_id}")
 
     @sio.on("call-answer")
     async def on_call_answer(sid: str, data: dict) -> None:
@@ -476,8 +503,7 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
         if len(json.dumps(data, default=str)) > _MAX_RELAY_BYTES:
             return
         data["answerUserId"] = user_id
-        for target_sid in manager.get_sockets_for_user(caller_user_id):
-            await sio.emit("call-answer", data, to=target_sid)
+        await sio.emit("call-answer", data, room=f"user:{caller_user_id}")
 
     @sio.on("ice-candidate")
     async def on_ice_candidate(sid: str, data: dict) -> None:
@@ -492,8 +518,7 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
         if len(json.dumps(data, default=str)) > _MAX_RELAY_BYTES:
             return
         data["senderUserId"] = user_id
-        for target_sid in manager.get_sockets_for_user(target_user_id):
-            await sio.emit("ice-candidate", data, to=target_sid)
+        await sio.emit("ice-candidate", data, room=f"user:{target_user_id}")
 
     @sio.on("call-hangup")
     async def on_call_hangup(sid: str, data: dict) -> None:
@@ -508,8 +533,7 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
         if len(json.dumps(data, default=str)) > _MAX_RELAY_BYTES:
             return
         data["senderUserId"] = user_id
-        for target_sid in manager.get_sockets_for_user(target_user_id):
-            await sio.emit("call-hangup", data, to=target_sid)
+        await sio.emit("call-hangup", data, room=f"user:{target_user_id}")
 
     @sio.event
     async def disconnect(sid: str) -> None:

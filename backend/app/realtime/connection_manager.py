@@ -14,15 +14,15 @@ _redis_init_done = False
 
 
 async def _get_redis():
-    global _redis_client, _redis_init_done
-    if _redis_init_done:
+    global _redis_client
+    if _redis_client is not None:
         return _redis_client
-    _redis_init_done = True
     if not settings.has_redis:
         return None
     try:
-        _redis_client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-        await _redis_client.ping()
+        client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        await client.ping()
+        _redis_client = client
     except Exception as e:
         logger.warning(f"ConnectionManager failed to connect to Redis: {e}")
         _redis_client = None

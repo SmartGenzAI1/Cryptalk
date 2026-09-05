@@ -151,6 +151,9 @@ def escape_like(value: str) -> str:
 def validate_hex_id(value: str) -> bool:
     if not value or not isinstance(value, str):
         return False
+    from app.core.config import settings
+    if value == settings.WELCOME_CHANNEL_ID:
+        return True
     return bool(_HEX_ID_RE.match(value))
 
 def validate_username(username: str) -> str:

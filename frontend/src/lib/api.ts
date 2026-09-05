@@ -41,6 +41,17 @@ function handleAuthError(status: number) {
   }
 }
 
+function extractErrorMessage(data: any, status: number): string {
+  if (!data) return `API error ${status}`
+  if (Array.isArray(data.detail)) {
+    return data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ')
+  }
+  if (typeof data.detail === 'string') return data.detail
+  if (typeof data.message === 'string') return data.message
+  if (typeof data.error === 'string') return data.error
+  return `API error ${status}`
+}
+
 export async function apiGet<T = any>(path: string, timeoutMs: number = 30000): Promise<T> {
   const { signal, cleanup } = makeTimeoutController(timeoutMs)
   try {
@@ -52,7 +63,7 @@ export async function apiGet<T = any>(path: string, timeoutMs: number = 30000): 
     if (!res.ok) {
       handleAuthError(res.status)
       const data = await res.json().catch(() => ({}))
-      throw new Error(data.detail || data.message || `API error ${res.status}`)
+      throw new Error(extractErrorMessage(data, res.status))
     }
     return res.json()
   } catch (e: any) {
@@ -81,7 +92,7 @@ export async function apiPost<T = any>(path: string, body?: any, timeoutMs: numb
     if (!res.ok) {
       handleAuthError(res.status)
       const data = await res.json().catch(() => ({}))
-      throw new Error(data.detail || data.message || `API error ${res.status}`)
+      throw new Error(extractErrorMessage(data, res.status))
     }
     if (res.status === 204) return undefined as T
     const data = await res.json()
@@ -110,7 +121,7 @@ export async function apiPatch<T = any>(path: string, body?: any, timeoutMs: num
     if (!res.ok) {
       handleAuthError(res.status)
       const data = await res.json().catch(() => ({}))
-      throw new Error(data.detail || data.message || `API error ${res.status}`)
+      throw new Error(extractErrorMessage(data, res.status))
     }
     if (res.status === 204) return undefined as T
     return res.json()
@@ -135,7 +146,7 @@ export async function apiPut<T = any>(path: string, body?: any, timeoutMs: numbe
     if (!res.ok) {
       handleAuthError(res.status)
       const data = await res.json().catch(() => ({}))
-      throw new Error(data.detail || data.message || `API error ${res.status}`)
+      throw new Error(extractErrorMessage(data, res.status))
     }
     if (res.status === 204) return undefined as T
     return res.json()
@@ -159,7 +170,7 @@ export async function apiDelete<T = any>(path: string, timeoutMs: number = 30000
     if (!res.ok) {
       handleAuthError(res.status)
       const data = await res.json().catch(() => ({}))
-      throw new Error(data.detail || data.message || `API error ${res.status}`)
+      throw new Error(extractErrorMessage(data, res.status))
     }
     if (res.status === 204) return undefined as T
     return res.json()

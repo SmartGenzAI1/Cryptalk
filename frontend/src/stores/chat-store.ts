@@ -147,6 +147,13 @@ export const useChatStore = create<ChatState>((set, _get) => ({
   setCurrentUser: (u) => {
     const safeUser = u ? toSafeUser(u) : null
     if (!safeUser) {
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('zc-currentUser')
+          localStorage.removeItem('zc-chats')
+          localStorage.removeItem('tc_token')
+        } catch (_) {}
+      }
       // Reset all state on logout
       set({
         currentUser: null,
@@ -299,13 +306,34 @@ export const useChatStore = create<ChatState>((set, _get) => ({
     set((s) => {
       const existing = s.messages[chatId] || []
       const idx = existing.findIndex((m) => m.id === tempId)
+      let nextMessages = existing
       if (idx >= 0) {
-        const next = [...existing]
-        next[idx] = realMsg
-        return { messages: { ...s.messages, [chatId]: next } }
+        nextMessages = [...existing]
+        nextMessages[idx] = realMsg
+      } else if (!existing.some((m) => m.id === realMsg.id)) {
+        nextMessages = [...existing, realMsg]
       }
-      if (existing.some((m) => m.id === realMsg.id)) return s
-      return { messages: { ...s.messages, [chatId]: [...existing, realMsg] } }
+      // Also update chat list lastMessage if it referenced the tempId
+      let nextChats = s.chats
+      const chatIndex = s.chats.findIndex((c) => c.id === chatId)
+      if (chatIndex >= 0 && s.chats[chatIndex].lastMessage?.id === tempId) {
+        nextChats = [...s.chats]
+        nextChats[chatIndex] = {
+          ...nextChats[chatIndex],
+          lastMessage: {
+            ...nextChats[chatIndex].lastMessage!,
+            id: realMsg.id,
+            status: realMsg.status || 'sent',
+          },
+        }
+        if (typeof window !== 'undefined') {
+          _scheduleChatPersist(nextChats)
+        }
+      }
+      return {
+        messages: { ...s.messages, [chatId]: nextMessages },
+        chats: nextChats,
+      }
     }),
   updateMessage: (chatId, msg) =>
     set((s) => {
@@ -349,6 +377,9 @@ export const useChatStore = create<ChatState>((set, _get) => ({
         return c
       })
       if (!changed && !changedChats) return s
+      if (changedChats && typeof window !== 'undefined') {
+        _scheduleChatPersist(updatedChats)
+      }
       return { messages: { ...s.messages, [chatId]: updatedMsgs }, chats: updatedChats }
     }),
   markChatMessagesRead: (chatId, readerUserId) =>
@@ -378,6 +409,9 @@ export const useChatStore = create<ChatState>((set, _get) => ({
         return c
       })
       if (!changed) return s
+      if (typeof window !== 'undefined') {
+        _scheduleChatPersist(updatedChats)
+      }
       return { messages: { ...s.messages, [chatId]: updatedMsgs }, chats: updatedChats }
     }),
   removeMessage: (chatId, messageId) =>

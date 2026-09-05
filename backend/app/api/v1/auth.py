@@ -122,8 +122,8 @@ async def set_username(req: UsernameOnboardingRequest, request: Request, respons
         last_read_at=now_ms(),
     ))
 
-    _set_cookie(response, user.id)
-    return {"user": serialize_user(user, include_email=True)}
+    token = _set_cookie(response, user.id)
+    return {"user": serialize_user(user, include_email=True), "token": token}
 
 @router.post("/login")
 async def login_with_email(req: EmailLoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
@@ -161,8 +161,8 @@ async def login_with_email(req: EmailLoginRequest, response: Response, db: Async
         user.last_seen = now_ms()
     user.updated_at = now_ms()
 
-    _set_cookie(response, user.id)
-    return {"user": serialize_user(user, include_email=True)}
+    token = _set_cookie(response, user.id)
+    return {"user": serialize_user(user, include_email=True), "token": token}
 
 @router.post("/login-legacy", include_in_schema=False)
 async def login_legacy(req: LegacyLoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
@@ -190,13 +190,15 @@ async def login_legacy(req: LegacyLoginRequest, response: Response, db: AsyncSes
         user.last_seen = now_ms()
     user.updated_at = now_ms()
 
-    _set_cookie(response, user.id)
-    return {"user": serialize_user(user, include_email=True)}
+    token = _set_cookie(response, user.id)
+    return {"user": serialize_user(user, include_email=True), "token": token}
 
 @router.post("/logout")
 async def logout(response: Response):
-    response.delete_cookie(key="__Host-tc_session", path="/")
-    response.delete_cookie(key=settings.COOKIE_NAME, path="/")
+    is_prod = settings.is_postgres
+    response.delete_cookie(key="__Host-tc_session", path="/", secure=is_prod)
+    response.delete_cookie(key=settings.COOKIE_NAME, path="/", secure=is_prod)
+    response.delete_cookie(key="tc_session", path="/")
     return {"ok": True}
 
 @router.post("/register")
@@ -235,8 +237,8 @@ async def register_with_email(req: EmailRegisterRequest, response: Response, db:
         name = email.split("@")[0]
         send_verification_email(email, name, verification_token)
 
-    _set_cookie(response, user.id)
-    return {"user": serialize_user(user, include_email=True)}
+    token = _set_cookie(response, user.id)
+    return {"user": serialize_user(user, include_email=True), "token": token}
 
 
 @router.get("/verify-email")

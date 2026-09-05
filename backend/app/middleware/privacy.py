@@ -82,10 +82,6 @@ _BLOCKED_PATHS = frozenset({
 
 _PRIVACY_RESPONSE_HEADERS = {
     "X-Permitted-Cross-Domain-Policies": "none",
-    "Cross-Origin-Embedder-Policy": "require-corp",
-    "Cross-Origin-Opener-Policy": "same-origin",
-    "Cross-Origin-Resource-Policy": "same-origin",
-    "Expect-CT": "max-age=86400, enforce",
     "X-Download-Options": "noopen",
     "X-DNS-Prefetch-Control": "off",
 }

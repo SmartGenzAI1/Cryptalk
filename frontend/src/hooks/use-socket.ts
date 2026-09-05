@@ -59,7 +59,7 @@ export function useSocket() {
     // Vercel serverless doesn't support WebSocket upgrades through rewrites,
     // so socket must connect directly to the backend.
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
-    let socketUrl = backendUrl || window.location.origin
+    let socketUrl = (backendUrl || window.location.origin).replace(/\/$/, '')
     // Enforce WSS in production
     if (process.env.NODE_ENV === 'production' && socketUrl.startsWith('ws://')) {
       socketUrl = socketUrl.replace(/^ws:\/\//, 'wss://')
@@ -71,6 +71,7 @@ export function useSocket() {
     socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
       auth: token ? { token } : undefined,
+      query: token ? { token } : undefined,
       withCredentials: true,
       reconnection: true,
       reconnectionAttempts: Infinity,

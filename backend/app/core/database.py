@@ -22,8 +22,7 @@ _engine_kwargs = {
 engine = create_async_engine(
     settings.database_url,
     connect_args={
-        "statement_cache_size": 0,   # SQLAlchemy cache — required for PgBouncer
-        "prepare_threshold": 0,      # asyncpg prepared statements — must be 0 with PgBouncer
+        "statement_cache_size": 0,   # Disables asyncpg prepared statement cache — required for PgBouncer
     },
     **_engine_kwargs,
 )
@@ -35,7 +34,6 @@ async_session_factory = async_sessionmaker(
 )
 
 Base = declarative_base()
-
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

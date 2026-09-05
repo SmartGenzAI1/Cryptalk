@@ -47,7 +47,8 @@ export function AuthScreen() {
         if (data.token) {
           localStorage.setItem('tc_token', data.token)
         }
-        if (!data.user.isOnboarded) {
+        const isOnboarded = Boolean(data.user?.isOnboarded ?? data.user?.is_onboarded)
+        if (!isOnboarded) {
           setStep('onboard')
           setLoading(false)
           return
