@@ -111,6 +111,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="apple-touch-icon" href="/apple-icon.png" />
+        <meta name="google-site-verification" content="Q7mAqyFVwG2zeScg2UAuMLlidBEjgjwhvFngytF5_Ko" />
         <meta name="theme-color" content="#10b981" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
