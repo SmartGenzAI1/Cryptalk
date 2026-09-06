@@ -292,3 +292,29 @@ extMuted = !muted\, then \	.enabled = !nextMuted; setMuted(nextMuted)\. |
 | **Missing Columns UndefinedColumn on Render** | Existing Supabase PostgreSQL schema lacked columns `identityPublicKey`, `signingPublicKey`, `isOnboarded`, etc. | Added idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for all `User`, `Chat`, and `ChatMember` columns in backend startup `lifespan`. |
 | **Cross-Origin Cookie Dropping in API Client** | `frontend/src/lib/api.ts` used `credentials: 'same-origin'`, omitting auth cookies on cross-origin requests to Render | Changed to `credentials: 'include'` and set `xhr.withCredentials = true` in `apiUploadFile`. |
 | **Android PWA & APK Install Experience** | Install prompt was hidden from login screens and lacked official branding / APK direct download | Mounted branded `<InstallPrompt />` globally in `layout.tsx` featuring the real app icon and direct APK release link for Android users. |
+
+---
+
+## v1.0.1 Changelog (2026-09-06)
+
+### Service Worker & CSP Fix (Critical)
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| **Logout on page refresh** | Old `cryptalk-v1` service worker cached root `/` HTML with stale CSP headers (`connect-src` missing `*.onrender.com`). SW intercepted all API calls → CSP blocked cross-origin fetches → `chat-app.tsx` catch block destroyed session. | Bumped SW to `cryptalk-v2`, removed `/` from pre-cache, added `isApiOrDynamicRequest()` guard that returns early for all API/socket/cross-origin requests. Removed destructive `setCurrentUser(null)` from catch block — now just logs a warning. Auto-activate new SW via `sw-register.tsx` with `SKIP_WAITING` + `controllerchange` reload. |
+
+### SEO & Social Preview
+- Added `sitemap.ts` (auto-generates `/sitemap.xml` for search engines)
+- Updated `robots.txt` with `Sitemap:` directive
+- Enhanced OG metadata: `metadataBase`, `summary_large_image` Twitter card, proper `og:url`, `og:site_name`, canonical URL, rich descriptions, structured `robots` meta
+- Added `og-image.png` (1200×630) for polished link previews on Twitter/WhatsApp/Telegram/Discord
+
+### Version Bump
+- Frontend `package.json` → `1.0.1`
+- Flutter `pubspec.yaml` → `1.0.1+2`
+- Git tag `v1.0.1` triggers Flutter APK build workflow automatically
+
+### CI Workflows (All Green)
+- **Backend CI**: 41/41 pytest tests passing (Python 3.11 + 3.12 matrix)
+- **Frontend CI**: `bun install` → lint → type-check → `bun run build` (0 errors)
+- **Flutter Build**: Triggered by `v*` tags, uploads APK as release artifact
+- **CodeQL**: Weekly security scan on Python + JS/TS
