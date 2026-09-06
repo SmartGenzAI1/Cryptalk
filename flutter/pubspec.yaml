@@ -1,7 +1,7 @@
 name: cryptalk
 description: Secure real-time messaging. Private by default, fast by design.
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.5.0

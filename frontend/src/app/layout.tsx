@@ -19,10 +19,39 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cryptalk — Secure Messenger",
-  description: "Private by default. Fast by design. End-to-end encrypted messaging with no phone number required.",
-  keywords: ["Cryptalk", "messenger", "chat", "secure", "encrypted", "private", "E2EE"],
-  authors: [{ name: "Cryptalk" }],
+  metadataBase: new URL("https://cryptalk-three.vercel.app"),
+  title: {
+    default: "Cryptalk — Secure Encrypted Messenger",
+    template: "%s | Cryptalk",
+  },
+  description:
+    "Private by default. Fast by design. End-to-end encrypted messaging with no phone number required. Voice & video calls, group chats, file sharing — all E2EE.",
+  keywords: [
+    "Cryptalk",
+    "encrypted messenger",
+    "secure chat",
+    "E2EE",
+    "end-to-end encryption",
+    "private messaging",
+    "secure messenger app",
+    "encrypted chat",
+    "privacy",
+    "PWA messenger",
+  ],
+  authors: [{ name: "Cryptalk Team" }],
+  creator: "Cryptalk",
+  publisher: "Cryptalk",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
   icons: {
     icon: [
       { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
@@ -32,15 +61,34 @@ export const metadata: Metadata = {
   },
   manifest: "/manifest.json",
   openGraph: {
-    title: "Cryptalk",
-    description: "Secure real-time messaging",
+    title: "Cryptalk — Secure Encrypted Messenger",
+    description:
+      "Private by default. Fast by design. End-to-end encrypted messaging, voice & video calls, and file sharing — no phone number required.",
+    url: "https://cryptalk-three.vercel.app",
+    siteName: "Cryptalk",
+    locale: "en_US",
     type: "website",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Cryptalk — End-to-End Encrypted Messenger",
+      },
+    ],
   },
   twitter: {
-    card: "summary",
-    title: "Cryptalk",
-    description: "Secure real-time messaging",
+    card: "summary_large_image",
+    title: "Cryptalk — Secure Encrypted Messenger",
+    description:
+      "Private by default. Fast by design. E2EE messaging, calls, and file sharing — no phone number required.",
+    images: ["/og-image.png"],
+    creator: "@cryptalk",
   },
+  alternates: {
+    canonical: "https://cryptalk-three.vercel.app",
+  },
+  category: "technology",
 };
 
 export const viewport: Viewport = {
